@@ -1,6 +1,8 @@
 import Phaser from "phaser";
 import { BootScene } from "./scenes/BootScene";
 import { MenuScene } from "./scenes/MenuScene";
+import { TutorialBossScene } from "./scenes/TutorialBossScene";
+import { TutorialMapScene } from "./scenes/TutorialMapScene";
 
 const config: Phaser.Types.Core.GameConfig = {
   type: Phaser.AUTO,
@@ -15,7 +17,7 @@ const config: Phaser.Types.Core.GameConfig = {
   input: {
     activePointers: 3,
   },
-  scene: [BootScene, MenuScene],
+  scene: [BootScene, MenuScene, TutorialBossScene, TutorialMapScene],
 };
 
 new Phaser.Game(config);

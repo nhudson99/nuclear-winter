@@ -4,12 +4,14 @@ const RUST = 0x8b3a2f;
 
 export class MenuScene extends Phaser.Scene {
   private ashEmitter: Phaser.GameObjects.Particles.ParticleEmitter | null = null;
+  private advancing = false;
 
   constructor() {
     super("Menu");
   }
 
   create(): void {
+    this.advancing = false;
     const { width, height } = this.scale;
 
     const bg = this.add.image(width / 2, height / 2, "title-screen");
@@ -38,15 +40,34 @@ export class MenuScene extends Phaser.Scene {
       ease: "Sine.easeInOut",
     });
 
+    this.input.keyboard?.once("keydown", this.startTutorial, this);
+    this.input.once("pointerdown", this.startTutorial, this);
+
     this.cameras.main.fadeIn(400, 26, 26, 22);
   }
 
+  private startTutorial(): void {
+    if (this.advancing) {
+      return;
+    }
+    this.advancing = true;
+    this.cameras.main.fadeOut(280, 26, 26, 22);
+    this.cameras.main.once(
+      Phaser.Cameras.Scene2D.Events.FADE_OUT_COMPLETE,
+      () => {
+        this.scene.start("TutorialBoss");
+      },
+    );
+  }
+
   private createAsh(width: number, height: number): void {
-    const gfx = this.make.graphics({ x: 0, y: 0 }, false);
-    gfx.fillStyle(0xd8d4c8, 1);
-    gfx.fillCircle(4, 4, 3);
-    gfx.generateTexture("ash-flake", 8, 8);
-    gfx.destroy();
+    if (!this.textures.exists("ash-flake")) {
+      const gfx = this.make.graphics({ x: 0, y: 0 }, false);
+      gfx.fillStyle(0xd8d4c8, 1);
+      gfx.fillCircle(4, 4, 3);
+      gfx.generateTexture("ash-flake", 8, 8);
+      gfx.destroy();
+    }
 
     this.ashEmitter = this.add.particles(0, 0, "ash-flake", {
       x: { min: 0, max: width },
@@ -70,5 +91,7 @@ export class MenuScene extends Phaser.Scene {
   shutdown(): void {
     this.ashEmitter?.destroy();
     this.ashEmitter = null;
+    this.input.keyboard?.off("keydown", this.startTutorial, this);
+    this.input.off("pointerdown", this.startTutorial, this);
   }
 }
