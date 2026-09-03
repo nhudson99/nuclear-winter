@@ -1,8 +1,8 @@
 # Nuclear Winter
 
-A top-down scavenging game set in a silent post-fallout Soviet city. Built with **Phaser 3**, **Vite**, and **TypeScript**, and shippable as a browser game, Electron desktop app, or Capacitor mobile app from the same `dist/` build.
+Title screen for a post-fallout USSR game. Built with **Phaser 3**, **Vite**, and **TypeScript**, and shippable as a browser app, Electron desktop app, or Capacitor mobile app from the same `dist/` build.
 
-## Play
+## Run
 
 | Target | Command |
 |--------|---------|
@@ -15,23 +15,12 @@ A top-down scavenging game set in a silent post-fallout Soviet city. Built with 
 
 Open the local Vite URL (default `http://localhost:5173`) for the browser target.
 
-### Controls
-
-- **Desktop:** WASD / arrow keys to move, `ESC` or **BACK** for the menu
-- **Touch:** drag on the left half of the screen as a virtual stick; tap **BEGIN** / **BACK**
-
-### Objective
-
-Collect **3 supplies**, avoid the green radiation haze, and reach the bunker marker.
-
 ## Project layout
 
 ```
 src/main.ts                 Phaser game bootstrap (1280×720, Scale.FIT)
 src/scenes/BootScene.ts     Asset loading
 src/scenes/MenuScene.ts     Full-bleed title screen
-src/scenes/GameScene.ts     Scavenging slice
-src/input/touchControls.ts  Virtual stick
 public/assets/title-screen.png
 electron/main.cjs           Desktop shell
 capacitor.config.ts         Mobile wrappers (webDir: dist)
