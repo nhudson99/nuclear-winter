@@ -65,18 +65,18 @@ export class MainPlayScene extends Phaser.Scene {
     this.input.on("pointerup", this.onPointerUp, this);
     this.input.on("pointerupoutside", this.onPointerUp, this);
 
-    // Player sprite
+    // Player sprite: head-and-shoulders token with transparent PNG alpha.
     this.player = this.physics.add.image(width / 2, height * 0.68, "gulag-prisoner");
     this.player.setDepth(2);
     this.player.setDrag(600, 600);
     this.player.setMaxVelocity(240, 240);
     this.player.setCollideWorldBounds(false);
 
-    // Scale to a consistent in-world size.
-    const desiredSpriteWidth = Math.min(44, width * 0.04);
+    const desiredSpriteWidth = Math.min(64, width * 0.055);
     const scale = desiredSpriteWidth / this.player.width;
     this.player.setScale(scale);
-    this.player.setCircle((Math.min(this.player.displayWidth, this.player.displayHeight) * 0.35) / this.player.scaleX);
+    const bodyRadius = (desiredSpriteWidth * 0.38) / this.player.scaleX;
+    this.player.setCircle(bodyRadius);
 
     this.createMansionPhysics(width, height);
 
