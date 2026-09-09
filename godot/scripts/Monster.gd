@@ -48,6 +48,7 @@ var _section_index: int = 0
 var _room_index: int = 0
 var _section_timer: float = 0.0
 var _patrol_target: Vector3 = Vector3.ZERO
+var _item_alerted: bool = false
 
 func _ready() -> void:
 	add_to_group("monster")
@@ -131,6 +132,17 @@ func configure_patrol_for_test(dwell_time: float, section_idx: int = 0) -> void:
 	_seeing_player = false
 	_near_player = false
 	_refresh_patrol_target()
+
+## Called when the player steals the objective: patrols twice as often, detects twice as far.
+func alert_item_stolen() -> void:
+	if _item_alerted:
+		return
+	_item_alerted = true
+	section_dwell_time *= 0.5
+	proximity_radius *= 2.0
+
+func is_item_alerted() -> bool:
+	return _item_alerted
 
 func _setup_health_bar() -> void:
 	_health_bar = HealthBar3D.new()

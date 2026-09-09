@@ -144,6 +144,30 @@ func _build() -> void:
 	main.add_child(camera)
 	camera.owner = main
 
+	# Objective deep in the north-west rooms; exit is the southern doorway.
+	var pickup := Area3D.new()
+	pickup.name = "PickupItem"
+	pickup.set_script(load("res://scripts/PickupItem.gd"))
+	pickup.position = Vector3(-4.0, 0.05, -5.8)
+	main.add_child(pickup)
+	pickup.owner = main
+
+	var exit_zone := Area3D.new()
+	exit_zone.name = "ExitZone"
+	exit_zone.set_script(load("res://scripts/ExitZone.gd"))
+	exit_zone.position = Vector3(0.0, 0.0, 7.6)
+	main.add_child(exit_zone)
+	exit_zone.owner = main
+
+	var exit_shape := CollisionShape3D.new()
+	exit_shape.name = "CollisionShape3D"
+	var exit_box := BoxShape3D.new()
+	exit_box.size = Vector3(4.5, 3.0, 2.4)
+	exit_shape.shape = exit_box
+	exit_shape.position = Vector3(0.0, 1.5, 0.0)
+	exit_zone.add_child(exit_shape)
+	exit_shape.owner = main
+
 	var packed := PackedScene.new()
 	if packed.pack(main) != OK:
 		push_error("Failed to pack Main")
@@ -157,5 +181,5 @@ func _build() -> void:
 		quit(1)
 		return
 
-	print("Wrote res://scenes/Main.tscn with %d furniture props + monster" % placements.size())
+	print("Wrote res://scenes/Main.tscn with %d furniture props + monster + game loop" % placements.size())
 	quit(0)

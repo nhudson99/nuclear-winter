@@ -1,5 +1,8 @@
 extends CharacterBody3D
 
+signal died
+signal item_collected
+
 @export var move_speed: float = 5.5
 @export var gravity: float = 20.0
 @export var turn_speed: float = 12.0
@@ -7,6 +10,7 @@ extends CharacterBody3D
 @export var stride_angle_deg: float = 28.0
 @export var max_health: float = 100.0
 @export var health_bar_height: float = 2.15
+@export var interact_range: float = 2.2
 
 @onready var visual: Node3D = $Humanoid
 
@@ -18,6 +22,8 @@ var _walk_phase: float = 0.0
 var health: float = 100.0
 var _health_bar: HealthBar3D
 var _alive: bool = true
+var _has_item: bool = false
+var _input_locked: bool = false
 
 func _ready() -> void:
 	add_to_group("player")
@@ -34,12 +40,15 @@ func _ready() -> void:
 	_health_bar.set_health(health, max_health)
 
 func _physics_process(delta: float) -> void:
-	if not _alive:
+	if not _alive or _input_locked:
 		velocity = Vector3.ZERO
 		_apply_gravity(delta)
 		move_and_slide()
 		_animate_walk(_walk_phase, 0.0)
 		return
+
+	if Input.is_action_just_pressed("interact"):
+		_try_interact()
 
 	var input := Vector2.ZERO
 	input.x = Input.get_action_strength("move_right") - Input.get_action_strength("move_left")
@@ -76,9 +85,39 @@ func take_damage(amount: float) -> void:
 	if health <= 0.0:
 		_alive = false
 		velocity = Vector3.ZERO
+		died.emit()
 
 func is_alive() -> bool:
 	return _alive
+
+func has_collected_item() -> bool:
+	return _has_item
+
+func lock_input() -> void:
+	_input_locked = true
+	velocity = Vector3.ZERO
+
+func _try_interact() -> void:
+	if _has_item:
+		return
+	var best: Node = null
+	var best_dist := interact_range
+	for node in get_tree().get_nodes_in_group("pickup"):
+		if node == null or not is_instance_valid(node):
+			continue
+		if not node.has_method("can_interact") or not node.can_interact(global_position):
+			continue
+		var to_item: Vector3 = (node as Node3D).global_position - global_position
+		to_item.y = 0.0
+		var dist := to_item.length()
+		if dist <= best_dist:
+			best_dist = dist
+			best = node
+	if best == null or not best.has_method("try_pickup"):
+		return
+	if best.try_pickup():
+		_has_item = true
+		item_collected.emit()
 
 func _apply_gravity(delta: float) -> void:
 	if not is_on_floor():

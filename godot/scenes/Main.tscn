@@ -1,4 +1,4 @@
-[gd_scene load_steps=13 format=3]
+[gd_scene load_steps=16 format=3]
 
 [ext_resource type="Script" path="res://scripts/Main.gd" id="1_q8u5g"]
 [ext_resource type="PackedScene" path="res://assets/maps/ussr_mansion_map.glb" id="2_lhr70"]
@@ -9,6 +9,8 @@
 [ext_resource type="PackedScene" path="res://assets/characters/humanoid_scavenger.glb" id="7_3p2gp"]
 [ext_resource type="Script" path="res://scripts/Monster.gd" id="8_cvmbd"]
 [ext_resource type="PackedScene" path="res://assets/characters/enemy_monster.glb" id="9_ft6cd"]
+[ext_resource type="Script" path="res://scripts/PickupItem.gd" id="10_pickup"]
+[ext_resource type="Script" path="res://scripts/ExitZone.gd" id="11_exit"]
 
 [sub_resource type="Environment" id="Environment_bb450"]
 background_mode = 1
@@ -24,6 +26,9 @@ height = 1.2
 [sub_resource type="CapsuleShape3D" id="CapsuleShape3D_1nqs0"]
 radius = 0.42
 height = 1.35
+
+[sub_resource type="BoxShape3D" id="BoxShape3D_exit"]
+size = Vector3(4.5, 3, 2.4)
 
 [node name="Main" type="Node3D"]
 script = ExtResource("1_q8u5g")
@@ -98,3 +103,19 @@ projection = 1
 current = true
 size = 20.0
 far = 250.0
+
+[node name="PickupItem" type="Area3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -4, 0.05, -5.8)
+script = ExtResource("10_pickup")
+
+[node name="ExitZone" type="Area3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 7.6)
+collision_layer = 0
+collision_mask = 2
+monitoring = true
+monitorable = false
+script = ExtResource("11_exit")
+
+[node name="CollisionShape3D" type="CollisionShape3D" parent="ExitZone"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 1.5, 0)
+shape = SubResource("BoxShape3D_exit")
