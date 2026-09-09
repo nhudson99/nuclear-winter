@@ -15,7 +15,7 @@ godot --path godot
 - Humanoid authored in Blender (`blender/build_humanoid.py`) → `godot/assets/characters/humanoid_scavenger.glb`
 - Monster authored in Blender (`blender/build_monster.py`) → `godot/assets/characters/enemy_monster.glb`
 - Furniture props authored in Blender (`blender/build_furniture.py`) → `godot/assets/props/{crate,wardrobe,couch}.glb`
-- Scene: `godot/scenes/Main.tscn` (isometric camera, wall/prop collision, WASD walk, monster vision chase, walkable doorways)
+- Scene: `godot/scenes/Main.tscn` (isometric camera, wall/prop collision, WASD walk, monster patrol/proximity chase, health bars, walkable doorways)
 
 ### Rebuild Blender assets
 
@@ -32,7 +32,8 @@ cd godot && /home/ubuntu/tools/godot/Godot --headless --import
 ### Gameplay notes
 
 - **Doorways**: every adjacent room is linked by an open wall gap; player and monster can walk through.
-- **Monster**: hunts when the player is inside its field of view and has clear line of sight through doorways/rooms; loses interest shortly after leaving view.
+- **Monster**: patrols the mansion in equal level sections (30s each), checking every room in the current section; detects players in a close proximity radius or via FOV + line of sight; deals 100 touch damage.
+- **Health**: player and monster both start at 100 HP with billboard health bars above their heads.
 
 ## Phaser title / tutorial shell
 
