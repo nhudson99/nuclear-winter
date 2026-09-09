@@ -25,10 +25,6 @@ export class BootScene extends Phaser.Scene {
     this.load.image("boss-crt", "assets/boss-crt.png");
     this.load.image("dialogue-panel", "assets/dialogue-panel.png");
     this.load.image("ussr-pipboy-map", "assets/ussr-pipboy-map.png");
-
-    this.load.image("mansion-floor1", "assets/mansion-floor1.png");
-    this.load.image("mansion-floor2", "assets/mansion-floor2.png");
-    this.load.image("gulag-prisoner", "assets/gulag-prisoner.png");
   }
 
   create(): void {

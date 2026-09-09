@@ -1,0 +1,5 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="128" height="128">
+  <rect width="128" height="128" fill="#1a1a16"/>
+  <circle cx="64" cy="64" r="40" fill="#8b3a2f"/>
+  <text x="64" y="74" text-anchor="middle" font-size="28" fill="#e8e2d4" font-family="sans-serif">NW</text>
+</svg>

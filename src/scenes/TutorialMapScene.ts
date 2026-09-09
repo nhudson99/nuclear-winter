@@ -1,9 +1,6 @@
 import Phaser from "phaser";
 
 export class TutorialMapScene extends Phaser.Scene {
-  private selectionRect?: Phaser.GameObjects.Rectangle;
-  private entering = false;
-
   constructor() {
     super("TutorialMap");
   }
@@ -23,53 +20,53 @@ export class TutorialMapScene extends Phaser.Scene {
       scan.fillRect(0, y, width, 1);
     }
 
-    const squareSize = Math.min(width, height) * 0.22;
-    const squareX = width * 0.52;
-    const squareY = height * 0.56;
+    this.add
+      .text(width / 2, height - 48, "3D isometric play lives in the Godot project", {
+        fontFamily: '"Russo One", sans-serif',
+        fontSize: "18px",
+        color: "#7dff7a",
+        stroke: "#001400",
+        strokeThickness: 4,
+        align: "center",
+      })
+      .setOrigin(0.5, 1)
+      .setDepth(2);
 
-    this.selectionRect = this.add
-      .rectangle(squareX, squareY, squareSize, squareSize, 0x7dff7a, 0)
-      .setStrokeStyle(6, 0x7dff7a, 1)
-      .setDepth(3)
-      .setAlpha(0.2)
-      .setInteractive({ useHandCursor: true });
+    const hint = this.add
+      .text(width - 36, height - 36, "Press any key to return", {
+        fontFamily: '"Russo One", sans-serif',
+        fontSize: "20px",
+        color: "#7dff7a",
+        stroke: "#001400",
+        strokeThickness: 4,
+      })
+      .setOrigin(1, 1)
+      .setDepth(2);
 
     this.tweens.add({
-      targets: this.selectionRect,
-      alpha: 1,
-      duration: 650,
+      targets: hint,
+      alpha: 0.25,
+      duration: 800,
       yoyo: true,
       repeat: -1,
       ease: "Sine.easeInOut",
     });
 
-    this.selectionRect.on("pointerdown", () => {
-      if (this.entering) {
-        return;
-      }
-      this.entering = true;
-
-      this.cameras.main.fadeOut(260, 2, 8, 4);
+    const advance = () => {
+      this.input.keyboard?.off("keydown", advance);
+      this.input.off("pointerdown", advance);
+      this.cameras.main.fadeOut(280, 2, 8, 4);
       this.cameras.main.once(
         Phaser.Cameras.Scene2D.Events.FADE_OUT_COMPLETE,
         () => {
-          this.scene.start("MainPlay", { mapId: 0 });
+          this.scene.start("Menu");
         },
       );
-    });
+    };
 
-    this.input.keyboard?.once("keydown-ESC", () => {
-      this.scene.start("Menu");
-    });
+    this.input.keyboard?.once("keydown", advance);
+    this.input.once("pointerdown", advance);
 
     this.cameras.main.fadeIn(350, 2, 8, 4);
-  }
-
-  shutdown(): void {
-    this.entering = false;
-    if (this.selectionRect) {
-      this.tweens.killTweensOf(this.selectionRect);
-      this.selectionRect.removeAllListeners();
-    }
   }
 }

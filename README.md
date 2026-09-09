@@ -1,44 +1,49 @@
 # Nuclear Winter
 
-Title screen and tutorial intro for a post-fallout USSR scavenging game. Built with **Phaser 3**, **Vite**, and **TypeScript**, and shippable as a browser app, Electron desktop app, or Capacitor mobile app from the same `dist/` build.
+Post-fallout USSR game. The **playable 3D isometric level** lives in the **Godot** project. The Phaser web app still hosts the title + tutorial intro.
 
-## Flow
+## Godot 3D isometric (main play)
 
-1. **Menu** — full-bleed title art; press any button
-2. **Boss briefing** — CRT portrait + rusty dialogue panel (`You want to eat? Then get to work`)
-3. **Pip-Boy map** — green CRT map of the USSR
-
-## Run
-
-| Target | Command |
-|--------|---------|
-| Browser (dev) | `npm install && npm run dev` |
-| Browser (production build) | `npm run build && npm run preview` |
-| Desktop (Electron) | `npm run desktop` |
-| Mobile sync | `npm run mobile:sync` |
-| Android Studio | `npm run mobile:android` |
-| Xcode (macOS) | `npm run mobile:ios` |
-
-Open the local Vite URL (default `http://localhost:5173`) for the browser target.
-
-## Project layout
-
-```
-src/main.ts
-src/scenes/BootScene.ts
-src/scenes/MenuScene.ts
-src/scenes/TutorialBossScene.ts
-src/scenes/TutorialMapScene.ts
-public/assets/title-screen.png
-public/assets/boss-crt.png
-public/assets/dialogue-panel.png
-public/assets/ussr-pipboy-map.png
-electron/main.cjs
-capacitor.config.ts
+```bash
+# Requires Godot 4.4+
+godot --path godot
+# or
+/home/ubuntu/tools/godot/Godot --path /workspace/godot
 ```
 
-## Packaging notes
+- Map authored in Blender (`blender/build_mansion_map.py`) and exported to `godot/assets/maps/ussr_mansion_map.glb`
+- Scene: `godot/scenes/Main.tscn` (isometric orthographic camera, trimesh wall collision, WASD / arrows)
 
-- **Web:** `vite build` writes static files to `dist/`.
-- **Desktop:** Electron loads `dist/index.html`.
-- **Mobile:** Capacitor copies `dist/` into the Android/iOS projects via `npm run mobile:sync`.
+### Rebuild the Blender map
+
+```bash
+/home/ubuntu/tools/blender/blender --background --python blender/build_mansion_map.py
+cd godot && godot --headless --import
+godot --headless -s res://tools/build_main_scene.gd
+```
+
+> Note: Blender MCP is not available in this cloud environment, so the map was authored via Blender’s Python API (headless) instead.
+
+## Phaser title / tutorial shell
+
+```bash
+npm install
+npm run dev
+```
+
+Flow: title → boss CRT briefing → Pip-Boy map (returns to menu). The old 2D mansion walk scene has been removed.
+
+## Layout
+
+```
+godot/                     Godot 4.4 isometric game
+  assets/maps/ussr_mansion_map.glb
+  scenes/Main.tscn
+  scripts/{Main,Player}.gd
+blender/
+  build_mansion_map.py
+  ussr_mansion_map.blend
+  reference_floorplan.png
+src/                       Phaser title + tutorial
+public/assets/             Title / boss / pip-boy art
+```
