@@ -13,12 +13,14 @@ godot --path godot
 
 - Map authored in Blender (`blender/build_mansion_map.py`) and exported to `godot/assets/maps/ussr_mansion_map.glb`
 - Humanoid authored in Blender (`blender/build_humanoid.py`) → `godot/assets/characters/humanoid_scavenger.glb`
-- Scene: `godot/scenes/Main.tscn` (isometric camera, wall collision, WASD walk with facing + limb swing)
+- Furniture props authored in Blender (`blender/build_furniture.py`) → `godot/assets/props/{crate,wardrobe,couch}.glb`
+- Scene: `godot/scenes/Main.tscn` (isometric camera, wall/prop collision, WASD walk with facing + limb swing)
 
-### Rebuild the Blender map
+### Rebuild the Blender map / props
 
 ```bash
 /home/ubuntu/tools/blender/blender --background --python blender/build_mansion_map.py
+/home/ubuntu/tools/blender/blender --background --python blender/build_furniture.py
 cd godot && godot --headless --import
 godot --headless -s res://tools/build_main_scene.gd
 ```
@@ -39,11 +41,14 @@ Flow: title → boss CRT briefing → Pip-Boy map (returns to menu). The old 2D 
 ```
 godot/                     Godot 4.4 isometric game
   assets/maps/ussr_mansion_map.glb
+  assets/props/{crate,wardrobe,couch}.glb
   scenes/Main.tscn
   scripts/{Main,Player}.gd
 blender/
   build_mansion_map.py
+  build_furniture.py
   ussr_mansion_map.blend
+  furniture_props.blend
   reference_floorplan.png
 src/                       Phaser title + tutorial
 public/assets/             Title / boss / pip-boy art
