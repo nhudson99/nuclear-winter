@@ -1,0 +1,7 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="app_name">Nuclear Winter</string>
+    <string name="title_activity_main">Nuclear Winter</string>
+    <string name="package_name">com.nuclearwinter.game</string>
+    <string name="custom_url_scheme">com.nuclearwinter.game</string>
+</resources>
