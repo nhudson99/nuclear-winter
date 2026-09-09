@@ -1,34 +1,31 @@
 extends SceneTree
 
-## Build a clean Main.tscn: instance GLB map + furniture props + player + iso camera.
-## Instanced PackedScenes keep owner on the instance root only (no embedded mesh bloat).
+## Build a clean Main.tscn: map + furniture + player + monster + iso camera.
+## Only top-level authored nodes get scene ownership so packed GLBs stay external.
 
 func _initialize() -> void:
 	call_deferred("_build")
 
 func _build() -> void:
 	var map_path := "res://assets/maps/ussr_mansion_map.glb"
-	if not ResourceLoader.exists(map_path):
-		push_error("Missing map: " + map_path)
-		quit(1)
-		return
-
+	var humanoid_path := "res://assets/characters/humanoid_scavenger.glb"
+	var monster_path := "res://assets/characters/enemy_monster.glb"
 	var prop_paths := {
 		"crate": "res://assets/props/crate.glb",
 		"wardrobe": "res://assets/props/wardrobe.glb",
 		"couch": "res://assets/props/couch.glb",
 	}
+
+	for path in [map_path, humanoid_path, monster_path]:
+		if not ResourceLoader.exists(path):
+			push_error("Missing: " + path)
+			quit(1)
+			return
 	for key in prop_paths:
 		if not ResourceLoader.exists(prop_paths[key]):
 			push_error("Missing prop: " + prop_paths[key])
 			quit(1)
 			return
-
-	var humanoid_path := "res://assets/characters/humanoid_scavenger.glb"
-	if not ResourceLoader.exists(humanoid_path):
-		push_error("Missing humanoid: " + humanoid_path)
-		quit(1)
-		return
 
 	var main := Node3D.new()
 	main.name = "Main"
@@ -54,8 +51,7 @@ func _build() -> void:
 	main.add_child(sun)
 	sun.owner = main
 
-	var map_scene: PackedScene = load(map_path)
-	var map_root: Node3D = map_scene.instantiate()
+	var map_root: Node3D = (load(map_path) as PackedScene).instantiate()
 	map_root.name = "MansionMap"
 	main.add_child(map_root)
 	map_root.owner = main
@@ -94,7 +90,9 @@ func _build() -> void:
 	player.set_script(load("res://scripts/Player.gd"))
 	player.collision_layer = 2
 	player.collision_mask = 1
-	player.position = Vector3(1.8, 1.1, 6.5)
+	player.position = Vector3(1.8, 0.05, 6.5)
+	main.add_child(player)
+	player.owner = main
 
 	var col := CollisionShape3D.new()
 	col.name = "CollisionShape3D"
@@ -104,15 +102,37 @@ func _build() -> void:
 	col.shape = capsule
 	col.position = Vector3(0, 0.9, 0)
 	player.add_child(col)
+	col.owner = main
 
-	var humanoid_scene: PackedScene = load(humanoid_path)
-	var humanoid: Node3D = humanoid_scene.instantiate()
+	var humanoid: Node3D = (load(humanoid_path) as PackedScene).instantiate()
 	humanoid.name = "Humanoid"
 	player.add_child(humanoid)
-	main.add_child(player)
-	player.owner = main
-	col.owner = main
 	humanoid.owner = main
+
+	var monster := CharacterBody3D.new()
+	monster.name = "Monster"
+	monster.set_script(load("res://scripts/Monster.gd"))
+	monster.collision_layer = 4
+	monster.collision_mask = 1
+	monster.position = Vector3(0.0, 0.05, -6.2)
+	main.add_child(monster)
+	monster.owner = main
+
+	var mcol := CollisionShape3D.new()
+	mcol.name = "CollisionShape3D"
+	var mcapsule := CapsuleShape3D.new()
+	mcapsule.radius = 0.42
+	mcapsule.height = 1.35
+	mcol.shape = mcapsule
+	mcol.position = Vector3(0, 1.0, 0)
+	monster.add_child(mcol)
+	mcol.owner = main
+
+	var monster_mesh: Node3D = (load(monster_path) as PackedScene).instantiate()
+	monster_mesh.name = "MonsterMesh"
+	monster_mesh.rotation.y = PI
+	monster.add_child(monster_mesh)
+	monster_mesh.owner = main
 
 	var camera := Camera3D.new()
 	camera.name = "IsoCamera"
@@ -137,5 +157,5 @@ func _build() -> void:
 		quit(1)
 		return
 
-	print("Wrote res://scenes/Main.tscn with %d furniture props" % placements.size())
+	print("Wrote res://scenes/Main.tscn with %d furniture props + monster" % placements.size())
 	quit(0)

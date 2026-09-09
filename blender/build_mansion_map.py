@@ -1,7 +1,7 @@
 """
 Build a simple isometric-style mansion floorplan in Blender matching the
 reference blockout: white walls, mint floor, tapered outer footprint,
-multi-room interior with doorway openings.
+multi-room interior with doorway openings and open door props.
 """
 
 from __future__ import annotations
@@ -19,6 +19,8 @@ PNG_OUT = Path("/opt/cursor/artifacts/blender_mansion_map.png")
 WALL_H = 2.4
 WALL_T = 0.28
 FLOOR_Z = 0.0
+DOOR = 2.2  # doorway clear width (empty gap; no door mesh)
+
 
 
 def clear_scene() -> None:
@@ -90,27 +92,66 @@ def wall_segment(
     return obj
 
 
+def wall_with_door(
+    name: str,
+    x0: float,
+    y0: float,
+    x1: float,
+    y1: float,
+    mat,
+    door_center: float,
+    door_width: float = DOOR,
+) -> None:
+    """
+    Build a straight wall with a doorway gap (no door mesh).
+    door_center is the coordinate along the wall's long axis
+    (x for horizontal walls, y for vertical walls).
+    """
+    dx = x1 - x0
+    dy = y1 - y0
+    length = math.hypot(dx, dy)
+    if length < 1e-4:
+        return
+    # Parameterize by distance from start.
+    if abs(dx) >= abs(dy):
+        t_door = (door_center - x0) / dx if abs(dx) > 1e-6 else 0.5
+    else:
+        t_door = (door_center - y0) / dy if abs(dy) > 1e-6 else 0.5
+    t_door = max(0.0, min(1.0, t_door))
+    half = (door_width * 0.5) / length
+    t0 = max(0.0, t_door - half)
+    t1 = min(1.0, t_door + half)
+
+    def pt(t: float) -> tuple[float, float]:
+        return (x0 + dx * t, y0 + dy * t)
+
+    if t0 > 0.02:
+        ax, ay = pt(0.0)
+        bx, by = pt(t0)
+        wall_segment(f"{name}_A", ax, ay, bx, by, mat)
+    if t1 < 0.98:
+        ax, ay = pt(t1)
+        bx, by = pt(1.0)
+        wall_segment(f"{name}_B", ax, ay, bx, by, mat)
+
+
 def build_map() -> None:
     wall_mat = make_mat("WallWhite", (0.92, 0.92, 0.90, 1.0))
     floor_mat = make_mat("FloorMint", (0.55, 0.78, 0.62, 1.0))
     ground_mat = make_mat("OutsideBlue", (0.45, 0.62, 0.82, 1.0))
 
-    # Footprint roughly matching reference (meters). Origin at center.
-    # Outer outline (clockwise), tapered at +Y (far end).
-    #       (-4, 8)----(-1.5, 9)----(1.5, 9)----(4, 8)
-    #         |                                   |
-    #       (-6,-1)                             (6,-1)
-    #         |                                   |
-    #       (-6,-8)------------(0,-8)------------(6,-8)  with door gap near (2,-8)
+    # Rooms:
+    #   Bottom: L / R
+    #   Middle: L / C / R
+    #   Top:    L / C / R
+    # Doorway gaps connect every adjacent room so the whole map is walkable.
 
-    # Floor slab under building
     add_box("Floor", (0, 0.5, -0.05), (12.4, 18.2, 0.1), floor_mat)
-    # Outside backdrop plane for looks
     add_box("Outside", (0, 0.5, -0.2), (24, 28, 0.05), ground_mat)
 
     walls: list[tuple[str, float, float, float, float]] = []
 
-    # Outer perimeter pieces (with bottom entrance gap on the right-center)
+    # Outer perimeter (entrance gap on south wall)
     walls += [
         ("Outer_SW", -6.0, -8.0, -6.0, -1.0),
         ("Outer_NW", -6.0, -1.0, -6.0, 6.0),
@@ -121,55 +162,36 @@ def build_map() -> None:
         ("Outer_NER", 4.0, 8.0, 6.0, 6.0),
         ("Outer_SE", 6.0, 6.0, 6.0, -1.0),
         ("Outer_SSE", 6.0, -1.0, 6.0, -8.0),
-        # Bottom wall with entrance gap around x=1.2 .. 2.6
         ("Outer_S_L", -6.0, -8.0, 1.0, -8.0),
         ("Outer_S_R", 2.8, -8.0, 6.0, -8.0),
     ]
 
-    # Horizontal dividers (three rows)
-    # Between bottom and middle rooms: y = -1
-    walls += [
-        ("H_Mid_L", -6.0, -1.0, -0.2, -1.0),
-        ("H_Mid_R", 0.2, -1.0, 6.0, -1.0),
-    ]
-    # Between middle and top rooms: y = 4.2 with center chamfer feel via gaps
-    walls += [
-        ("H_Top_L", -6.0, 4.2, -2.2, 4.2),
-        ("H_Top_M", -1.0, 4.2, 1.0, 4.2),
-        ("H_Top_R", 2.2, 4.2, 6.0, 4.2),
-    ]
-
-    # Vertical dividers
-    # Bottom row split at x=0
-    walls += [
-        ("V_Bot", 0.0, -8.0, 0.0, -1.0),
-    ]
-    # Middle row splits at x=-2.2 and x=2.2, leaving a center room
-    walls += [
-        ("V_Mid_L", -2.2, -1.0, -2.2, 4.2),
-        ("V_Mid_R", 2.2, -1.0, 2.2, 4.2),
-    ]
-    # Top row splits
-    walls += [
-        ("V_Top_L", -2.2, 4.2, -2.2, 8.2),
-        ("V_Top_R", 2.2, 4.2, 2.2, 8.2),
-    ]
-
-    # Center-middle room chamfer walls (angled corners at top of center room)
-    walls += [
-        ("Chamfer_L", -2.2, 3.0, -1.0, 4.2),
-        ("Chamfer_R", 2.2, 3.0, 1.0, 4.2),
-    ]
-
-    # Doorway openings into middle/top via short gaps already present.
-    # Add short interior stubs so rooms feel enclosed but walkable.
-    walls += [
-        ("DoorStub_BotMid_L", -0.9, -1.0, -0.2, -1.0),
-        ("DoorStub_BotMid_R", 0.2, -1.0, 0.9, -1.0),
-    ]
-
     for name, x0, y0, x1, y1 in walls:
         wall_segment(name, x0, y0, x1, y1, wall_mat)
+
+    doorway_specs: list[tuple[str, float, float, float, float, float]] = [
+        # Bottom L <-> Bottom R
+        ("V_Bot", 0.0, -8.0, 0.0, -1.0, -4.5),
+        # Bottom <-> Middle
+        # H_Mid_C door is offset from x=0 so V_Bot can T-junction into solid wall
+        # instead of leaving a wall stub that looks like a door in the opening.
+        ("H_Mid_L", -6.0, -1.0, -2.2, -1.0, -4.0),
+        ("H_Mid_C", -2.2, -1.0, 2.2, -1.0, 1.0),
+        ("H_Mid_R", 2.2, -1.0, 6.0, -1.0, 4.0),
+        # Middle L <-> C and C <-> R
+        ("V_Mid_L", -2.2, -1.0, -2.2, 4.2, 1.5),
+        ("V_Mid_R", 2.2, -1.0, 2.2, 4.2, 1.5),
+        # Middle <-> Top
+        ("H_Top_L", -6.0, 4.2, -2.2, 4.2, -4.0),
+        ("H_Top_C", -2.2, 4.2, 2.2, 4.2, 0.0),
+        ("H_Top_R", 2.2, 4.2, 6.0, 4.2, 4.0),
+        # Top L <-> C and C <-> R
+        ("V_Top_L", -2.2, 4.2, -2.2, 8.6, 6.4),
+        ("V_Top_R", 2.2, 4.2, 2.2, 8.6, 6.4),
+    ]
+
+    for name, x0, y0, x1, y1, door_center in doorway_specs:
+        wall_with_door(name, x0, y0, x1, y1, wall_mat, door_center=door_center)
 
     # Lighting similar to reference
     bpy.ops.object.light_add(type="AREA", location=(0, -4, 12))
@@ -214,17 +236,18 @@ def export_assets() -> None:
         export_yup=True,
     )
 
-    # Preview render
+    # Preview render (Cycles CPU — works without GPU/EGL in cloud agents)
     scene = bpy.context.scene
-    scene.render.engine = "BLENDER_EEVEE_NEXT" if "BLENDER_EEVEE_NEXT" in dir(bpy.types) or True else "BLENDER_EEVEE"
-    try:
-        scene.render.engine = "BLENDER_EEVEE_NEXT"
-    except Exception:
-        scene.render.engine = "CYCLES"
+    scene.render.engine = "CYCLES"
+    scene.cycles.device = "CPU"
+    scene.cycles.samples = 24
     scene.render.resolution_x = 1280
     scene.render.resolution_y = 720
     scene.render.filepath = str(PNG_OUT)
-    bpy.ops.render.render(write_still=True)
+    try:
+        bpy.ops.render.render(write_still=True)
+    except Exception as exc:
+        print(f"Preview render skipped: {exc}")
 
 
 def main() -> None:
