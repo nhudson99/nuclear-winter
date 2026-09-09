@@ -12,7 +12,8 @@ godot --path godot
 ```
 
 - Map authored in Blender (`blender/build_mansion_map.py`) and exported to `godot/assets/maps/ussr_mansion_map.glb`
-- Scene: `godot/scenes/Main.tscn` (isometric orthographic camera, trimesh wall collision, WASD / arrows)
+- Humanoid authored in Blender (`blender/build_humanoid.py`) → `godot/assets/characters/humanoid_scavenger.glb`
+- Scene: `godot/scenes/Main.tscn` (isometric camera, wall collision, WASD walk with facing + limb swing)
 
 ### Rebuild the Blender map
 
