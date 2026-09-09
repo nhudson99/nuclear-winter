@@ -172,8 +172,10 @@ def build_map() -> None:
         # Bottom L <-> Bottom R
         ("V_Bot", 0.0, -8.0, 0.0, -1.0, -4.5),
         # Bottom <-> Middle
+        # H_Mid_C door is offset from x=0 so V_Bot can T-junction into solid wall
+        # instead of leaving a wall stub that looks like a door in the opening.
         ("H_Mid_L", -6.0, -1.0, -2.2, -1.0, -4.0),
-        ("H_Mid_C", -2.2, -1.0, 2.2, -1.0, 0.0),
+        ("H_Mid_C", -2.2, -1.0, 2.2, -1.0, 1.0),
         ("H_Mid_R", 2.2, -1.0, 6.0, -1.0, 4.0),
         # Middle L <-> C and C <-> R
         ("V_Mid_L", -2.2, -1.0, -2.2, 4.2, 1.5),
@@ -189,10 +191,6 @@ def build_map() -> None:
 
     for name, x0, y0, x1, y1, door_center in doorway_specs:
         wall_with_door(name, x0, y0, x1, y1, wall_mat, door_center=door_center)
-
-    # Angled accents on middle-center — stop short of the top center doorway
-    wall_segment("Chamfer_L", -2.2, 2.6, -1.35, 3.7, wall_mat)
-    wall_segment("Chamfer_R", 2.2, 2.6, 1.35, 3.7, wall_mat)
 
     # Lighting similar to reference
     bpy.ops.object.light_add(type="AREA", location=(0, -4, 12))
