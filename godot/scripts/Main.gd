@@ -30,12 +30,17 @@ func _snap_camera() -> void:
 func _ensure_collision(node: Node) -> void:
 	if node is MeshInstance3D:
 		var mi := node as MeshInstance3D
-		var has_static := false
-		for child in mi.get_children():
-			if child is StaticBody3D:
-				has_static = true
-				break
-		if not has_static and mi.mesh != null:
+		# Open door leaves are visual only so the doorway stays walkable.
+		if not _is_door_leaf(mi) and not _has_static_body(mi) and mi.mesh != null:
 			mi.create_trimesh_collision()
 	for child in node.get_children():
 		_ensure_collision(child)
+
+func _has_static_body(mi: MeshInstance3D) -> bool:
+	for child in mi.get_children():
+		if child is StaticBody3D:
+			return true
+	return false
+
+func _is_door_leaf(mi: MeshInstance3D) -> bool:
+	return String(mi.name).ends_with("_Leaf")

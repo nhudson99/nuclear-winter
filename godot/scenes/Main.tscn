@@ -1,9 +1,11 @@
-[gd_scene load_steps=6 format=3]
+[gd_scene load_steps=8 format=3]
 
 [ext_resource type="Script" path="res://scripts/Main.gd" id="1_main"]
 [ext_resource type="PackedScene" uid="uid://bfiwy3xi160yw" path="res://assets/maps/ussr_mansion_map.glb" id="2_map"]
 [ext_resource type="Script" path="res://scripts/Player.gd" id="3_player"]
 [ext_resource type="PackedScene" uid="uid://c0inof44ms4xf" path="res://assets/characters/humanoid_scavenger.glb" id="4_humanoid"]
+[ext_resource type="Script" path="res://scripts/Monster.gd" id="5_monster"]
+[ext_resource type="PackedScene" uid="uid://bbugumafdyni0" path="res://assets/characters/enemy_monster.glb" id="6_monster_mesh"]
 
 [sub_resource type="Environment" id="Environment_1"]
 background_mode = 1
@@ -12,9 +14,13 @@ ambient_light_source = 1
 ambient_light_color = Color(0.78, 0.82, 0.86, 1)
 ambient_light_energy = 0.7
 
-[sub_resource type="CapsuleShape3D" id="CapsuleShape3D_1"]
+[sub_resource type="CapsuleShape3D" id="CapsuleShape3D_player"]
 radius = 0.35
 height = 1.2
+
+[sub_resource type="CapsuleShape3D" id="CapsuleShape3D_monster"]
+radius = 0.42
+height = 1.35
 
 [node name="Main" type="Node3D"]
 script = ExtResource("1_main")
@@ -30,16 +36,29 @@ shadow_enabled = true
 [node name="MansionMap" parent="." instance=ExtResource("2_map")]
 
 [node name="Player" type="CharacterBody3D" parent="."]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 1.8, 1.1, 6.5)
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 1.8, 0.05, 6.5)
 collision_layer = 2
 collision_mask = 1
 script = ExtResource("3_player")
 
 [node name="CollisionShape3D" type="CollisionShape3D" parent="Player"]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.9, 0)
-shape = SubResource("CapsuleShape3D_1")
+shape = SubResource("CapsuleShape3D_player")
 
 [node name="Humanoid" parent="Player" instance=ExtResource("4_humanoid")]
+
+[node name="Monster" type="CharacterBody3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.05, -6.2)
+collision_layer = 4
+collision_mask = 1
+script = ExtResource("5_monster")
+
+[node name="CollisionShape3D" type="CollisionShape3D" parent="Monster"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 1, 0)
+shape = SubResource("CapsuleShape3D_monster")
+
+[node name="MonsterMesh" parent="Monster" instance=ExtResource("6_monster_mesh")]
+transform = Transform3D(-1, 0, 0, 0, 1, 0, 0, 0, -1, 0, 0, 0)
 
 [node name="IsoCamera" type="Camera3D" parent="."]
 projection = 1

@@ -15,6 +15,7 @@ var pivot_leg_r: Node3D
 var _walk_phase: float = 0.0
 
 func _ready() -> void:
+	add_to_group("player")
 	pivot_arm_l = _find_node_by_name(visual, "Pivot_Arm_L") as Node3D
 	pivot_arm_r = _find_node_by_name(visual, "Pivot_Arm_R") as Node3D
 	pivot_leg_l = _find_node_by_name(visual, "Pivot_Leg_L") as Node3D
