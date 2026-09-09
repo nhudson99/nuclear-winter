@@ -122,6 +122,16 @@ func get_section_rooms(section_idx: int) -> Array:
 		return []
 	return _sections[section_idx]
 
+func configure_patrol_for_test(dwell_time: float, section_idx: int = 0) -> void:
+	section_dwell_time = dwell_time
+	_section_timer = 0.0
+	_section_index = clampi(section_idx, 0, maxi(_sections.size() - 1, 0))
+	_room_index = 0
+	_time_since_seen = 999.0
+	_seeing_player = false
+	_near_player = false
+	_refresh_patrol_target()
+
 func _setup_health_bar() -> void:
 	_health_bar = HealthBar3D.new()
 	_health_bar.name = "HealthBar"

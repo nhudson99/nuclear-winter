@@ -27,8 +27,8 @@ func _run() -> void:
 	var bars_ok := player_bar != null and monster_bar != null
 	print("health_bars_ok=", bars_ok)
 
-	var hp_ok := is_equal_approx(float(player.get("health")), 100.0) and is_equal_approx(float(monster.get("health")), 100.0)
-	print("starting_hp_ok=", hp_ok, " player=", player.get("health"), " monster=", monster.get("health"))
+	var hp_ok := is_equal_approx(float(player.health), 100.0) and is_equal_approx(float(monster.health), 100.0)
+	print("starting_hp_ok=", hp_ok, " player=", player.health, " monster=", monster.health)
 
 	# Walk north through the center doors toward the monster.
 	player.set_physics_process(false)
@@ -45,57 +45,88 @@ func _run() -> void:
 	var after_walk := player.global_position
 	var moved_north := after_walk.z < start.z - 3.5
 	print("door_walk_ok=", moved_north, " start_z=", start.z, " after_z=", after_walk.z)
-	player.set_physics_process(true)
 
-	# Proximity chase: place player behind the monster (outside FOV) but inside radius.
-	player.global_position = Vector3(0.0, 0.05, -8.4)
-	monster.global_position = Vector3(0.0, 0.05, -6.2)
+	# Proximity chase: player beside the monster (outside FOV cone) in open mid room.
+	monster.touch_damage = 0.0
+	monster.global_position = Vector3(0.0, 0.05, 0.5)
+	player.global_position = Vector3(2.4, 0.05, 0.5)
 	var mesh: Node3D = monster.get_node("MonsterMesh")
-	# Face north (-Z) so player behind is outside FOV.
+	# Face north (-Z); player is due east → outside 75° FOV, inside proximity radius.
 	mesh.rotation.y = 0.0
+	monster._time_since_seen = 999.0
 	player.velocity = Vector3.ZERO
 	monster.velocity = Vector3.ZERO
 	var prox_start := monster.global_position
-	for i in 75:
+	var prox_player_start := player.global_position
+	for i in 45:
 		await create_timer(0.033).timeout
 	var prox_after := monster.global_position
-	var proximity_chased := prox_after.distance_to(player.global_position) < prox_start.distance_to(player.global_position) - 0.4
-	print("proximity_chase_ok=", proximity_chased, " start_dist=", prox_start.distance_to(player.global_position), " after_dist=", prox_after.distance_to(player.global_position))
+	var proximity_chased := prox_after.distance_to(prox_player_start) < prox_start.distance_to(prox_player_start) - 0.5
+	print(
+		"proximity_chase_ok=",
+		proximity_chased,
+		" start_dist=",
+		prox_start.distance_to(prox_player_start),
+		" after_dist=",
+		prox_after.distance_to(prox_player_start)
+	)
 
-	# Touch damage: place overlapping, wait one physics tick.
-	player.global_position = Vector3(0.0, 0.05, -6.0)
+	# Touch damage: approach from outside the touch radius so body_entered fires.
+	monster.set_physics_process(false)
+	monster.touch_damage = 100.0
+	player._alive = true
+	player.health = 100.0
+	if player_bar and player_bar.has_method("set_health"):
+		player_bar.set_health(100.0, 100.0)
 	monster.global_position = Vector3(0.0, 0.05, -6.0)
-	player.set("health", 100.0)
-	if player.has_method("take_damage") == false:
-		push_error("Player missing take_damage")
-		quit(1)
-		return
-	# Force re-entry by toggling positions slightly across frames.
-	await create_timer(0.1).timeout
-	player.global_position = Vector3(0.2, 0.05, -6.0)
-	await create_timer(0.25).timeout
-	var touch_ok := float(player.get("health")) <= 0.0 or not bool(player.call("is_alive"))
-	print("touch_damage_ok=", touch_ok, " player_hp=", player.get("health"))
+	player.global_position = Vector3(3.0, 0.05, -6.0)
+	await create_timer(0.15).timeout
+	player.global_position = Vector3(0.15, 0.05, -6.0)
+	await create_timer(0.35).timeout
+	var touch_ok: bool = float(player.health) <= 0.0 or not player.is_alive()
+	print("touch_damage_ok=", touch_ok, " player_hp=", player.health)
 
-	# Section patrol: hide player far away, shorten dwell, confirm section advance + room targets.
+	# Section patrol: revive/hide player, shorten dwell, confirm section advance.
+	player._alive = true
+	player.health = 100.0
 	player.global_position = Vector3(20.0, 0.05, 20.0)
 	monster.global_position = Vector3(0.0, 0.05, -6.2)
-	monster.set("section_dwell_time", 1.5)
-	monster.set("_section_timer", 0.0)
-	monster.set("_section_index", 0)
-	monster.set("_room_index", 0)
-	monster.call("_refresh_patrol_target")
-	var section_start: int = int(monster.call("get_current_section"))
-	var rooms_in_start: Array = monster.call("get_section_rooms", section_start)
+	monster.configure_patrol_for_test(1.0, 0)
+	print("patrol_setup dwell=", monster.section_dwell_time, " timer=", monster._section_timer)
+	monster.set_physics_process(true)
+	var section_start: int = monster.get_current_section()
+	var rooms_in_start: Array = monster.get_section_rooms(section_start)
 	var rooms_ok := rooms_in_start.size() >= 1
 	print("section_rooms_ok=", rooms_ok, " section=", section_start, " rooms=", rooms_in_start.size())
 	var patrol_start := monster.global_position
-	await create_timer(2.0).timeout
-	var section_after: int = int(monster.call("get_current_section"))
+	await create_timer(1.6).timeout
+	var section_after: int = monster.get_current_section()
 	var section_advanced := section_after != section_start
 	var patrol_moved := monster.global_position.distance_to(patrol_start) > 0.35
-	print("section_patrol_ok=", section_advanced and patrol_moved, " from=", section_start, " to=", section_after, " moved=", patrol_moved)
+	print(
+		"section_patrol_ok=",
+		section_advanced and patrol_moved,
+		" from=",
+		section_start,
+		" to=",
+		section_after,
+		" moved=",
+		patrol_moved,
+		" timer=",
+		monster._section_timer,
+		" dwell=",
+		monster.section_dwell_time
+	)
 
-	var ok := bars_ok and hp_ok and moved_north and proximity_chased and touch_ok and rooms_ok and section_advanced and patrol_moved
+	var ok: bool = (
+		bars_ok
+		and hp_ok
+		and moved_north
+		and proximity_chased
+		and touch_ok
+		and rooms_ok
+		and section_advanced
+		and patrol_moved
+	)
 	print("SMOKE_RESULT=", ok)
 	quit(0 if ok else 2)
