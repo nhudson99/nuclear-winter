@@ -19,7 +19,8 @@ PNG_OUT = Path("/opt/cursor/artifacts/blender_mansion_map.png")
 WALL_H = 2.4
 WALL_T = 0.28
 FLOOR_Z = 0.0
-DOOR = 1.8  # doorway clear width (fits capsule player + monster)
+DOOR = 2.2  # doorway clear width (empty gap; no door mesh)
+
 
 
 def clear_scene() -> None:
