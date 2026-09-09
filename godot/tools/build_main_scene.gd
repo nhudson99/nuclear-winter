@@ -1,6 +1,6 @@
 extends SceneTree
 
-## Build a clean Main.tscn: instance GLB map + player + monster + iso camera.
+## Build a clean Main.tscn: map + furniture + player + monster + iso camera.
 ## Only top-level authored nodes get scene ownership so packed GLBs stay external.
 
 func _initialize() -> void:
@@ -10,9 +10,20 @@ func _build() -> void:
 	var map_path := "res://assets/maps/ussr_mansion_map.glb"
 	var humanoid_path := "res://assets/characters/humanoid_scavenger.glb"
 	var monster_path := "res://assets/characters/enemy_monster.glb"
+	var prop_paths := {
+		"crate": "res://assets/props/crate.glb",
+		"wardrobe": "res://assets/props/wardrobe.glb",
+		"couch": "res://assets/props/couch.glb",
+	}
+
 	for path in [map_path, humanoid_path, monster_path]:
 		if not ResourceLoader.exists(path):
 			push_error("Missing: " + path)
+			quit(1)
+			return
+	for key in prop_paths:
+		if not ResourceLoader.exists(prop_paths[key]):
+			push_error("Missing prop: " + prop_paths[key])
 			quit(1)
 			return
 
@@ -44,6 +55,35 @@ func _build() -> void:
 	map_root.name = "MansionMap"
 	main.add_child(map_root)
 	map_root.owner = main
+
+	var furniture := Node3D.new()
+	furniture.name = "Furniture"
+	main.add_child(furniture)
+	furniture.owner = main
+
+	# Placements in Godot space (glTF Y-up): Blender +Y -> Godot -Z.
+	# Southern entrance ~ z=+8; northern tip ~ z=-9.
+	var placements: Array = [
+		{"name": "Crate_Entrance", "prop": "crate", "pos": Vector3(4.6, 0.0, 6.2), "yaw": 18.0},
+		{"name": "Crate_SW", "prop": "crate", "pos": Vector3(-4.7, 0.0, 5.4), "yaw": -12.0},
+		{"name": "Crate_MidWest", "prop": "crate", "pos": Vector3(-4.5, 0.0, -0.8), "yaw": 35.0},
+		{"name": "Crate_TopEast", "prop": "crate", "pos": Vector3(4.4, 0.0, -6.2), "yaw": -25.0},
+		{"name": "Wardrobe_East", "prop": "wardrobe", "pos": Vector3(5.35, 0.0, -2.0), "yaw": -90.0},
+		{"name": "Wardrobe_West", "prop": "wardrobe", "pos": Vector3(-5.35, 0.0, 3.5), "yaw": 90.0},
+		{"name": "Wardrobe_North", "prop": "wardrobe", "pos": Vector3(-0.1, 0.0, -8.2), "yaw": 180.0},
+		{"name": "Couch_Center", "prop": "couch", "pos": Vector3(0.0, 0.0, -2.8), "yaw": 0.0},
+		{"name": "Couch_SE", "prop": "couch", "pos": Vector3(3.2, 0.0, 2.2), "yaw": 180.0},
+		{"name": "Couch_SW", "prop": "couch", "pos": Vector3(-3.0, 0.0, 3.8), "yaw": 90.0},
+	]
+
+	for item in placements:
+		var scene: PackedScene = load(prop_paths[item["prop"]])
+		var node: Node3D = scene.instantiate()
+		node.name = item["name"]
+		node.position = item["pos"]
+		node.rotation_degrees = Vector3(0.0, item["yaw"], 0.0)
+		furniture.add_child(node)
+		node.owner = main
 
 	var player := CharacterBody3D.new()
 	player.name = "Player"
@@ -99,6 +139,8 @@ func _build() -> void:
 	camera.projection = Camera3D.PROJECTION_ORTHOGONAL
 	camera.size = 20.0
 	camera.current = true
+	camera.near = 0.05
+	camera.far = 250.0
 	main.add_child(camera)
 	camera.owner = main
 
@@ -115,5 +157,5 @@ func _build() -> void:
 		quit(1)
 		return
 
-	print("Wrote res://scenes/Main.tscn")
+	print("Wrote res://scenes/Main.tscn with %d furniture props + monster" % placements.size())
 	quit(0)

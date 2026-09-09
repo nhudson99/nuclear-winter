@@ -10,6 +10,9 @@ extends Node3D
 
 func _ready() -> void:
 	_ensure_collision(map_root)
+	var furniture := get_node_or_null("Furniture")
+	if furniture:
+		_ensure_collision(furniture)
 	camera.projection = Camera3D.PROJECTION_ORTHOGONAL
 	camera.size = 20.0
 	camera.near = 0.05
