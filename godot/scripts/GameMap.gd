@@ -3,7 +3,7 @@ extends Control
 const MAP_TEX := preload("res://assets/ui/ussr-pipboy-map.png")
 
 # Western European-USSR marker on the Pip-Boy map (normalized viewport).
-const LEVEL_1_ANCHOR := Vector2(0.188, 0.555)
+const LEVEL_1_ANCHOR := Vector2(0.195, 0.505)
 
 var _advancing: bool = false
 var _level_button: Button
@@ -37,7 +37,7 @@ func _ready() -> void:
 
 	var header := Label.new()
 	header.name = "Header"
-	header.text = "SELECT OPERATION"
+	header.text = "SELECT  OPERATION"
 	header.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	header.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	UiStyle.apply_label(header, 22, UiStyle.PIP_GREEN, Color(0.0, 0.08, 0.0), 4)

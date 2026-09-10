@@ -13,15 +13,26 @@ const CRT_STROKE := Color(0.08, 0.08, 0.063)
 
 const FONT := preload("res://assets/ui/RussoOne-Regular.ttf")
 
+static var _menu_font: FontVariation
+
+
+static func menu_font() -> Font:
+	if _menu_font == null:
+		_menu_font = FontVariation.new()
+		_menu_font.base_font = FONT
+		_menu_font.spacing_glyph = 1
+		_menu_font.spacing_space = 16
+	return _menu_font
+
 
 static func apply_label(
 	label: Label,
 	size_px: int,
 	color: Color,
 	outline: Color = STROKE,
-	outline_px: int = 4
+	outline_px: int = 3
 ) -> void:
-	label.add_theme_font_override("font", FONT)
+	label.add_theme_font_override("font", menu_font())
 	label.add_theme_font_size_override("font_size", size_px)
 	label.add_theme_color_override("font_color", color)
 	label.add_theme_color_override("font_outline_color", outline)
@@ -29,7 +40,7 @@ static func apply_label(
 
 
 static func apply_button_font(button: Button, size_px: int, color: Color, outline: Color, outline_px: int) -> void:
-	button.add_theme_font_override("font", FONT)
+	button.add_theme_font_override("font", menu_font())
 	button.add_theme_font_size_override("font_size", size_px)
 	button.add_theme_color_override("font_color", color)
 	button.add_theme_color_override("font_hover_color", color.lightened(0.2))

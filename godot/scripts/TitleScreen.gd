@@ -32,10 +32,10 @@ func _ready() -> void:
 	_prompt.vertical_alignment = VERTICAL_ALIGNMENT_BOTTOM
 	add_child(_prompt)
 	_prompt.set_anchors_preset(PRESET_BOTTOM_LEFT)
-	_prompt.offset_left = 36
-	_prompt.offset_top = -56
-	_prompt.offset_right = 420
-	_prompt.offset_bottom = -16
+	_prompt.offset_left = 28
+	_prompt.offset_top = -42
+	_prompt.offset_right = 480
+	_prompt.offset_bottom = -8
 
 
 func _process(delta: float) -> void:
