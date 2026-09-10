@@ -7,7 +7,9 @@ func _run() -> void:
 	var packed: PackedScene = load("res://scenes/Main.tscn")
 	var main: Node = packed.instantiate()
 	root.add_child(main)
-	await create_timer(0.8).timeout
+	if not main.is_level_ready():
+		await main.level_ready
+	await create_timer(0.4).timeout
 	var img: Image = get_root().get_viewport().get_texture().get_image()
 	# Dummy renderer may not produce pixels; still attempt.
 	var out := ProjectSettings.globalize_path("res://../artifacts_godot_main.png")

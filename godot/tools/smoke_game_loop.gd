@@ -13,7 +13,8 @@ func _run() -> void:
 		return
 	var main: Node3D = packed.instantiate()
 	root.add_child(main)
-	await create_timer(0.35).timeout
+	if not main.is_level_ready():
+		await main.level_ready
 
 	var player: CharacterBody3D = main.get_node("Player")
 	var monster: CharacterBody3D = main.get_node("Monster")
@@ -81,13 +82,16 @@ func _run() -> void:
 	await create_timer(0.1).timeout
 	main = packed.instantiate()
 	root.add_child(main)
-	await create_timer(0.35).timeout
+	if not main.is_level_ready():
+		await main.level_ready
 	player = main.get_node("Player")
 	monster = main.get_node("Monster")
 	monster.set_physics_process(false)
 	monster.touch_damage = 100.0
-	player.global_position = Vector3(0.0, 0.05, 0.0)
-	monster.global_position = Vector3(0.0, 0.05, 0.0)
+	# Overlap them in the start room of the freshly generated layout.
+	var start: Vector3 = main.get_layout()["start"]
+	player.global_position = start
+	monster.global_position = start
 	# Re-fire touch after placing bodies on top of each other.
 	var touch: Area3D = monster.get_node_or_null("TouchArea")
 	if touch:
