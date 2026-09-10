@@ -5,10 +5,8 @@ Post-fallout USSR game. The **full Godot flow** is title → fat aristocrat brie
 ## Godot (title, briefing, map, Level 1)
 
 ```bash
-# Requires Godot 4.4+
+# Requires Godot 4.4+ (the Cloud Agent environment pins 4.4.1-stable)
 godot --path godot
-# or
-/home/ubuntu/tools/godot/Godot --path /workspace/godot
 ```
 
 - Room modules authored in Blender (`blender/build_rooms.py`) → `godot/assets/rooms/room_{bedroom,living_room,office,storage}.glb`
@@ -33,20 +31,21 @@ godot --path godot
 ### Rebuild Blender assets
 
 ```bash
-/home/ubuntu/tools/blender/blender --background --python blender/build_rooms.py
-/home/ubuntu/tools/blender/blender --background --python blender/build_monster.py
-cd godot && /home/ubuntu/tools/godot/Godot --headless --import
-/home/ubuntu/tools/godot/Godot --headless -s res://tools/build_main_scene.gd
+# Requires Blender 4.2+ (the Cloud Agent environment pins 4.5.13 LTS)
+blender --background --python blender/build_rooms.py
+blender --background --python blender/build_monster.py
+cd godot && godot --headless --import
+godot --headless -s res://tools/build_main_scene.gd
 ```
 
-> Note: Blender MCP is not available in this cloud environment, so meshes are authored via Blender’s Python API (headless) instead.
+> Note: Blender MCP is not available in this cloud environment, so meshes are authored via Blender’s Python API (headless) instead. Preview renders use Cycles on CPU because the environment has no GPU.
 
 ### Headless checks
 
 ```bash
 cd godot
 for t in smoke_procgen smoke_monster_doors smoke_game_loop smoke_flow_screens; do
-  /home/ubuntu/tools/godot/Godot --headless -s res://tools/$t.gd
+  godot --headless -s res://tools/$t.gd
 done
 ```
 
