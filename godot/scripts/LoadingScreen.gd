@@ -48,7 +48,7 @@ func snap_to_end() -> void:
 	_shown = 1.0
 
 
-func fade_out(duration: float = 0.35) -> void:
+func fade_out(duration: float = 0.6) -> void:
 	var root := get_node_or_null("Root") as Control
 	if root == null:
 		queue_free()
