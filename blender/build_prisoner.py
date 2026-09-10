@@ -776,51 +776,62 @@ def make_action(rig: bpy.types.Object, name: str, frames: int, poser, loop: bool
 
 
 def idle_pose(rig):
+    """Breathing plus a slow weight shift, at twice the breathing period."""
     def poser(t: float):
         q = 2.0 * math.pi * t
-        breath = math.sin(q)
-        pose_rotate(rig, "Spine", rx=0.9 * breath)
-        pose_rotate(rig, "Chest", rx=1.6 + 1.4 * breath, rz=1.2 * math.sin(q * 0.5))
-        pose_rotate(rig, "Neck", rx=-2.0 - 1.0 * breath)
-        pose_rotate(rig, "Head", rx=-4.0 + 1.6 * math.sin(q * 0.5 + 0.7),
-                    rz=2.5 * math.sin(q * 0.37))
-        pose_offset(rig, "Hips", Vector((0.0, 0.0, 0.005 * breath)))
-        pose_rotate(rig, "Hips", ry=1.2 * math.sin(q * 0.5))
+        breath = math.sin(2.0 * q)
+        shift = math.sin(q)
+        pose_offset(rig, "Hips", Vector((0.0, 0.0, 0.008 * breath - 0.006 * abs(shift))))
+        pose_rotate(rig, "Hips", ry=2.6 * shift, rz=1.4 * shift)
+        pose_rotate(rig, "Spine", rx=1.4 * breath, ry=-1.4 * shift)
+        pose_rotate(rig, "Chest", rx=2.0 + 2.2 * breath, rz=-1.6 * shift)
+        pose_rotate(rig, "Neck", rx=-2.5 - 1.2 * breath)
+        pose_rotate(rig, "Head", rx=-5.0 + 1.8 * math.sin(q + 0.7), rz=3.2 * math.sin(q * 0.5))
         for side, sign in (("R", 1.0), ("L", -1.0)):
-            pose_rotate(rig, f"UpperArm_{side}", rx=1.8 * breath, ry=-sign * 1.5 * breath)
-            pose_rotate(rig, f"Forearm_{side}", rx=6.0 + 2.0 * breath)
-            pose_rotate(rig, f"Hand_{side}", rx=4.0)
+            pose_rotate(rig, f"UpperArm_{side}", rx=2.4 * breath,
+                        ry=-sign * (2.0 + 1.6 * breath))
+            pose_rotate(rig, f"Forearm_{side}", rx=8.0 + 3.0 * breath)
+            pose_rotate(rig, f"Hand_{side}", rx=5.0)
         return {"Spine", "Chest", "Neck", "Head", "Hips",
                 "UpperArm_R", "UpperArm_L", "Forearm_R", "Forearm_L", "Hand_R", "Hand_L"}
     return poser
 
 
 def _gait(rig, thigh_swing: float, knee_flex: float, arm_swing: float,
-          elbow: float, lean: float, bob: float, lift: float):
-    """Shared walk/run cycle. t=0 is right-foot contact."""
+          elbow: float, lean: float, bob: float, toe_off: float):
+    """Shared walk/run cycle, phased so t=0 is right-foot contact.
+
+    Angles are all about X (the axis a limb swings on for a character facing
+    +Y) and they compose additively down a limb, so the ankle can cancel the
+    thigh and knee to keep a planted foot flat on the floor.
+    """
     def poser(t: float):
         q = 2.0 * math.pi * t
-        pose_offset(rig, "Hips", Vector((0.0, 0.0, -bob + bob * math.cos(2.0 * q))))
-        pose_rotate(rig, "Hips", rx=lean * 0.35, rz=-4.0 * math.sin(q), ry=2.5 * math.sin(q))
-        pose_rotate(rig, "Spine", rx=lean * 0.35, rz=2.0 * math.sin(q))
-        pose_rotate(rig, "Chest", rx=lean * 0.3, rz=5.0 * math.sin(q + math.pi))
+        # Pelvis is lowest at each contact, highest at mid-stance.
+        pose_offset(rig, "Hips", Vector((0.0, 0.0, -0.5 * bob * (1.0 + math.cos(2.0 * q)))))
+        pose_rotate(rig, "Hips", rx=lean * 0.3, ry=-3.0 * math.sin(q), rz=5.0 * math.cos(q))
+        pose_rotate(rig, "Spine", rx=lean * 0.35, rz=-2.0 * math.cos(q))
+        pose_rotate(rig, "Chest", rx=lean * 0.35, rz=-5.0 * math.cos(q))
         pose_rotate(rig, "Neck", rx=-lean * 0.5)
         pose_rotate(rig, "Head", rx=-lean * 0.45 - 2.0)
         for side, sign in (("R", 1.0), ("L", -1.0)):
             # Right leg leads; the left is half a cycle behind.
             leg = q if side == "R" else q + math.pi
-            swing = math.sin(leg)
-            pose_rotate(rig, f"Thigh_{side}", rx=thigh_swing * swing + lean * 0.2,
-                        ry=-sign * 1.5)
-            # Knee stays straight through stance, folds during the swing.
-            flex = -(6.0 + knee_flex * max(0.0, math.sin(leg - 0.6)) ** 1.4)
+            thigh = thigh_swing * math.cos(leg) + lean * 0.25
+            # Nearly straight through stance, deep fold through the swing.
+            flex = -(4.0
+                     + knee_flex * max(0.0, math.sin(leg - math.pi)) ** 1.2
+                     + 0.22 * knee_flex * _bump(math.cos(leg - 0.7), 1.0, 0.35))
+            # Ankle: roll onto the toe before swing, dorsiflex before contact.
+            ankle = (-toe_off * max(0.0, math.sin(leg - 0.4 * math.pi)) ** 3
+                     + 0.3 * toe_off * max(0.0, math.sin(leg - 1.44 * math.pi)) ** 2)
+            pose_rotate(rig, f"Thigh_{side}", rx=thigh, ry=-sign * 1.5)
             pose_rotate(rig, f"Shin_{side}", rx=flex)
-            heel = lift * max(0.0, math.sin(leg + math.pi * 0.55))
-            pose_rotate(rig, f"Foot_{side}", rx=-0.45 * (thigh_swing * swing + flex) + heel)
+            pose_rotate(rig, f"Foot_{side}", rx=-(thigh + flex) + ankle)
             arm = leg + math.pi
-            pose_rotate(rig, f"UpperArm_{side}", rx=arm_swing * math.sin(arm),
+            pose_rotate(rig, f"UpperArm_{side}", rx=arm_swing * math.cos(arm),
                         ry=-sign * 3.0)
-            pose_rotate(rig, f"Forearm_{side}", rx=elbow + 0.35 * elbow * math.sin(arm))
+            pose_rotate(rig, f"Forearm_{side}", rx=elbow - 0.4 * elbow * math.cos(arm))
             pose_rotate(rig, f"Hand_{side}", rx=6.0)
         return {"Hips", "Spine", "Chest", "Neck", "Head",
                 "Thigh_R", "Thigh_L", "Shin_R", "Shin_L", "Foot_R", "Foot_L",
@@ -829,23 +840,33 @@ def _gait(rig, thigh_swing: float, knee_flex: float, arm_swing: float,
 
 
 def die_pose(rig):
+    """Knees buckle, then the body topples backwards and lands flat.
+
+    Rotating Hips by +90 about X lays the spine down towards -Y and swings the
+    legs out to +Y, so the hips also have to drop the 0.77 m from standing
+    height to lying height or the corpse hangs in the air.
+    """
     def poser(t: float):
-        # Buckle at the knees first, then topple onto the back.
-        fall = _smoothstep(0.15, 0.95, t)
-        buckle = _smoothstep(0.0, 0.45, t)
-        settle = _smoothstep(0.75, 1.0, t)
-        pose_offset(rig, "Hips", Vector((0.0, -0.10 * fall, -0.62 * fall - 0.06 * buckle)))
-        pose_rotate(rig, "Hips", rx=-86.0 * fall)
-        pose_rotate(rig, "Spine", rx=6.0 * buckle - 8.0 * settle)
-        pose_rotate(rig, "Chest", rx=10.0 * buckle - 6.0 * settle)
-        pose_rotate(rig, "Neck", rx=14.0 * buckle - 4.0 * settle)
-        pose_rotate(rig, "Head", rx=18.0 * buckle + 8.0 * settle, rz=-10.0 * settle)
+        buckle = _smoothstep(0.0, 0.38, t)
+        fall = _smoothstep(0.18, 0.88, t)
+        settle = _smoothstep(0.80, 1.0, t)
+        pose_offset(rig, "Hips", Vector((0.0, -0.04 * buckle - 0.15 * fall,
+                                         -0.16 * buckle - 0.62 * fall)))
+        pose_rotate(rig, "Hips", rx=92.0 * fall)
+        pose_rotate(rig, "Spine", rx=8.0 * buckle - 10.0 * fall)
+        pose_rotate(rig, "Chest", rx=12.0 * buckle - 8.0 * fall)
+        pose_rotate(rig, "Neck", rx=16.0 * buckle - 6.0 * fall)
+        pose_rotate(rig, "Head", rx=20.0 * buckle - 14.0 * fall + 6.0 * settle,
+                    rz=-12.0 * settle)
         for side, sign in (("R", 1.0), ("L", -1.0)):
-            pose_rotate(rig, f"Thigh_{side}", rx=74.0 * fall + 10.0 * buckle, ry=-sign * 6.0 * fall)
-            pose_rotate(rig, f"Shin_{side}", rx=-42.0 * buckle - 18.0 * settle)
-            pose_rotate(rig, f"Foot_{side}", rx=18.0 * fall)
-            pose_rotate(rig, f"UpperArm_{side}", rx=-28.0 * fall, ry=-sign * 34.0 * fall)
-            pose_rotate(rig, f"Forearm_{side}", rx=26.0 * fall)
+            pose_rotate(rig, f"Thigh_{side}", rx=16.0 * buckle - 6.0 * fall,
+                        ry=-sign * (4.0 + 8.0 * fall))
+            pose_rotate(rig, f"Shin_{side}", rx=-48.0 * buckle + 26.0 * fall
+                        - 12.0 * settle * sign)
+            pose_rotate(rig, f"Foot_{side}", rx=22.0 * buckle - 34.0 * fall)
+            pose_rotate(rig, f"UpperArm_{side}", rx=-20.0 * fall,
+                        ry=-sign * (10.0 * buckle + 38.0 * fall))
+            pose_rotate(rig, f"Forearm_{side}", rx=24.0 * fall + 10.0 * settle)
             pose_rotate(rig, f"Hand_{side}", rx=8.0)
         return {"Hips", "Spine", "Chest", "Neck", "Head",
                 "Thigh_R", "Thigh_L", "Shin_R", "Shin_L", "Foot_R", "Foot_L",
@@ -856,10 +877,10 @@ def die_pose(rig):
 def build_animations(rig: bpy.types.Object) -> list[bpy.types.Action]:
     specs = [
         ("Idle", 96, idle_pose(rig), True),
-        ("Walk", 24, _gait(rig, thigh_swing=26.0, knee_flex=46.0, arm_swing=-19.0,
-                           elbow=14.0, lean=4.0, bob=0.012, lift=16.0), True),
-        ("Run", 16, _gait(rig, thigh_swing=42.0, knee_flex=78.0, arm_swing=-34.0,
-                          elbow=52.0, lean=13.0, bob=0.026, lift=28.0), True),
+        ("Walk", 24, _gait(rig, thigh_swing=27.0, knee_flex=58.0, arm_swing=20.0,
+                           elbow=15.0, lean=4.0, bob=0.030, toe_off=26.0), True),
+        ("Run", 16, _gait(rig, thigh_swing=44.0, knee_flex=92.0, arm_swing=36.0,
+                          elbow=55.0, lean=13.0, bob=0.055, toe_off=38.0), True),
         ("Die", 34, die_pose(rig), False),
     ]
     actions = [make_action(rig, name, frames, poser, loop) for name, frames, poser, loop in specs]
@@ -980,14 +1001,17 @@ def apply_baked_materials(obj: bpy.types.Object, image: bpy.types.Image | None) 
             bsdf.inputs["Base Color"].default_value = srgb(fallback)
         finals[group] = mat
 
-    # One slot per group, so the export is three primitives instead of one per part.
+    # One slot per group, so the export is three primitives instead of one per
+    # part. Clearing the slot list resets every polygon to slot 0, so the old
+    # assignment has to be read out before the swap and written back after.
     remap = [order.index(slot.material.get("surface_group", GROUP_FABRIC))
              for slot in obj.material_slots]
-    for polygon in obj.data.polygons:
-        polygon.material_index = remap[polygon.material_index]
+    assigned = [remap[polygon.material_index] for polygon in obj.data.polygons]
     obj.data.materials.clear()
     for group in order:
         obj.data.materials.append(finals[group])
+    for polygon, index in zip(obj.data.polygons, assigned):
+        polygon.material_index = index
 
 
 def export(rig: bpy.types.Object, body: bpy.types.Object) -> None:

@@ -145,8 +145,9 @@ def cmd_head() -> None:
     render_still(ART / "prisoner_head.png")
 
 
-def cmd_anim(name: str) -> None:
-    studio(samples=28, resolution=(520, 780))
+def cmd_anim(name: str, quick: bool = False) -> None:
+    studio(samples=10 if quick else 28,
+           resolution=(320, 480) if quick else (520, 780))
     add_camera(34.0)
     action = use_action(name)
     frames = int(action.frame_range[1] - action.frame_range[0]) + 1
@@ -156,6 +157,16 @@ def cmd_anim(name: str) -> None:
         frames -= 1
         bpy.context.scene.frame_end = bpy.context.scene.frame_start + frames - 1
     render_video(ART / f"prisoner_{name.lower()}.mp4", frames, repeats=loops)
+
+
+def cmd_poses(name: str, angle: float, frames: list[int]) -> None:
+    """Single frames of one action, for checking a pose without a video."""
+    studio(samples=16, resolution=(420, 620))
+    add_camera(angle)
+    use_action(name)
+    for frame in frames:
+        bpy.context.scene.frame_set(frame)
+        render_still(Path(f"/tmp/pose_{name.lower()}_{frame:03d}.png"))
 
 
 def cmd_turntable(steps: int = 48) -> None:
@@ -187,7 +198,9 @@ def main() -> None:
     elif command == "head":
         cmd_head()
     elif command == "anim":
-        cmd_anim(argv[1])
+        cmd_anim(argv[1], quick="--quick" in argv)
+    elif command == "poses":
+        cmd_poses(argv[1], float(argv[2]), [int(v) for v in argv[3:]])
     elif command == "turntable":
         cmd_turntable()
     else:
