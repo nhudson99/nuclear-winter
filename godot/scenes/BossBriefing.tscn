@@ -12,7 +12,7 @@ outline_color = Color(0.101961, 0.101961, 0.086275, 1)
 
 [sub_resource type="LabelSettings" id="LabelSettings_continue"]
 font_size = 18
-font_color = Color(0.784314, 0.768627, 0.721569, 1)
+font_color = Color(0.909804, 0.886275, 0.831373, 1)
 outline_size = 6
 outline_color = Color(0.101961, 0.101961, 0.086275, 1)
 
