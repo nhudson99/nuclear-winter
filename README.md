@@ -12,7 +12,7 @@ godot --path godot
 ```
 
 - Room modules authored in Blender (`blender/build_rooms.py`) → `godot/assets/rooms/room_{bedroom,living_room,office,storage}.glb`
-- Humanoid authored in Blender (`blender/build_humanoid.py`) → `godot/assets/characters/humanoid_scavenger.glb`
+- Player authored in Blender (`blender/build_prisoner.py`) → `godot/assets/characters/player_prisoner.glb`
 - Monster authored in Blender (`blender/build_monster.py`) → `godot/assets/characters/enemy_monster.glb`
 - Flow: `TitleScreen.tscn` → `AristocratScreen.tscn` → `GameMap.tscn` (click **LEVEL 1**) → `Main.tscn`
 - Level 1: `godot/scenes/Main.tscn` (isometric camera, wall/prop collision, WASD walk, E to pick up the objective, escape through the outer doorway, monster patrol/proximity chase, health bars)
@@ -35,6 +35,7 @@ godot --path godot
 ```bash
 /home/ubuntu/tools/blender/blender --background --python blender/build_rooms.py
 /home/ubuntu/tools/blender/blender --background --python blender/build_monster.py
+/home/ubuntu/tools/blender/blender --background --python blender/build_prisoner.py
 cd godot && /home/ubuntu/tools/godot/Godot --headless --import
 /home/ubuntu/tools/godot/Godot --headless -s res://tools/build_main_scene.gd
 ```
@@ -61,6 +62,23 @@ done
 - **Monster**: patrols the generated rooms in equal level sections (30s each), checking every room in the current section; detects players in a close proximity radius or via FOV + line of sight; deals 100 touch damage.
 - **Health**: player and monster both start at 100 HP with billboard health bars above their heads.
 
+## Player character
+
+`blender/build_prisoner.py` authors the whole player headlessly — a bald prisoner in a worn jumpsuit and boots — and writes `godot/assets/characters/player_prisoner.glb` plus a `.blend` for inspection.
+
+- **Mesh**: 1.80 m tall, 3981 verts / 7696 tris, lofted from superellipse rings. The skull comes from measured width/depth profile tables rather than a deformed ellipsoid, so it has a jaw and a chin; nose, brows, eyes and ears are planted on numerically sampled surface points.
+- **Texture**: wear is authored as procedural noise shaders and then Cycles-baked to one 1024² colour atlas, because glTF cannot carry shader nodes. Grime is weighted by object-space height, so dirt collects on the boots and knees. Three materials (fabric, leather, skin) share the atlas.
+- **Rig**: 17 bones, skinned with inverse-distance weights restricted to a per-part bone whitelist. Bone-heat auto weights bleed across the overlapping lofted parts.
+- **Clips**: `Idle` (96 f loop), `Walk` (24 f loop), `Run` (16 f loop), `Die` (34 f one-shot), exported through muted NLA tracks. The gait is phased from foot contact, with knee flex, ankle counter-rotation to keep planted feet flat, toe-off and a pelvis bob.
+- **Playback**: `Player.gd` sets `LOOP_LINEAR` on the three cycles at load — the glTF importer leaves every clip one-shot — picks walk or run by ground speed, and scales the playback rate to the distance covered per cycle so the boots do not skate.
+
+```bash
+# Preview renders (views | head | turntable | anim <Clip> | poses <Clip> <angle> <frames...>)
+/home/ubuntu/tools/blender/blender --background --python blender/render_prisoner.py -- views
+# Check what actually landed in the GLB
+python3 blender/inspect_glb.py godot/assets/characters/player_prisoner.glb
+```
+
 ## Phaser title / tutorial shell
 
 ```bash
@@ -76,7 +94,7 @@ Leftover web shell: title → boss CRT briefing → Pip-Boy map (returns to menu
 godot/                     Godot 4.4 game (menus + Level 1)
   assets/ui/               Title, aristocrat CRT, dialogue panel, Pip-Boy map
   assets/maps/ussr_mansion_map.glb
-  assets/characters/{humanoid_scavenger,enemy_monster}.glb
+  assets/characters/{player_prisoner,enemy_monster}.glb
   assets/props/{crate,wardrobe,couch}.glb
   scenes/{TitleScreen,AristocratScreen,GameMap,Main}.tscn
   scripts/{SceneFlow,TitleScreen,AristocratScreen,GameMap,Main,Player,Monster,PickupItem,ExitZone}.gd
@@ -84,7 +102,8 @@ godot/                     Godot 4.4 game (menus + Level 1)
   tools/smoke_game_loop.gd
 blender/
   build_mansion_map.py
-  build_humanoid.py
+  build_prisoner.py
+  render_prisoner.py
   build_monster.py
   build_furniture.py
   ussr_mansion_map.blend
