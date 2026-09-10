@@ -1,8 +1,8 @@
 # Nuclear Winter
 
-Post-fallout USSR game. The **playable 3D isometric level** lives in the **Godot** project. The Phaser web app still hosts the title + tutorial intro.
+Post-fallout USSR game. The **full Godot flow** is title → fat aristocrat briefing → Pip-Boy map → Level 1 (3D isometric mansion). The Phaser web app still hosts a leftover title + tutorial shell.
 
-## Godot 3D isometric (main play)
+## Godot (title, briefing, map, Level 1)
 
 ```bash
 # Requires Godot 4.4+
@@ -15,7 +15,8 @@ godot --path godot
 - Humanoid authored in Blender (`blender/build_humanoid.py`) → `godot/assets/characters/humanoid_scavenger.glb`
 - Monster authored in Blender (`blender/build_monster.py`) → `godot/assets/characters/enemy_monster.glb`
 - Furniture props authored in Blender (`blender/build_furniture.py`) → `godot/assets/props/{crate,wardrobe,couch}.glb`
-- Scene: `godot/scenes/Main.tscn` (isometric camera, wall/prop collision, WASD walk, E to pick up the objective, escape the south exit, monster patrol/proximity chase, health bars, walkable doorways)
+- Flow: `TitleScreen.tscn` → `AristocratScreen.tscn` → `GameMap.tscn` (click **LEVEL 1**) → `Main.tscn`
+- Level 1: `godot/scenes/Main.tscn` (isometric camera, wall/prop collision, WASD walk, E to pick up the objective, escape the south exit, monster patrol/proximity chase, health bars, walkable doorways)
 
 ### Rebuild Blender assets
 
@@ -45,17 +46,19 @@ npm install
 npm run dev
 ```
 
-Flow: title → boss CRT briefing → Pip-Boy map (returns to menu). The old 2D mansion walk scene has been removed.
+Leftover web shell: title → boss CRT briefing → Pip-Boy map (returns to menu). The playable path lives in Godot.
 
 ## Layout
 
 ```
-godot/                     Godot 4.4 isometric game
+godot/                     Godot 4.4 game (menus + Level 1)
+  assets/ui/               Title, aristocrat CRT, dialogue panel, Pip-Boy map
   assets/maps/ussr_mansion_map.glb
   assets/characters/{humanoid_scavenger,enemy_monster}.glb
   assets/props/{crate,wardrobe,couch}.glb
-  scenes/Main.tscn
-  scripts/{Main,Player,Monster,PickupItem,ExitZone}.gd
+  scenes/{TitleScreen,AristocratScreen,GameMap,Main}.tscn
+  scripts/{SceneFlow,TitleScreen,AristocratScreen,GameMap,Main,Player,Monster,PickupItem,ExitZone}.gd
+  tools/smoke_flow_screens.gd
   tools/smoke_game_loop.gd
 blender/
   build_mansion_map.py
