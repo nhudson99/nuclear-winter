@@ -56,12 +56,22 @@ def clear_scene() -> None:
         bpy.data.cameras.remove(camera)
 
 
+def srgb_to_linear(channel: float) -> float:
+    if channel <= 0.04045:
+        return channel / 12.92
+    return ((channel + 0.055) / 1.055) ** 2.4
+
+
 def mat(name: str, color: tuple[float, float, float], roughness: float = 0.7):
+    """`color` is sRGB — the space the palette is picked in. Blender base colours
+    and glTF baseColorFactor are linear, so skipping this conversion makes
+    everything read about twice as bright as intended once Godot lights it."""
     material = bpy.data.materials.new(name=name)
     material.use_nodes = True
     bsdf = material.node_tree.nodes.get("Principled BSDF")
+    linear = tuple(srgb_to_linear(channel) for channel in color)
     if bsdf:
-        bsdf.inputs["Base Color"].default_value = (*color, 1.0)
+        bsdf.inputs["Base Color"].default_value = (*linear, 1.0)
         bsdf.inputs["Roughness"].default_value = roughness
     return material
 
@@ -69,8 +79,9 @@ def mat(name: str, color: tuple[float, float, float], roughness: float = 0.7):
 def emissive(name: str, color: tuple[float, float, float], strength: float = 2.0):
     material = mat(name, color, 0.4)
     bsdf = material.node_tree.nodes.get("Principled BSDF")
+    linear = tuple(srgb_to_linear(channel) for channel in color)
     if bsdf:
-        bsdf.inputs["Emission Color"].default_value = (*color, 1.0)
+        bsdf.inputs["Emission Color"].default_value = (*linear, 1.0)
         bsdf.inputs["Emission Strength"].default_value = strength
     return material
 
@@ -170,6 +181,13 @@ def add_wall_grime(root, grime_mat, patches) -> None:
         cube(f"NoCol_Grime_{index}", loc, size, grime_mat, root)
 
 
+def add_floor_debris(root, debris_mat, spots) -> None:
+    """Flat rubble decals. The middle cross of the tile has to stay clear of
+    props so every doorway is reachable, so it gets dressed rather than filled."""
+    for index, (x, y, width, depth) in enumerate(spots):
+        cube(f"NoCol_Debris_{index}", (x, y, 0.012), (width, depth, 0.02), debris_mat, root)
+
+
 def add_ceiling_lamp(root, shade_mat, bulb_mat, loc=(0.0, 0.0)) -> None:
     x, y = loc
     cube("NoCol_LampRod", (x, y, 2.28), (0.05, 0.05, 0.24), shade_mat, root)
@@ -183,15 +201,16 @@ def add_ceiling_lamp(root, shade_mat, bulb_mat, loc=(0.0, 0.0)) -> None:
 
 
 def build_bedroom():
-    parquet = mat("BedroomFloor", (0.34, 0.24, 0.16), 0.8)
-    plaster = mat("BedroomWall", (0.35, 0.42, 0.38), 0.85)
-    grime = mat("BedroomGrime", (0.24, 0.28, 0.24), 0.95)
-    iron = mat("BedIron", (0.29, 0.30, 0.32), 0.45)
-    linen = mat("BedLinen", (0.70, 0.67, 0.58), 0.9)
-    blanket = mat("BedBlanket", (0.44, 0.16, 0.14), 0.9)
-    wood = mat("BedroomWood", (0.31, 0.21, 0.13), 0.7)
-    brass = mat("BedroomBrass", (0.52, 0.42, 0.18), 0.4)
-    bulb = emissive("BedroomBulb", (1.0, 0.86, 0.58), 2.2)
+    parquet = mat("BedroomFloor", (0.33, 0.24, 0.17), 0.8)
+    plaster = mat("BedroomWall", (0.38, 0.44, 0.40), 0.85)
+    grime = mat("BedroomGrime", (0.23, 0.26, 0.23), 0.95)
+    iron = mat("BedIron", (0.30, 0.31, 0.33), 0.45)
+    linen = mat("BedLinen", (0.62, 0.59, 0.51), 0.9)
+    blanket = mat("BedBlanket", (0.45, 0.17, 0.15), 0.9)
+    wood = mat("BedroomWood", (0.32, 0.22, 0.14), 0.7)
+    brass = mat("BedroomBrass", (0.50, 0.40, 0.18), 0.4)
+    debris = mat("BedroomDebris", (0.24, 0.19, 0.14), 0.95)
+    bulb = emissive("BedroomBulb", (1.0, 0.88, 0.62), 1.6)
 
     root = build_shell("Bedroom", parquet, plaster, plaster)
     add_wall_grime(
@@ -240,6 +259,12 @@ def build_bedroom():
     for index, (dx, dy) in enumerate(((-0.18, -0.18), (0.18, -0.18), (-0.18, 0.18), (0.18, 0.18))):
         cube(f"StoolLeg_{index}", (-2.2 + dx, -4.9 + dy, 0.19), (0.07, 0.07, 0.38), wood, root)
 
+    add_floor_debris(
+        root,
+        debris,
+        [(-1.0, 0.7, 1.9, 1.2), (1.5, -1.3, 1.1, 0.8), (0.4, 2.5, 1.4, 0.9)],
+    )
+
     # Wall radio: state broadcasts never stopped.
     cube("NoCol_Radio", (5.5, 2.2, 1.62), (0.16, 0.7, 0.44), wood, root)
     cube("NoCol_RadioGrille", (5.39, 2.2, 1.62), (0.03, 0.5, 0.3), iron, root)
@@ -254,17 +279,18 @@ def build_bedroom():
 
 
 def build_living_room():
-    boards = mat("LivingFloor", (0.38, 0.28, 0.18), 0.8)
-    plaster = mat("LivingWall", (0.46, 0.38, 0.22), 0.85)
-    grime = mat("LivingGrime", (0.32, 0.25, 0.15), 0.95)
-    fabric = mat("CouchFabric", (0.30, 0.33, 0.36), 0.9)
-    cushion = mat("CouchCushion", (0.40, 0.34, 0.28), 0.9)
-    wood = mat("LivingWood", (0.33, 0.22, 0.13), 0.7)
-    steel = mat("LivingSteel", (0.32, 0.33, 0.35), 0.4)
-    brass = mat("LivingBrass", (0.54, 0.43, 0.19), 0.4)
-    red = mat("LivingRed", (0.52, 0.12, 0.11), 0.8)
-    screen = emissive("TvScreen", (0.32, 0.62, 0.42), 1.1)
-    bulb = emissive("LivingBulb", (1.0, 0.84, 0.55), 2.2)
+    boards = mat("LivingFloor", (0.36, 0.27, 0.18), 0.8)
+    plaster = mat("LivingWall", (0.48, 0.40, 0.25), 0.85)
+    grime = mat("LivingGrime", (0.28, 0.23, 0.15), 0.95)
+    fabric = mat("CouchFabric", (0.31, 0.34, 0.37), 0.9)
+    cushion = mat("CouchCushion", (0.40, 0.35, 0.29), 0.9)
+    wood = mat("LivingWood", (0.32, 0.22, 0.13), 0.7)
+    steel = mat("LivingSteel", (0.33, 0.34, 0.36), 0.4)
+    brass = mat("LivingBrass", (0.50, 0.40, 0.18), 0.4)
+    red = mat("LivingRed", (0.46, 0.14, 0.13), 0.8)
+    screen = emissive("TvScreen", (0.36, 0.66, 0.46), 1.0)
+    bulb = emissive("LivingBulb", (1.0, 0.86, 0.58), 1.6)
+    debris = mat("LivingDebris", (0.26, 0.20, 0.14), 0.95)
 
     root = build_shell("LivingRoom", boards, plaster, plaster)
     add_wall_grime(
@@ -315,6 +341,12 @@ def build_living_room():
     cylinder("FloorLampPole", (1.9, -5.0, 0.75), 0.05, 1.5, steel, root, verts=8)
     cylinder("NoCol_FloorLampShade", (1.9, -5.0, 1.6), 0.28, 0.3, cushion, root, verts=10)
 
+    add_floor_debris(
+        root,
+        debris,
+        [(0.9, 0.4, 2.1, 1.3), (-1.3, -1.5, 1.2, 0.9), (1.7, 1.9, 0.9, 0.7)],
+    )
+
     # Framed portrait of a leader whose ministry no longer exists.
     cube("NoCol_PortraitFrame", (5.52, -0.2, 1.75), (0.08, 1.0, 1.3), wood, root)
     cube("NoCol_PortraitCanvas", (5.45, -0.2, 1.75), (0.03, 0.84, 1.14), grime, root)
@@ -330,15 +362,16 @@ def build_living_room():
 
 
 def build_office():
-    lino = mat("OfficeFloor", (0.25, 0.27, 0.25), 0.8)
-    plaster = mat("OfficeWall", (0.30, 0.36, 0.31), 0.85)
-    grime = mat("OfficeGrime", (0.22, 0.27, 0.23), 0.95)
-    wood = mat("OfficeWood", (0.32, 0.21, 0.12), 0.7)
-    steel = mat("OfficeSteel", (0.33, 0.34, 0.36), 0.4)
+    lino = mat("OfficeFloor", (0.27, 0.29, 0.27), 0.8)
+    plaster = mat("OfficeWall", (0.32, 0.38, 0.33), 0.85)
+    grime = mat("OfficeGrime", (0.21, 0.25, 0.22), 0.95)
+    wood = mat("OfficeWood", (0.32, 0.22, 0.13), 0.7)
+    steel = mat("OfficeSteel", (0.34, 0.35, 0.37), 0.4)
     olive = mat("OfficeOlive", (0.29, 0.32, 0.24), 0.7)
-    paper = mat("OfficePaper", (0.72, 0.69, 0.58), 0.9)
-    red = mat("OfficeRed", (0.53, 0.12, 0.11), 0.8)
-    bulb = emissive("OfficeBulb", (0.92, 0.95, 0.78), 2.4)
+    paper = mat("OfficePaper", (0.66, 0.63, 0.53), 0.9)
+    red = mat("OfficeRed", (0.47, 0.14, 0.13), 0.8)
+    bulb = emissive("OfficeBulb", (0.94, 0.96, 0.82), 1.8)
+    debris = mat("OfficeDebris", (0.20, 0.21, 0.19), 0.95)
 
     root = build_shell("Office", lino, plaster, plaster)
     add_wall_grime(
@@ -392,6 +425,15 @@ def build_office():
     cube("NoCol_MapPin", (5.38, -2.0, 1.8), (0.03, 0.12, 0.12), red, root)
     cube("NoCol_Plaque", (2.6, 5.68, 1.9), (0.5, 0.04, 0.5), red, root)
 
+    # Files that went everywhere when the evacuation order came through.
+    add_floor_debris(
+        root,
+        debris,
+        [(-0.7, 0.9, 1.7, 1.1), (1.3, -1.7, 1.4, 1.0), (-1.7, -0.5, 0.9, 0.8)],
+    )
+    cube("NoCol_LooseForms_A", (0.9, 1.4, 0.02), (0.5, 0.36, 0.02), paper, root)
+    cube("NoCol_LooseForms_B", (-1.4, -1.9, 0.02), (0.42, 0.3, 0.02), paper, root)
+
     # Requisition forms that outlived the ministry.
     cube("PaperStack", (-3.6, -3.4, 0.3), (1.2, 1.2, 0.6), paper, root)
     cube("PaperStackTop", (-3.5, -3.3, 0.68), (0.9, 0.9, 0.18), paper, root)
@@ -408,16 +450,17 @@ def build_office():
 
 
 def build_storage():
-    concrete = mat("StorageFloor", (0.29, 0.29, 0.27), 0.9)
-    plaster = mat("StorageWall", (0.34, 0.33, 0.31), 0.9)
-    grime = mat("StorageGrime", (0.24, 0.22, 0.19), 0.95)
+    concrete = mat("StorageFloor", (0.30, 0.30, 0.28), 0.9)
+    plaster = mat("StorageWall", (0.35, 0.34, 0.32), 0.9)
+    grime = mat("StorageGrime", (0.22, 0.21, 0.18), 0.95)
     steel = mat("StorageSteel", (0.34, 0.35, 0.37), 0.4)
-    rust = mat("StorageRust", (0.44, 0.24, 0.13), 0.85)
-    wood = mat("StorageWood", (0.40, 0.28, 0.16), 0.75)
-    sack = mat("StorageSack", (0.48, 0.43, 0.31), 0.9)
-    olive = mat("StorageOlive", (0.28, 0.31, 0.23), 0.7)
-    hazard = mat("StorageHazard", (0.62, 0.52, 0.12), 0.7)
-    bulb = emissive("StorageBulb", (0.95, 0.92, 0.72), 2.0)
+    rust = mat("StorageRust", (0.42, 0.24, 0.14), 0.85)
+    wood = mat("StorageWood", (0.40, 0.29, 0.17), 0.75)
+    sack = mat("StorageSack", (0.46, 0.41, 0.30), 0.9)
+    olive = mat("StorageOlive", (0.29, 0.32, 0.24), 0.7)
+    hazard = mat("StorageHazard", (0.58, 0.49, 0.13), 0.7)
+    bulb = emissive("StorageBulb", (0.96, 0.93, 0.76), 1.5)
+    debris = mat("StorageDebris", (0.21, 0.20, 0.18), 0.95)
 
     root = build_shell("Storage", concrete, plaster, plaster)
     add_wall_grime(
@@ -478,6 +521,13 @@ def build_storage():
         cube(f"JerryCan_{index}", (x, -5.3, 0.24), (0.3, 0.18, 0.48), olive, root)
         cube(f"NoCol_JerryHandle_{index}", (x, -5.3, 0.5), (0.2, 0.05, 0.05), steel, root)
 
+    add_floor_debris(
+        root,
+        debris,
+        [(0.7, 0.3, 2.3, 1.4), (-1.5, 1.5, 1.2, 0.9), (1.5, -1.9, 1.0, 0.8)],
+    )
+    cube("NoCol_SpilledGrain", (-1.2, -2.1, 0.02), (0.9, 0.7, 0.02), sack, root)
+
     # Service pipes bolted along the north wall.
     for index, z in enumerate((1.95, 2.15)):
         cube(f"NoCol_Pipe_{index}", (0.0, 5.55, z), (11.2, 0.16, 0.16), rust if index else steel, root)
@@ -525,20 +575,20 @@ def build_preview() -> None:
         root = builder()
         root.location = (x, y, 0.0)
 
-    ground = mat("PreviewGround", (0.16, 0.16, 0.15), 0.95)
+    ground = mat("PreviewGround", (0.15, 0.15, 0.14), 0.95)
     cube("PreviewGround", (0, 0, -0.14), (64, 64, 0.12), ground)
 
     bpy.ops.object.light_add(type="AREA", location=(0, -8, 24))
     key = bpy.context.active_object
     key.name = "KeyLight"
-    key.data.energy = 4200
+    key.data.energy = 7000
     key.data.size = 18
     key.rotation_euler = (math.radians(28), 0, 0)
 
     bpy.ops.object.light_add(type="SUN", location=(10, -14, 18))
     sun = bpy.context.active_object
     sun.name = "Sun"
-    sun.data.energy = 1.4
+    sun.data.energy = 1.9
     sun.rotation_euler = (math.radians(48), math.radians(12), math.radians(24))
 
     bpy.ops.object.camera_add(location=(26, -30, 30))

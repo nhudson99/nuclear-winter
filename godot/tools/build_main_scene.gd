@@ -35,17 +35,20 @@ func _build() -> void:
 	var env := Environment.new()
 	env.background_mode = Environment.BG_COLOR
 	# Overcast fallout haze rather than the old clear blue sky.
-	env.background_color = Color(0.20, 0.21, 0.20)
+	env.background_color = Color(0.13, 0.14, 0.13)
 	env.ambient_light_source = Environment.AMBIENT_SOURCE_COLOR
-	env.ambient_light_color = Color(0.66, 0.70, 0.68)
-	env.ambient_light_energy = 0.55
+	env.ambient_light_color = Color(0.60, 0.64, 0.63)
+	# Rooms have no ceilings, so ambient plus sun hit the floors head-on. Keeping
+	# the total near 1.0 renders surfaces close to their authored albedo instead
+	# of blowing the palette out to pastel.
+	env.ambient_light_energy = 0.34
 	world_env.environment = env
 	main.add_child(world_env)
 	world_env.owner = main
 
 	var sun := DirectionalLight3D.new()
 	sun.name = "Sun"
-	sun.light_energy = 1.25
+	sun.light_energy = 0.95
 	sun.light_color = Color(1.0, 0.95, 0.86)
 	sun.shadow_enabled = true
 	sun.rotation_degrees = Vector3(-50, 30, 0)
