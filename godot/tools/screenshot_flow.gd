@@ -14,7 +14,6 @@ func _run() -> void:
 		{"scene": "res://scenes/TitleScreen.tscn", "file": "godot_title_screen.png", "wait": 0.6},
 		{"scene": "res://scenes/AristocratScreen.tscn", "file": "godot_aristocrat_screen.png", "wait": 1.4},
 		{"scene": "res://scenes/GameMap.tscn", "file": "godot_game_map.png", "wait": 0.5},
-		{"scene": "res://scenes/Main.tscn", "file": "godot_level_1.png", "wait": 0.8},
 	]
 
 	for shot in shots:
@@ -38,4 +37,35 @@ func _run() -> void:
 		node.queue_free()
 		await create_timer(0.05).timeout
 
+	await _shoot_level_1(out_dir)
 	quit(0)
+
+
+## Level 1 needs two frames captured: the loading overlay mid-generation, and
+## the finished map once MapGenerator has handed the layout back.
+func _shoot_level_1(out_dir: String) -> void:
+	var packed: PackedScene = load("res://scenes/Main.tscn")
+	if packed == null:
+		push_error("Missing res://scenes/Main.tscn")
+		return
+	var level: Node = packed.instantiate()
+	root.add_child(level)
+
+	await create_timer(0.5).timeout
+	var loading_img: Image = root.get_viewport().get_texture().get_image()
+	var loading_err := loading_img.save_png("%s/godot_loading_screen.png" % out_dir)
+	print("shot=godot_loading_screen.png err=", loading_err)
+
+	if not level.is_level_ready():
+		await level.level_ready
+	await create_timer(0.4).timeout
+	var level_img: Image = root.get_viewport().get_texture().get_image()
+	var level_err := level_img.save_png("%s/godot_level_1.png" % out_dir)
+	var layout: Dictionary = level.get_layout()
+	print(
+		"shot=godot_level_1.png err=", level_err,
+		" seed=", layout.get("seed", 0),
+		" rooms=", (layout.get("rooms", []) as Array).size()
+	)
+	level.queue_free()
+	await create_timer(0.05).timeout
