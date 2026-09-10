@@ -18,7 +18,7 @@ func _ready() -> void:
 func _unhandled_input(event: InputEvent) -> void:
 	if not accept_any_input or _transitioning:
 		return
-	var should_advance := (
+	var should_advance: bool = (
 		(event is InputEventKey and event.pressed and not event.echo)
 		or (event is InputEventMouseButton and event.pressed)
 		or (event is InputEventJoypadButton and event.pressed)
