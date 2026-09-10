@@ -1,0 +1,171 @@
+[gd_scene load_steps=10 format=3]
+
+[ext_resource type="Script" path="res://scripts/WorldMap.gd" id="1_map"]
+[ext_resource type="Texture2D" path="res://assets/ui/pipboy_map.png" id="2_pipboy"]
+[ext_resource type="Script" path="res://scripts/Scanlines.gd" id="3_scanlines"]
+
+[sub_resource type="StyleBoxFlat" id="StyleBoxFlat_normal"]
+content_margin_left = 16.0
+content_margin_top = 8.0
+content_margin_right = 16.0
+content_margin_bottom = 8.0
+bg_color = Color(0.011765, 0.098039, 0.031373, 0.784314)
+border_width_left = 2
+border_width_top = 2
+border_width_right = 2
+border_width_bottom = 2
+border_color = Color(0.490196, 1, 0.478431, 1)
+corner_radius_top_left = 3
+corner_radius_top_right = 3
+corner_radius_bottom_right = 3
+corner_radius_bottom_left = 3
+
+[sub_resource type="StyleBoxFlat" id="StyleBoxFlat_hover"]
+content_margin_left = 16.0
+content_margin_top = 8.0
+content_margin_right = 16.0
+content_margin_bottom = 8.0
+bg_color = Color(0.078431, 0.298039, 0.109804, 0.882353)
+border_width_left = 2
+border_width_top = 2
+border_width_right = 2
+border_width_bottom = 2
+border_color = Color(0.803922, 1, 0.796078, 1)
+corner_radius_top_left = 3
+corner_radius_top_right = 3
+corner_radius_bottom_right = 3
+corner_radius_bottom_left = 3
+
+[sub_resource type="StyleBoxFlat" id="StyleBoxFlat_pressed"]
+content_margin_left = 16.0
+content_margin_top = 8.0
+content_margin_right = 16.0
+content_margin_bottom = 8.0
+bg_color = Color(0.490196, 1, 0.478431, 0.901961)
+border_width_left = 2
+border_width_top = 2
+border_width_right = 2
+border_width_bottom = 2
+border_color = Color(0.882353, 1, 0.878431, 1)
+corner_radius_top_left = 3
+corner_radius_top_right = 3
+corner_radius_bottom_right = 3
+corner_radius_bottom_left = 3
+
+[sub_resource type="StyleBoxFlat" id="StyleBoxFlat_focus"]
+bg_color = Color(0, 0, 0, 0)
+border_width_left = 2
+border_width_top = 2
+border_width_right = 2
+border_width_bottom = 2
+border_color = Color(0.803922, 1, 0.796078, 0.541176)
+expand_margin_left = 5.0
+expand_margin_top = 5.0
+expand_margin_right = 5.0
+expand_margin_bottom = 5.0
+
+[sub_resource type="LabelSettings" id="LabelSettings_header"]
+font_size = 20
+font_color = Color(0.490196, 1, 0.478431, 1)
+outline_size = 8
+outline_color = Color(0, 0.078431, 0, 1)
+
+[sub_resource type="LabelSettings" id="LabelSettings_hint"]
+font_size = 18
+font_color = Color(0.490196, 1, 0.478431, 1)
+outline_size = 8
+outline_color = Color(0, 0.078431, 0, 1)
+
+[node name="WorldMap" type="Control"]
+layout_mode = 3
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+script = ExtResource("1_map")
+
+[node name="Backdrop" type="ColorRect" parent="."]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+mouse_filter = 2
+color = Color(0.007843, 0.031373, 0.015686, 1)
+
+[node name="Map" type="TextureRect" parent="."]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+mouse_filter = 2
+texture = ExtResource("2_pipboy")
+expand_mode = 1
+
+[node name="Scanlines" type="Control" parent="."]
+modulate = Color(1, 1, 1, 0.12)
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+mouse_filter = 2
+script = ExtResource("3_scanlines")
+
+[node name="Header" type="Label" parent="."]
+layout_mode = 1
+anchors_preset = -1
+offset_left = 64.0
+offset_top = 52.0
+offset_right = 564.0
+offset_bottom = 82.0
+text = "TARGET REGISTRY // ACTIVE SITES: 1"
+label_settings = SubResource("LabelSettings_header")
+
+[node name="Level1Button" type="Button" parent="."]
+layout_mode = 1
+anchors_preset = -1
+anchor_left = 0.182
+anchor_top = 0.421
+anchor_right = 0.182
+anchor_bottom = 0.421
+offset_left = -124.0
+offset_top = 34.0
+offset_right = 124.0
+offset_bottom = 80.0
+grow_horizontal = 2
+grow_vertical = 2
+theme_override_colors/font_color = Color(0.490196, 1, 0.478431, 1)
+theme_override_colors/font_focus_color = Color(0.803922, 1, 0.796078, 1)
+theme_override_colors/font_hover_color = Color(0.803922, 1, 0.796078, 1)
+theme_override_colors/font_outline_color = Color(0, 0.078431, 0, 1)
+theme_override_colors/font_pressed_color = Color(0.007843, 0.078431, 0.019608, 1)
+theme_override_constants/outline_size = 8
+theme_override_font_sizes/font_size = 20
+theme_override_styles/focus = SubResource("StyleBoxFlat_focus")
+theme_override_styles/hover = SubResource("StyleBoxFlat_hover")
+theme_override_styles/normal = SubResource("StyleBoxFlat_normal")
+theme_override_styles/pressed = SubResource("StyleBoxFlat_pressed")
+text = "LEVEL 1 // MANSION"
+
+[node name="Hint" type="Label" parent="."]
+layout_mode = 1
+anchors_preset = 12
+anchor_top = 1.0
+anchor_right = 1.0
+anchor_bottom = 1.0
+offset_left = 64.0
+offset_top = -84.0
+offset_right = -64.0
+offset_bottom = -50.0
+grow_horizontal = 2
+grow_vertical = 0
+text = "Click a target site to deploy    //    Esc returns to title"
+label_settings = SubResource("LabelSettings_hint")
+horizontal_alignment = 1
+vertical_alignment = 2

@@ -19,6 +19,11 @@ func _ready() -> void:
 	camera.far = 250.0
 	camera.current = true
 	_snap_camera()
+	SceneFlow.fade_in(SceneFlow.PHOSPHOR, 0.35)
+
+func _unhandled_input(event: InputEvent) -> void:
+	if event.is_action_pressed("ui_cancel"):
+		SceneFlow.goto_scene(SceneFlow.MAP_SCENE, SceneFlow.PHOSPHOR)
 
 func _physics_process(delta: float) -> void:
 	# High isometric look similar to the Blender reference render.

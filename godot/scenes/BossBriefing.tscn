@@ -1,0 +1,100 @@
+[gd_scene load_steps=6 format=3]
+
+[ext_resource type="Script" path="res://scripts/BossBriefing.gd" id="1_briefing"]
+[ext_resource type="Texture2D" path="res://assets/ui/boss_crt.png" id="2_crt"]
+[ext_resource type="Texture2D" path="res://assets/ui/dialogue_panel.png" id="3_panel"]
+
+[sub_resource type="LabelSettings" id="LabelSettings_dialogue"]
+font_size = 32
+font_color = Color(0.941176, 0.921569, 0.878431, 1)
+outline_size = 8
+outline_color = Color(0.101961, 0.101961, 0.086275, 1)
+
+[sub_resource type="LabelSettings" id="LabelSettings_continue"]
+font_size = 18
+font_color = Color(0.784314, 0.768627, 0.721569, 1)
+outline_size = 6
+outline_color = Color(0.101961, 0.101961, 0.086275, 1)
+
+[node name="BossBriefing" type="Control"]
+layout_mode = 3
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+script = ExtResource("1_briefing")
+
+[node name="Backdrop" type="ColorRect" parent="."]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+mouse_filter = 2
+color = Color(0.047059, 0.047059, 0.039216, 1)
+
+[node name="Crt" type="TextureRect" parent="."]
+layout_mode = 1
+anchors_preset = -1
+anchor_left = 0.1
+anchor_top = 0.03
+anchor_right = 0.9
+anchor_bottom = 0.68
+grow_horizontal = 2
+grow_vertical = 2
+mouse_filter = 2
+texture = ExtResource("2_crt")
+expand_mode = 1
+stretch_mode = 5
+
+[node name="Panel" type="NinePatchRect" parent="."]
+layout_mode = 1
+anchors_preset = -1
+anchor_left = 0.07
+anchor_top = 1.0
+anchor_right = 0.93
+anchor_bottom = 1.0
+offset_top = -208.0
+offset_bottom = -28.0
+grow_horizontal = 2
+grow_vertical = 0
+mouse_filter = 2
+texture = ExtResource("3_panel")
+patch_margin_left = 56
+patch_margin_top = 44
+patch_margin_right = 56
+patch_margin_bottom = 44
+
+[node name="Dialogue" type="Label" parent="Panel"]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+offset_left = 56.0
+offset_top = 36.0
+offset_right = -96.0
+offset_bottom = -74.0
+grow_horizontal = 2
+grow_vertical = 2
+label_settings = SubResource("LabelSettings_dialogue")
+autowrap_mode = 3
+
+[node name="ContinuePrompt" type="Label" parent="Panel"]
+layout_mode = 1
+anchors_preset = 3
+anchor_left = 1.0
+anchor_top = 1.0
+anchor_right = 1.0
+anchor_bottom = 1.0
+offset_left = -400.0
+offset_top = -74.0
+offset_right = -60.0
+offset_bottom = -46.0
+grow_horizontal = 0
+grow_vertical = 0
+text = "Press any key to continue"
+label_settings = SubResource("LabelSettings_continue")
+horizontal_alignment = 2
+vertical_alignment = 2

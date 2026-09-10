@@ -1,4 +1,4 @@
-[gd_scene load_steps=13 format=3]
+[gd_scene load_steps=14 format=3]
 
 [ext_resource type="Script" path="res://scripts/Main.gd" id="1_q8u5g"]
 [ext_resource type="PackedScene" path="res://assets/maps/ussr_mansion_map.glb" id="2_lhr70"]
@@ -24,6 +24,12 @@ height = 1.2
 [sub_resource type="CapsuleShape3D" id="CapsuleShape3D_1nqs0"]
 radius = 0.42
 height = 1.35
+
+[sub_resource type="LabelSettings" id="LabelSettings_1iba3"]
+font_size = 18
+font_color = Color(0.909804, 0.886275, 0.831373, 1)
+outline_size = 8
+outline_color = Color(0.101961, 0.101961, 0.086275, 1)
 
 [node name="Main" type="Node3D"]
 script = ExtResource("1_q8u5g")
@@ -98,3 +104,16 @@ projection = 1
 current = true
 size = 20.0
 far = 250.0
+
+[node name="HUD" type="CanvasLayer" parent="."]
+
+[node name="ReturnHint" type="Label" parent="HUD"]
+anchors_preset = 2
+anchor_top = 1.0
+anchor_bottom = 1.0
+offset_left = 28.0
+offset_top = -60.0
+offset_right = 428.0
+offset_bottom = -24.0
+text = "Esc  //  return to map"
+label_settings = SubResource("LabelSettings_1iba3")

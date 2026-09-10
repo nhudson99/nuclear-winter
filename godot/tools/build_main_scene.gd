@@ -144,6 +144,28 @@ func _build() -> void:
 	main.add_child(camera)
 	camera.owner = main
 
+	var hud := CanvasLayer.new()
+	hud.name = "HUD"
+	main.add_child(hud)
+	hud.owner = main
+
+	var hint := Label.new()
+	hint.name = "ReturnHint"
+	hint.text = "Esc  //  return to map"
+	hint.set_anchors_and_offsets_preset(Control.PRESET_BOTTOM_LEFT)
+	hint.offset_left = 28.0
+	hint.offset_top = -60.0
+	hint.offset_right = 428.0
+	hint.offset_bottom = -24.0
+	var hint_settings := LabelSettings.new()
+	hint_settings.font_size = 18
+	hint_settings.font_color = Color(0.909804, 0.886275, 0.831373)
+	hint_settings.outline_size = 8
+	hint_settings.outline_color = Color(0.101961, 0.101961, 0.086275)
+	hint.label_settings = hint_settings
+	hud.add_child(hint)
+	hint.owner = main
+
 	var packed := PackedScene.new()
 	if packed.pack(main) != OK:
 		push_error("Failed to pack Main")
