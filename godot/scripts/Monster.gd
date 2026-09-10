@@ -1,7 +1,9 @@
 extends CharacterBody3D
 
-## Patrols mansion sections room-by-room, detects nearby players in a radius,
-## and also chases on FOV + line of sight. Touching the player deals lethal damage.
+## Patrols the level section-by-section and room-by-room, detects nearby players
+## in a radius, and also chases on FOV + line of sight. Touching the player deals
+## lethal damage. The room list and level depth come from MapGenerator via
+## `configure_level`, so the patrol adapts to whatever floorplan a run rolled.
 
 @export var move_speed: float = 3.8
 @export var gravity: float = 20.0
@@ -37,12 +39,12 @@ var health: float = 100.0
 var _health_bar: HealthBar3D
 var _alive: bool = true
 
-# Level footprint in Godot XZ (Blender floor ~12.4 x 18.2, walls x±6 / z -9..+8).
-const LEVEL_MIN_X: float = -6.0
-const LEVEL_MAX_X: float = 6.0
-const LEVEL_MIN_Z: float = -9.0
-const LEVEL_MAX_Z: float = 8.0
+# Level depth along Z, replaced by configure_level once the map is generated.
+# Defaults cover a single room tile centred on the origin.
+var _level_min_z: float = -MapGenerator.TILE * 0.5
+var _level_max_z: float = MapGenerator.TILE * 0.5
 
+var _level_rooms: Array = [] # Room dicts {name, center} from the generated layout
 var _sections: Array = [] # Array of Arrays of room dicts {name, center}
 var _section_index: int = 0
 var _room_index: int = 0
@@ -279,17 +281,37 @@ func _can_see_player() -> bool:
 	var hit := space.intersect_ray(query)
 	return hit.is_empty()
 
+## Adopts a generated floorplan: rooms become patrol waypoints and the level's
+## Z extent is re-divided into equal patrol sections.
+func configure_level(rooms: Array, bounds: AABB) -> void:
+	_level_rooms.clear()
+	for room in rooms:
+		var center: Vector3 = room.get("center", Vector3.ZERO)
+		_level_rooms.append({
+			"name": String(room.get("type", "room")),
+			"center": Vector3(center.x, 0.05, center.z),
+		})
+	if bounds.size.z > 0.0:
+		_level_min_z = bounds.position.z
+		_level_max_z = bounds.position.z + bounds.size.z
+
+	_build_sections()
+	_section_index = _section_for_position(global_position)
+	_room_index = 0
+	_section_timer = 0.0
+	_time_since_seen = 999.0
+	_refresh_patrol_target()
+
 func _build_sections() -> void:
 	_sections.clear()
 	var count := maxi(section_count, 1)
 	for _i in count:
 		_sections.append([])
 
-	var rooms := _mansion_rooms()
-	var depth := (LEVEL_MAX_Z - LEVEL_MIN_Z) / float(count)
-	for room in rooms:
+	var depth := (_level_max_z - _level_min_z) / float(count)
+	for room in _level_rooms:
 		var center: Vector3 = room["center"]
-		var idx := int(floor((center.z - LEVEL_MIN_Z) / depth))
+		var idx := int(floor((center.z - _level_min_z) / depth))
 		idx = clampi(idx, 0, count - 1)
 		_sections[idx].append(room)
 
@@ -297,31 +319,26 @@ func _build_sections() -> void:
 	for i in count:
 		if not (_sections[i] as Array).is_empty():
 			continue
-		var z0 := LEVEL_MIN_Z + depth * float(i)
+		var z0 := _level_min_z + depth * float(i)
 		var z1 := z0 + depth
 		_sections[i].append({
 			"name": "section_%d_center" % i,
-			"center": Vector3(0.0, 0.05, (z0 + z1) * 0.5),
+			"center": Vector3(_level_center_x(), 0.05, (z0 + z1) * 0.5),
 		})
+
+func _level_center_x() -> float:
+	if _level_rooms.is_empty():
+		return 0.0
+	var total := 0.0
+	for room in _level_rooms:
+		total += (room["center"] as Vector3).x
+	return total / float(_level_rooms.size())
 
 func _section_for_position(pos: Vector3) -> int:
 	var count := maxi(section_count, 1)
-	var depth := (LEVEL_MAX_Z - LEVEL_MIN_Z) / float(count)
-	var idx := int(floor((pos.z - LEVEL_MIN_Z) / depth))
+	var depth := (_level_max_z - _level_min_z) / float(count)
+	var idx := int(floor((pos.z - _level_min_z) / depth))
 	return clampi(idx, 0, count - 1)
-
-func _mansion_rooms() -> Array:
-	# Centers match the authored mansion rooms (Godot XZ = Blender X, -Y).
-	return [
-		{"name": "bottom_l", "center": Vector3(-3.0, 0.05, 4.5)},
-		{"name": "bottom_r", "center": Vector3(3.0, 0.05, 4.5)},
-		{"name": "mid_l", "center": Vector3(-4.1, 0.05, -1.6)},
-		{"name": "mid_c", "center": Vector3(0.0, 0.05, -1.6)},
-		{"name": "mid_r", "center": Vector3(4.1, 0.05, -1.6)},
-		{"name": "top_l", "center": Vector3(-4.1, 0.05, -6.4)},
-		{"name": "top_c", "center": Vector3(0.0, 0.05, -6.4)},
-		{"name": "top_r", "center": Vector3(4.1, 0.05, -6.4)},
-	]
 
 func _animate_walk(phase: float, amount: float) -> void:
 	var swing := deg_to_rad(stride_angle_deg) * amount * sin(phase)
