@@ -199,14 +199,14 @@ func _find_sealed_wall(layout: Dictionary) -> Dictionary:
 	var occupied := {}
 	for room in layout["rooms"]:
 		occupied[room["cell"]] = true
-	var start_cell: Vector2i = layout["start_cell"]
+	var exit_cell: Vector2i = layout["exit_cell"]
 	var exit_side: String = layout["exit_side"]
 	for room in layout["rooms"]:
 		var cell: Vector2i = room["cell"]
 		for side in MapGenerator.SIDES:
 			if occupied.has(cell + MapGenerator.SIDE_STEPS[side]):
 				continue
-			if cell == start_cell and side == exit_side:
+			if cell == exit_cell and side == exit_side:
 				continue
 			return {"cell": cell, "side": side}
 	return {}

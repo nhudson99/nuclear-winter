@@ -95,11 +95,11 @@ func generate(container: Node3D, level_seed: int, room_count: int) -> Dictionary
 
 	progress.emit(0.9, "ПРОБИВКА ВЫХОДА / CUTTING THE EXIT")
 	var start_cell: Vector2i = cells[0]
-	var exit_side := _open_exterior_exit(rooms, start_cell, occupied, rng)
+	var exit_info := _open_exterior_exit(rooms, start_cell, occupied, rng)
 	await get_tree().process_frame
 
 	progress.emit(0.96, "РАССТАНОВКА / PLACING ASSETS")
-	var layout := _describe_layout(rooms, cells, start_cell, exit_side, level_seed)
+	var layout := _describe_layout(rooms, cells, start_cell, exit_info, level_seed)
 	_add_ground(container, layout["bounds"])
 	progress.emit(1.0, "ГОТОВО / READY")
 	return layout
@@ -163,23 +163,29 @@ func _fits_span(cells: Array[Vector2i], candidate: Vector2i, max_span: int) -> b
 	return (max_x - min_x + 1) <= max_span and (max_y - min_y + 1) <= max_span
 
 
-## Deals one of every room type first so a level always shows all four, then
-## fills the rest at random and shuffles with the seeded generator.
+## Deals the room types in whole cycles, so every level shows all four and no
+## type can dominate; the cycle order is shuffled first so which types get the
+## leftover slots still varies by seed.
 func _assign_types(rng: RandomNumberGenerator, count: int) -> Array[String]:
 	var bag: Array[String] = []
-	for type_name in ROOM_TYPES:
-		bag.append(type_name)
 	while bag.size() < count:
-		bag.append(ROOM_TYPES[rng.randi_range(0, ROOM_TYPES.size() - 1)])
-	bag.resize(count)
-
-	# Array.shuffle() draws from the global RNG, which would break seed replay.
-	for i in range(bag.size() - 1, 0, -1):
-		var j := rng.randi_range(0, i)
-		var swap := bag[i]
-		bag[i] = bag[j]
-		bag[j] = swap
+		var cycle: Array[String] = ROOM_TYPES.duplicate()
+		_shuffle(cycle, rng)
+		for type_name in cycle:
+			if bag.size() >= count:
+				break
+			bag.append(type_name)
+	_shuffle(bag, rng)
 	return bag
+
+
+## Array.shuffle() draws from the global RNG, which would break seed replay.
+func _shuffle(values: Array[String], rng: RandomNumberGenerator) -> void:
+	for i in range(values.size() - 1, 0, -1):
+		var j := rng.randi_range(0, i)
+		var swap := values[i]
+		values[i] = values[j]
+		values[j] = swap
 
 
 # --------------------------------------------------------------------------- #
@@ -338,35 +344,49 @@ static func find_child_by_name(root: Node, node_name: String) -> Node:
 # --------------------------------------------------------------------------- #
 
 
-## Knocks the plug out of one outward-facing wall of the start room so the run
-## has a way back out into the ash.
+## Knocks the plug out of one outward-facing wall so the run has a way back out
+## into the ash. Usually that is the start room, but growth can bury the start
+## cell in the middle of the map, so the nearest room with an outward-facing wall
+## is used instead. Some room always has one.
 func _open_exterior_exit(
 	rooms: Array[Dictionary],
 	start_cell: Vector2i,
 	occupied: Dictionary,
 	rng: RandomNumberGenerator
-) -> String:
-	var free_sides: Array[String] = []
-	for side in SIDES:
-		if not occupied.has(start_cell + SIDE_STEPS[side]):
-			free_sides.append(side)
-	if free_sides.is_empty():
-		return ""
-
-	# South reads as "the way you came in" under the isometric camera.
-	var side: String = "S" if free_sides.has("S") else free_sides[rng.randi_range(0, free_sides.size() - 1)]
+) -> Dictionary:
+	var best: Dictionary = {}
+	var best_distance := 1 << 30
 	for room in rooms:
-		if room["cell"] == start_cell:
-			open_doorway(room["node"], side)
-			break
-	return side
+		var cell: Vector2i = room["cell"]
+		var distance := absi(cell.x - start_cell.x) + absi(cell.y - start_cell.y)
+		if distance >= best_distance:
+			continue
+		var free_sides: Array[String] = []
+		for side in SIDES:
+			if not occupied.has(cell + SIDE_STEPS[side]):
+				free_sides.append(side)
+		if free_sides.is_empty():
+			continue
+		best_distance = distance
+		# South reads as "the way you came in" under the isometric camera.
+		var side: String = (
+			"S" if free_sides.has("S")
+			else free_sides[rng.randi_range(0, free_sides.size() - 1)]
+		)
+		best = {"cell": cell, "side": side, "node": room["node"]}
+
+	if best.is_empty():
+		push_error("MapGenerator: no room has an outward-facing wall for the exit")
+		return {}
+	open_doorway(best["node"], best["side"])
+	return {"cell": best["cell"], "side": best["side"]}
 
 
 func _describe_layout(
 	rooms: Array[Dictionary],
 	cells: Array[Vector2i],
 	start_cell: Vector2i,
-	exit_side: String,
+	exit_info: Dictionary,
 	level_seed: int
 ) -> Dictionary:
 	var min_cell := start_cell
@@ -377,18 +397,29 @@ func _describe_layout(
 		max_cell.x = maxi(max_cell.x, cell.x)
 		max_cell.y = maxi(max_cell.y, cell.y)
 
-	# The objective belongs as deep into the map as the layout allows.
+	var exit_cell: Vector2i = exit_info.get("cell", start_cell)
+	var exit_side: String = exit_info.get("side", "")
+
+	# The objective goes as far from the exit as the layout allows, so grabbing it
+	# always means a trek back. Distance from the spawn breaks ties.
 	var objective_cell := start_cell
-	var best_distance := -1
+	var best_score := -1
 	for cell in cells:
-		var distance := absi(cell.x - start_cell.x) + absi(cell.y - start_cell.y)
-		if distance > best_distance:
-			best_distance = distance
+		if cells.size() > 2 and (cell == start_cell or cell == exit_cell):
+			continue
+		var from_exit := absi(cell.x - exit_cell.x) + absi(cell.y - exit_cell.y)
+		var from_start := absi(cell.x - start_cell.x) + absi(cell.y - start_cell.y)
+		var score := from_exit * 100 + from_start
+		if score > best_score:
+			best_score = score
 			objective_cell = cell
 
 	# The monster starts between the two so it has ground to cover either way.
+	var objective_span := (
+		absi(objective_cell.x - start_cell.x) + absi(objective_cell.y - start_cell.y)
+	)
 	var monster_cell := objective_cell
-	var target_distance := maxi(best_distance / 2, 1)
+	var target_distance := maxi(objective_span / 2, 1)
 	var closest := 1 << 30
 	for cell in cells:
 		if cell == start_cell:
@@ -400,7 +431,7 @@ func _describe_layout(
 			monster_cell = cell
 
 	var start_center := cell_to_world(start_cell)
-	var exit_position := start_center
+	var exit_position := cell_to_world(exit_cell)
 	if not exit_side.is_empty():
 		# Sit in the doorway itself rather than the wall's centre line.
 		exit_position += Vector3(SIDE_STEPS[exit_side].x, 0.0, SIDE_STEPS[exit_side].y) * (TILE * 0.5 - 0.4)
@@ -420,6 +451,7 @@ func _describe_layout(
 		"start_cell": start_cell,
 		"start": start_center + Vector3(0.0, 0.05, 0.0),
 		"exit_side": exit_side,
+		"exit_cell": exit_cell,
 		"exit": exit_position,
 		"objective": cell_to_world(objective_cell) + Vector3(0.0, 0.05, 0.0),
 		"objective_cell": objective_cell,

@@ -27,8 +27,20 @@ func _run() -> void:
 	var connected := _is_connected(first["layout"]) and _is_connected(other["layout"])
 	print("connectivity_ok=", connected)
 
-	var types_ok := _covers_all_types(first["layout"]) and _covers_all_types(other["layout"])
+	var types_ok := _check_types(first["layout"]) and _check_types(other["layout"])
 	print("all_room_types_ok=", types_ok)
+
+	# A layout whose growth buries the start cell must still open an exit
+	# somewhere, otherwise the run is unwinnable.
+	var exits_ok := true
+	for level_seed in range(1, 40):
+		var probe := await _generate(level_seed, ROOM_COUNT)
+		var side: String = probe["layout"]["exit_side"]
+		if side.is_empty() or not MapGenerator.SIDES.has(side):
+			print("exit_missing seed=", level_seed)
+			exits_ok = false
+		(probe["container"] as Node3D).queue_free()
+	print("exit_always_opened_ok=", exits_ok)
 
 	var doorways_ok := _check_doorways(first) and _check_doorways(other)
 	print("doorways_ok=", doorways_ok)
@@ -44,6 +56,7 @@ func _run() -> void:
 
 	var all_ok: bool = (
 		modules_ok
+		and exits_ok
 		and count_ok
 		and deterministic
 		and varies
@@ -102,7 +115,7 @@ func _fingerprint(layout: Dictionary) -> String:
 	var parts: Array[String] = []
 	for room in layout["rooms"]:
 		parts.append("%d/%d:%s" % [room["cell"].x, room["cell"].y, room["type"]])
-	parts.append("exit:%s" % layout["exit_side"])
+	parts.append("exit:%d/%d:%s" % [layout["exit_cell"].x, layout["exit_cell"].y, layout["exit_side"]])
 	return "|".join(parts)
 
 
@@ -130,14 +143,26 @@ func _is_connected(layout: Dictionary) -> bool:
 	return reached == cells.size()
 
 
-func _covers_all_types(layout: Dictionary) -> bool:
-	var seen := {}
-	for room in layout["rooms"]:
-		seen[room["type"]] = true
+## All four types must appear, and dealing in whole cycles should keep their
+## counts within one of each other rather than letting one type dominate.
+func _check_types(layout: Dictionary) -> bool:
+	var counts := {}
 	for type_name in MapGenerator.ROOM_TYPES:
-		if not seen.has(type_name):
+		counts[type_name] = 0
+	for room in layout["rooms"]:
+		if not counts.has(room["type"]):
+			print("unknown_room_type=", room["type"])
 			return false
-	return true
+		counts[room["type"]] += 1
+
+	var lowest := 1 << 30
+	var highest := 0
+	for type_name in counts:
+		lowest = mini(lowest, counts[type_name])
+		highest = maxi(highest, counts[type_name])
+	var balanced := lowest >= 1 and highest - lowest <= 1
+	print("room_type_counts=", counts, " balanced=", balanced)
+	return balanced
 
 
 ## A plug must be gone wherever two rooms meet and present wherever a room
@@ -149,7 +174,7 @@ func _check_doorways(result: Dictionary) -> bool:
 	for room in layout["rooms"]:
 		occupied[room["cell"]] = room
 
-	var start_cell: Vector2i = layout["start_cell"]
+	var exit_cell: Vector2i = layout["exit_cell"]
 	var exit_side: String = layout["exit_side"]
 	var ok := true
 	for room in layout["rooms"]:
@@ -163,7 +188,7 @@ func _check_doorways(result: Dictionary) -> bool:
 		for side in MapGenerator.SIDES:
 			var has_plug := MapGenerator.find_child_by_name(node, "Plug_%s" % side) != null
 			var is_shared: bool = occupied.has(cell + MapGenerator.SIDE_STEPS[side])
-			var is_exit: bool = cell == start_cell and side == exit_side
+			var is_exit: bool = cell == exit_cell and side == exit_side
 			var should_be_open := is_shared or is_exit
 			if has_plug == should_be_open:
 				print(
@@ -202,17 +227,22 @@ func _check_spawns(layout: Dictionary) -> bool:
 	var start_cell: Vector2i = layout["start_cell"]
 	var objective_cell: Vector2i = layout["objective_cell"]
 	var monster_cell: Vector2i = layout["monster_cell"]
+	var exit_cell: Vector2i = layout["exit_cell"]
 	var in_map := (
 		centers.has(start_cell)
 		and centers.has(objective_cell)
 		and centers.has(monster_cell)
+		and centers.has(exit_cell)
 	)
-	var objective_away: bool = objective_cell != start_cell
+	# Standing on the objective, or on the exit while holding it, would let a run
+	# resolve itself the moment it starts.
+	var objective_away: bool = objective_cell != start_cell and objective_cell != exit_cell
 	var monster_away: bool = monster_cell != start_cell
 	print(
 		"spawns start=", start_cell,
 		" objective=", objective_cell,
 		" monster=", monster_cell,
+		" exit=", exit_cell,
 		" in_map=", in_map
 	)
 	return in_map and objective_away and monster_away
