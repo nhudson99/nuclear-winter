@@ -1,0 +1,118 @@
+extends SceneTree
+
+## Headless smoke for the core loop: pickup (E), monster alert, WIN, GAME OVER.
+
+func _initialize() -> void:
+	call_deferred("_run")
+
+func _run() -> void:
+	var packed: PackedScene = load("res://scenes/Main.tscn")
+	if packed == null:
+		push_error("Missing Main.tscn")
+		quit(1)
+		return
+	var main: Node3D = packed.instantiate()
+	root.add_child(main)
+	await create_timer(0.35).timeout
+
+	var player: CharacterBody3D = main.get_node("Player")
+	var monster: CharacterBody3D = main.get_node("Monster")
+	var pickup: Area3D = main.get_node_or_null("PickupItem")
+	var exit_zone: Area3D = main.get_node_or_null("ExitZone")
+	if player == null or monster == null or pickup == null or exit_zone == null:
+		push_error("Missing Player/Monster/PickupItem/ExitZone")
+		quit(1)
+		return
+
+	var nodes_ok := true
+	print("loop_nodes_ok=", nodes_ok)
+
+	# Baseline monster difficulty.
+	var base_dwell: float = monster.section_dwell_time
+	var base_prox: float = monster.proximity_radius
+	print("base_dwell=", base_dwell, " base_prox=", base_prox)
+
+	# Pickup via interact near the item.
+	monster.set_physics_process(false)
+	monster.touch_damage = 0.0
+	player.global_position = pickup.global_position + Vector3(0.8, 0.0, 0.0)
+	player.velocity = Vector3.ZERO
+	await create_timer(0.05).timeout
+
+	Input.action_press("interact")
+	await create_timer(0.05).timeout
+	# Drive one physics tick so Player sees the just_pressed edge.
+	player._physics_process(0.033)
+	Input.action_release("interact")
+	await create_timer(0.1).timeout
+
+	var has_item: bool = player.has_collected_item()
+	var pickup_gone: bool = not is_instance_valid(pickup) or pickup.is_taken()
+	print("pickup_ok=", has_item and pickup_gone, " has_item=", has_item, " gone=", pickup_gone)
+
+	var alerted: bool = monster.is_item_alerted()
+	var dwell_halved: bool = is_equal_approx(monster.section_dwell_time, base_dwell * 0.5)
+	var prox_doubled: bool = is_equal_approx(monster.proximity_radius, base_prox * 2.0)
+	print(
+		"alert_ok=",
+		alerted and dwell_halved and prox_doubled,
+		" dwell=",
+		monster.section_dwell_time,
+		" prox=",
+		monster.proximity_radius
+	)
+
+	# Escaping through the exit with the item should WIN.
+	player.global_position = exit_zone.global_position + Vector3(0.0, 0.05, 0.0)
+	player.velocity = Vector3.ZERO
+	# Force exit overlap evaluation.
+	await create_timer(0.15).timeout
+	if main.get_game_state() != main.GameState.WON:
+		# Nudge body_entered if physics missed the teleport.
+		exit_zone._on_body_entered(player)
+		await create_timer(0.05).timeout
+	var win_ok: bool = main.get_game_state() == main.GameState.WON
+	var win_label := main.get_node_or_null("HUD/StatusLabel") as Label
+	var win_text_ok: bool = win_label != null and win_label.visible and win_label.text == "WIN"
+	print("win_ok=", win_ok and win_text_ok, " state=", main.get_game_state(), " text=", win_label.text if win_label else "")
+
+	# Fresh scene for GAME OVER path.
+	main.queue_free()
+	await create_timer(0.1).timeout
+	main = packed.instantiate()
+	root.add_child(main)
+	await create_timer(0.35).timeout
+	player = main.get_node("Player")
+	monster = main.get_node("Monster")
+	monster.set_physics_process(false)
+	monster.touch_damage = 100.0
+	player.global_position = Vector3(0.0, 0.05, 0.0)
+	monster.global_position = Vector3(0.0, 0.05, 0.0)
+	# Re-fire touch after placing bodies on top of each other.
+	var touch: Area3D = monster.get_node_or_null("TouchArea")
+	if touch:
+		touch.monitoring = false
+		await create_timer(0.05).timeout
+		touch.monitoring = true
+	await create_timer(0.2).timeout
+	if player.is_alive():
+		player.take_damage(100.0)
+	await create_timer(0.05).timeout
+	var lose_ok: bool = main.get_game_state() == main.GameState.LOST
+	var lose_label := main.get_node_or_null("HUD/StatusLabel") as Label
+	var lose_text_ok: bool = lose_label != null and lose_label.visible and lose_label.text == "GAME OVER"
+	print("game_over_ok=", lose_ok and lose_text_ok, " state=", main.get_game_state(), " text=", lose_label.text if lose_label else "")
+
+	var all_ok: bool = (
+		has_item
+		and pickup_gone
+		and alerted
+		and dwell_halved
+		and prox_doubled
+		and win_ok
+		and win_text_ok
+		and lose_ok
+		and lose_text_ok
+	)
+	print("game_loop_smoke_ok=", all_ok)
+	quit(0 if all_ok else 1)

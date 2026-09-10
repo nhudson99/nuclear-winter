@@ -15,7 +15,7 @@ godot --path godot
 - Humanoid authored in Blender (`blender/build_humanoid.py`) → `godot/assets/characters/humanoid_scavenger.glb`
 - Monster authored in Blender (`blender/build_monster.py`) → `godot/assets/characters/enemy_monster.glb`
 - Furniture props authored in Blender (`blender/build_furniture.py`) → `godot/assets/props/{crate,wardrobe,couch}.glb`
-- Scene: `godot/scenes/Main.tscn` (isometric camera, wall/prop collision, WASD walk, monster patrol/proximity chase, health bars, walkable doorways)
+- Scene: `godot/scenes/Main.tscn` (isometric camera, wall/prop collision, WASD walk, E to pick up the objective, escape the south exit, monster patrol/proximity chase, health bars, walkable doorways)
 
 ### Rebuild Blender assets
 
@@ -31,6 +31,9 @@ cd godot && /home/ubuntu/tools/godot/Godot --headless --import
 
 ### Gameplay notes
 
+- **Objective**: a glowing pickup sits in the north-west rooms. Press **E** nearby to collect it, then reach the southern exit without dying.
+- **Alarm**: collecting the item halves the monster's section patrol time and doubles its proximity detection radius.
+- **Win / lose**: escaping with the item shows **WIN**; dying shows **GAME OVER**.
 - **Doorways**: every adjacent room is linked by an open wall gap; player and monster can walk through.
 - **Monster**: patrols the mansion in equal level sections (30s each), checking every room in the current section; detects players in a close proximity radius or via FOV + line of sight; deals 100 touch damage.
 - **Health**: player and monster both start at 100 HP with billboard health bars above their heads.
@@ -52,7 +55,8 @@ godot/                     Godot 4.4 isometric game
   assets/characters/{humanoid_scavenger,enemy_monster}.glb
   assets/props/{crate,wardrobe,couch}.glb
   scenes/Main.tscn
-  scripts/{Main,Player,Monster}.gd
+  scripts/{Main,Player,Monster,PickupItem,ExitZone}.gd
+  tools/smoke_game_loop.gd
 blender/
   build_mansion_map.py
   build_humanoid.py
