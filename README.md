@@ -1,6 +1,7 @@
 # Nuclear Winter
 
-Post-fallout USSR game. The **playable 3D isometric level** lives in the **Godot** project. The Phaser web app still hosts the title + tutorial intro.
+Post-fallout USSR game. The complete title → briefing → map → playable
+3D level flow lives in the **Godot** project.
 
 ## Godot 3D isometric (main play)
 
@@ -15,7 +16,8 @@ godot --path godot
 - Humanoid authored in Blender (`blender/build_humanoid.py`) → `godot/assets/characters/humanoid_scavenger.glb`
 - Monster authored in Blender (`blender/build_monster.py`) → `godot/assets/characters/enemy_monster.glb`
 - Furniture props authored in Blender (`blender/build_furniture.py`) → `godot/assets/props/{crate,wardrobe,couch}.glb`
-- Scene: `godot/scenes/Main.tscn` (isometric camera, wall/prop collision, WASD walk, E to pick up the objective, escape the south exit, monster patrol/proximity chase, health bars, walkable doorways)
+- Frontend scenes: `godot/scenes/{TitleScreen,AristocratScreen,GameMap}.tscn`
+- Level scene: `godot/scenes/Main.tscn` (isometric camera, wall/prop collision, WASD walk, E to pick up the objective, escape the south exit, monster patrol/proximity chase, health bars, walkable doorways)
 
 ### Rebuild Blender assets
 
@@ -31,6 +33,7 @@ cd godot && /home/ubuntu/tools/godot/Godot --headless --import
 
 ### Gameplay notes
 
+- **Start flow**: press any key on the title and briefing screens, then select the pulsing **Level 1** signal on the map.
 - **Objective**: a glowing pickup sits in the north-west rooms. Press **E** nearby to collect it, then reach the southern exit without dying.
 - **Alarm**: collecting the item halves the monster's section patrol time and doubles its proximity detection radius.
 - **Win / lose**: escaping with the item shows **WIN**; dying shows **GAME OVER**.
@@ -45,7 +48,8 @@ npm install
 npm run dev
 ```
 
-Flow: title → boss CRT briefing → Pip-Boy map (returns to menu). The old 2D mansion walk scene has been removed.
+The Phaser version of the title → boss CRT briefing → Pip-Boy map remains
+available as a web-only prototype.
 
 ## Layout
 
@@ -54,9 +58,10 @@ godot/                     Godot 4.4 isometric game
   assets/maps/ussr_mansion_map.glb
   assets/characters/{humanoid_scavenger,enemy_monster}.glb
   assets/props/{crate,wardrobe,couch}.glb
-  scenes/Main.tscn
-  scripts/{Main,Player,Monster,PickupItem,ExitZone}.gd
-  tools/smoke_game_loop.gd
+  assets/ui/{title-screen,boss-crt,dialogue-panel,ussr-pipboy-map}.png
+  scenes/{TitleScreen,AristocratScreen,GameMap,Main}.tscn
+  scripts/{IntroScreen,GameMap,Main,Player,Monster,PickupItem,ExitZone}.gd
+  tools/{smoke_frontend_flow,smoke_game_loop}.gd
 blender/
   build_mansion_map.py
   build_humanoid.py
