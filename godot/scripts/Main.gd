@@ -1,32 +1,48 @@
 extends Node3D
 
-enum GameState { PLAYING, WON, LOST }
+## Level 1. The floorplan is not authored: on load, MapGenerator stitches the
+## four Blender room modules into a pseudorandom layout while the loading screen
+## reports progress, then the player, monster, objective and exit are placed
+## from the layout it returns.
+
+signal level_ready(layout: Dictionary)
+
+enum GameState { LOADING, PLAYING, WON, LOST }
+
+const LOADING_SCREEN := preload("res://scenes/LoadingScreen.tscn")
 
 @onready var camera: Camera3D = $IsoCamera
 @onready var player: CharacterBody3D = $Player
-@onready var map_root: Node3D = $MansionMap
+@onready var map_root: Node3D = $GeneratedMap
 @onready var monster: CharacterBody3D = $Monster
 
 @export var camera_distance: float = 22.0
 @export var camera_height: float = 22.0
 @export var follow_lerp: float = 10.0
+@export var room_count: int = 9
+## Zero draws a fresh layout every run; any other value replays that exact map.
+@export var level_seed: int = 0
+## Floor on how long the overlay stays up, so generation is readable when the
+## map assembles in a handful of frames.
+@export var min_loading_seconds: float = 1.2
 
-var _state: GameState = GameState.PLAYING
+var _state: GameState = GameState.LOADING
 var _status_label: Label
+var _layout: Dictionary = {}
+var _loading: CanvasLayer
 
 func _ready() -> void:
-	_ensure_collision(map_root)
-	var furniture := get_node_or_null("Furniture")
-	if furniture:
-		_ensure_collision(furniture)
 	camera.projection = Camera3D.PROJECTION_ORTHOGONAL
 	camera.size = 20.0
 	camera.near = 0.05
 	camera.far = 250.0
 	camera.current = true
-	_snap_camera()
 	_setup_hud()
 	_wire_game_loop()
+	# Nothing exists to walk around in until generation lands.
+	player.lock_input()
+	monster.set_physics_process(false)
+	_build_level()
 
 func _physics_process(delta: float) -> void:
 	# High isometric look similar to the Blender reference render.
@@ -36,6 +52,57 @@ func _physics_process(delta: float) -> void:
 
 func get_game_state() -> GameState:
 	return _state
+
+## Layout returned by MapGenerator; empty until `level_ready` fires.
+func get_layout() -> Dictionary:
+	return _layout
+
+func is_level_ready() -> bool:
+	return _state != GameState.LOADING
+
+func _build_level() -> void:
+	var started := Time.get_ticks_msec()
+	_loading = LOADING_SCREEN.instantiate()
+	add_child(_loading)
+
+	var generator := MapGenerator.new()
+	generator.name = "MapGenerator"
+	add_child(generator)
+	generator.progress.connect(_loading.set_progress)
+
+	var used_seed := level_seed if level_seed != 0 else randi()
+	_layout = await generator.generate(map_root, used_seed, room_count)
+	generator.queue_free()
+	_apply_layout(_layout)
+
+	while Time.get_ticks_msec() - started < int(min_loading_seconds * 1000.0):
+		await get_tree().process_frame
+
+	_loading.snap_to_end()
+	await get_tree().process_frame
+	await _loading.fade_out()
+	_loading = null
+
+	_state = GameState.PLAYING
+	player.unlock_input()
+	monster.set_physics_process(true)
+	level_ready.emit(_layout)
+
+func _apply_layout(layout: Dictionary) -> void:
+	player.global_position = layout.get("start", Vector3.ZERO)
+	player.velocity = Vector3.ZERO
+	monster.global_position = layout.get("monster", Vector3.ZERO)
+	monster.velocity = Vector3.ZERO
+
+	var pickup := get_node_or_null("PickupItem") as Node3D
+	if pickup:
+		pickup.global_position = layout.get("objective", Vector3.ZERO)
+	var exit_zone := get_node_or_null("ExitZone") as Node3D
+	if exit_zone:
+		exit_zone.global_position = layout.get("exit", Vector3.ZERO)
+
+	monster.configure_level(layout.get("rooms", []), layout.get("bounds", AABB()))
+	_snap_camera()
 
 func _snap_camera() -> void:
 	camera.global_position = player.global_position + Vector3(camera_distance * 0.55, camera_height, camera_distance)
@@ -96,16 +163,3 @@ func _end_run(message: String) -> void:
 	if _status_label:
 		_status_label.text = message
 		_status_label.visible = true
-
-func _ensure_collision(node: Node) -> void:
-	if node is MeshInstance3D:
-		var mi := node as MeshInstance3D
-		var has_static := false
-		for child in mi.get_children():
-			if child is StaticBody3D:
-				has_static = true
-				break
-		if not has_static and mi.mesh != null:
-			mi.create_trimesh_collision()
-	for child in node.get_children():
-		_ensure_collision(child)

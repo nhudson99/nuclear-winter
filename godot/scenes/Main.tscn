@@ -1,101 +1,66 @@
-[gd_scene load_steps=16 format=3]
+[gd_scene load_steps=12 format=3]
 
-[ext_resource type="Script" path="res://scripts/Main.gd" id="1_q8u5g"]
-[ext_resource type="PackedScene" path="res://assets/maps/ussr_mansion_map.glb" id="2_lhr70"]
-[ext_resource type="PackedScene" path="res://assets/props/crate.glb" id="3_wp0k4"]
-[ext_resource type="PackedScene" path="res://assets/props/wardrobe.glb" id="4_bjd11"]
-[ext_resource type="PackedScene" path="res://assets/props/couch.glb" id="5_qmy6f"]
-[ext_resource type="Script" path="res://scripts/Player.gd" id="6_mwfav"]
-[ext_resource type="PackedScene" path="res://assets/characters/humanoid_scavenger.glb" id="7_3p2gp"]
-[ext_resource type="Script" path="res://scripts/Monster.gd" id="8_cvmbd"]
-[ext_resource type="PackedScene" path="res://assets/characters/enemy_monster.glb" id="9_ft6cd"]
-[ext_resource type="Script" path="res://scripts/PickupItem.gd" id="10_pickup"]
-[ext_resource type="Script" path="res://scripts/ExitZone.gd" id="11_exit"]
+[ext_resource type="Script" path="res://scripts/Main.gd" id="1_nxtc6"]
+[ext_resource type="Script" path="res://scripts/Player.gd" id="2_jlsqs"]
+[ext_resource type="PackedScene" path="res://assets/characters/humanoid_scavenger.glb" id="3_q8u5g"]
+[ext_resource type="Script" path="res://scripts/Monster.gd" id="4_lhr70"]
+[ext_resource type="PackedScene" path="res://assets/characters/enemy_monster.glb" id="5_wp0k4"]
+[ext_resource type="Script" path="res://scripts/PickupItem.gd" id="6_bjd11"]
+[ext_resource type="Script" path="res://scripts/ExitZone.gd" id="7_qmy6f"]
 
-[sub_resource type="Environment" id="Environment_bb450"]
+[sub_resource type="Environment" id="Environment_mwfav"]
 background_mode = 1
-background_color = Color(0.45, 0.62, 0.82, 1)
+background_color = Color(0.13, 0.14, 0.13, 1)
 ambient_light_source = 2
-ambient_light_color = Color(0.78, 0.82, 0.86, 1)
-ambient_light_energy = 0.7
+ambient_light_color = Color(0.6, 0.64, 0.63, 1)
+ambient_light_energy = 0.34
 
-[sub_resource type="CapsuleShape3D" id="CapsuleShape3D_nfivy"]
+[sub_resource type="CapsuleShape3D" id="CapsuleShape3D_3p2gp"]
 radius = 0.35
 height = 1.2
 
-[sub_resource type="CapsuleShape3D" id="CapsuleShape3D_1nqs0"]
+[sub_resource type="CapsuleShape3D" id="CapsuleShape3D_cvmbd"]
 radius = 0.42
 height = 1.35
 
-[sub_resource type="BoxShape3D" id="BoxShape3D_exit"]
-size = Vector3(4.5, 3, 2.4)
+[sub_resource type="BoxShape3D" id="BoxShape3D_ft6cd"]
+size = Vector3(3.2, 3, 3.2)
 
 [node name="Main" type="Node3D"]
-script = ExtResource("1_q8u5g")
+script = ExtResource("1_nxtc6")
 
 [node name="WorldEnvironment" type="WorldEnvironment" parent="."]
-environment = SubResource("Environment_bb450")
+environment = SubResource("Environment_mwfav")
 
 [node name="Sun" type="DirectionalLight3D" parent="."]
 transform = Transform3D(0.866025, -0.383022, 0.321394, 0, 0.642788, 0.766044, -0.5, -0.663414, 0.55667, 0, 0, 0)
-light_energy = 1.5
+light_color = Color(1, 0.95, 0.86, 1)
+light_energy = 0.95
 shadow_enabled = true
 
-[node name="MansionMap" type="Node3D" parent="." instance=ExtResource("2_lhr70")]
-
-[node name="Furniture" type="Node3D" parent="."]
-
-[node name="Crate_Entrance" type="Node3D" parent="Furniture" instance=ExtResource("3_wp0k4")]
-transform = Transform3D(0.951057, 0, 0.309017, 0, 1, 0, -0.309017, 0, 0.951057, 4.6, 0, 6.2)
-
-[node name="Crate_SW" type="Node3D" parent="Furniture" instance=ExtResource("3_wp0k4")]
-transform = Transform3D(0.978148, 0, -0.207912, 0, 1, 0, 0.207912, 0, 0.978148, -4.7, 0, 5.4)
-
-[node name="Crate_MidWest" type="Node3D" parent="Furniture" instance=ExtResource("3_wp0k4")]
-transform = Transform3D(0.819152, 0, 0.573576, 0, 1, 0, -0.573576, 0, 0.819152, -4.5, 0, -0.8)
-
-[node name="Crate_TopEast" type="Node3D" parent="Furniture" instance=ExtResource("3_wp0k4")]
-transform = Transform3D(0.906308, 0, -0.422618, 0, 1, 0, 0.422618, 0, 0.906308, 4.4, 0, -6.2)
-
-[node name="Wardrobe_East" type="Node3D" parent="Furniture" instance=ExtResource("4_bjd11")]
-transform = Transform3D(-4.37114e-08, 0, -1, 0, 1, 0, 1, 0, -4.37114e-08, 5.35, 0, -2)
-
-[node name="Wardrobe_West" type="Node3D" parent="Furniture" instance=ExtResource("4_bjd11")]
-transform = Transform3D(-4.37114e-08, 0, 1, 0, 1, 0, -1, 0, -4.37114e-08, -5.35, 0, 3.5)
-
-[node name="Wardrobe_North" type="Node3D" parent="Furniture" instance=ExtResource("4_bjd11")]
-transform = Transform3D(-1, 0, -8.74228e-08, 0, 1, 0, 8.74228e-08, 0, -1, -0.1, 0, -8.2)
-
-[node name="Couch_Center" type="Node3D" parent="Furniture" instance=ExtResource("5_qmy6f")]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, -2.8)
-
-[node name="Couch_SE" type="Node3D" parent="Furniture" instance=ExtResource("5_qmy6f")]
-transform = Transform3D(-1, 0, -8.74228e-08, 0, 1, 0, 8.74228e-08, 0, -1, 3.2, 0, 2.2)
-
-[node name="Couch_SW" type="Node3D" parent="Furniture" instance=ExtResource("5_qmy6f")]
-transform = Transform3D(-4.37114e-08, 0, 1, 0, 1, 0, -1, 0, -4.37114e-08, -3, 0, 3.8)
+[node name="GeneratedMap" type="Node3D" parent="."]
 
 [node name="Player" type="CharacterBody3D" parent="."]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 1.8, 0.05, 6.5)
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.05, 0)
 collision_layer = 2
-script = ExtResource("6_mwfav")
+script = ExtResource("2_jlsqs")
 
 [node name="CollisionShape3D" type="CollisionShape3D" parent="Player"]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.9, 0)
-shape = SubResource("CapsuleShape3D_nfivy")
+shape = SubResource("CapsuleShape3D_3p2gp")
 
-[node name="Humanoid" type="Node3D" parent="Player" instance=ExtResource("7_3p2gp")]
+[node name="Humanoid" type="Node3D" parent="Player" instance=ExtResource("3_q8u5g")]
 
 [node name="Monster" type="CharacterBody3D" parent="."]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.05, -6.2)
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.05, -12)
 collision_layer = 4
-script = ExtResource("8_cvmbd")
+script = ExtResource("4_lhr70")
 
 [node name="CollisionShape3D" type="CollisionShape3D" parent="Monster"]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 1, 0)
-shape = SubResource("CapsuleShape3D_1nqs0")
+shape = SubResource("CapsuleShape3D_cvmbd")
 
-[node name="MonsterMesh" type="Node3D" parent="Monster" instance=ExtResource("9_ft6cd")]
+[node name="MonsterMesh" type="Node3D" parent="Monster" instance=ExtResource("5_wp0k4")]
 transform = Transform3D(-1, 0, -8.74228e-08, 0, 1, 0, 8.74228e-08, 0, -1, 0, 0, 0)
 
 [node name="IsoCamera" type="Camera3D" parent="."]
@@ -105,17 +70,13 @@ size = 20.0
 far = 250.0
 
 [node name="PickupItem" type="Area3D" parent="."]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -4, 0.05, -5.8)
-script = ExtResource("10_pickup")
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.05, -24)
+script = ExtResource("6_bjd11")
 
 [node name="ExitZone" type="Area3D" parent="."]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 7.6)
-collision_layer = 0
-collision_mask = 2
-monitoring = true
-monitorable = false
-script = ExtResource("11_exit")
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 6)
+script = ExtResource("7_qmy6f")
 
 [node name="CollisionShape3D" type="CollisionShape3D" parent="ExitZone"]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 1.5, 0)
-shape = SubResource("BoxShape3D_exit")
+shape = SubResource("BoxShape3D_ft6cd")

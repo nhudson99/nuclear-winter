@@ -97,6 +97,9 @@ func lock_input() -> void:
 	_input_locked = true
 	velocity = Vector3.ZERO
 
+func unlock_input() -> void:
+	_input_locked = false
+
 func _try_interact() -> void:
 	if _has_item:
 		return
