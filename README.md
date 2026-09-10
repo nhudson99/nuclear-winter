@@ -5,10 +5,8 @@ Post-fallout USSR game. The **full Godot flow** is title → fat aristocrat brie
 ## Godot (title, briefing, map, Level 1)
 
 ```bash
-# Requires Godot 4.4+
+# Requires Godot 4.4+ (the Cloud Agent environment pins 4.4.1-stable)
 godot --path godot
-# or
-/home/ubuntu/tools/godot/Godot --path /workspace/godot
 ```
 
 - Map authored in Blender (`blender/build_mansion_map.py`) and exported to `godot/assets/maps/ussr_mansion_map.glb`
@@ -21,14 +19,25 @@ godot --path godot
 ### Rebuild Blender assets
 
 ```bash
-/home/ubuntu/tools/blender/blender --background --python blender/build_mansion_map.py
-/home/ubuntu/tools/blender/blender --background --python blender/build_monster.py
-/home/ubuntu/tools/blender/blender --background --python blender/build_furniture.py
-cd godot && /home/ubuntu/tools/godot/Godot --headless --import
-/home/ubuntu/tools/godot/Godot --headless -s res://tools/build_main_scene.gd
+# Requires Blender 4.2+ (the Cloud Agent environment pins 4.5.13 LTS)
+blender --background --python blender/build_mansion_map.py
+blender --background --python blender/build_humanoid.py
+blender --background --python blender/build_monster.py
+blender --background --python blender/build_furniture.py
+cd godot && godot --headless --import
+godot --headless -s res://tools/build_main_scene.gd
 ```
 
-> Note: Blender MCP is not available in this cloud environment, so meshes are authored via Blender’s Python API (headless) instead.
+> Note: Blender MCP is not available in this cloud environment, so meshes are authored via Blender’s Python API (headless) instead. The preview renders use Cycles on CPU because the environment has no GPU.
+
+### Headless smoke tests
+
+```bash
+cd godot
+godot --headless -s res://tools/smoke_flow_screens.gd
+godot --headless -s res://tools/smoke_game_loop.gd
+godot --headless -s res://tools/smoke_monster_doors.gd
+```
 
 ### Gameplay notes
 
