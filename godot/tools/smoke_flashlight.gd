@@ -59,12 +59,15 @@ func _run() -> void:
 	)
 
 	Input.action_press("flashlight")
-	await physics_frame
+	# physics_frame fires before _physics_process, so one tick is not enough.
+	for _i in range(3):
+		await physics_frame
 	var held_on: bool = player.is_flashlight_on() and flashlight != null and flashlight.visible
 	print("hold_on_ok=", held_on)
 
 	Input.action_release("flashlight")
-	await physics_frame
+	for _i in range(3):
+		await physics_frame
 	var released_off: bool = (
 		not player.is_flashlight_on()
 		and flashlight != null
