@@ -1,6 +1,6 @@
 extends SceneTree
 
-## Headless smoke for the core loop: pickup (E), monster alert, WIN, GAME OVER.
+## Headless smoke for the core loop: pickup (E), monster alert, victory aristocrat, GAME OVER.
 
 func _initialize() -> void:
 	call_deferred("_run")
@@ -27,6 +27,9 @@ func _run() -> void:
 
 	var nodes_ok := true
 	print("loop_nodes_ok=", nodes_ok)
+
+	var gp: Node = root.get_node("GameProgress")
+	gp.reset_for_tests()
 
 	var anim := _find_animation_player(player)
 	var clips := PackedStringArray()
@@ -65,6 +68,9 @@ func _run() -> void:
 	var pickup_gone: bool = not is_instance_valid(pickup) or pickup.is_taken()
 	print("pickup_ok=", has_item and pickup_gone, " has_item=", has_item, " gone=", pickup_gone)
 
+	var glow_ok: bool = exit_zone.has_method("is_glow_visible") and exit_zone.is_glow_visible()
+	print("exit_glow_ok=", glow_ok)
+
 	var alerted: bool = monster.is_item_alerted()
 	var dwell_halved: bool = is_equal_approx(monster.section_dwell_time, base_dwell * 0.5)
 	var prox_doubled: bool = is_equal_approx(monster.proximity_radius, base_prox * 2.0)
@@ -87,9 +93,23 @@ func _run() -> void:
 		exit_zone._on_body_entered(player)
 		await create_timer(0.05).timeout
 	var win_ok: bool = main.get_game_state() == main.GameState.WON
-	var win_label := main.get_node_or_null("HUD/StatusLabel") as Label
-	var win_text_ok: bool = win_label != null and win_label.visible and win_label.text == "WIN"
-	print("win_ok=", win_ok and win_text_ok, " state=", main.get_game_state(), " text=", win_label.text if win_label else "")
+	var overlay := main.get_node_or_null("VictoryOverlay")
+	var aristocrat := overlay.get_node_or_null("AristocratScreen") if overlay else null
+	if aristocrat and aristocrat.has_method("finish_typing_now"):
+		aristocrat.finish_typing_now()
+	var win_line: String = aristocrat.spoken_line() if aristocrat and aristocrat.has_method("spoken_line") else ""
+	var win_text_ok: bool = (
+		overlay != null
+		and aristocrat != null
+		and win_line == "Well, you survived. Good for you. Here is your ration reward"
+	)
+	var rations_ok: bool = int(gp.rations) == 5
+	print(
+		"win_ok=", win_ok and win_text_ok and rations_ok,
+		" state=", main.get_game_state(),
+		" line=", win_line,
+		" rations=", gp.rations
+	)
 
 	# Fresh scene for GAME OVER path.
 	main.queue_free()
@@ -128,8 +148,10 @@ func _run() -> void:
 		and alerted
 		and dwell_halved
 		and prox_doubled
+		and glow_ok
 		and win_ok
 		and win_text_ok
+		and rations_ok
 		and lose_ok
 		and lose_text_ok
 	)

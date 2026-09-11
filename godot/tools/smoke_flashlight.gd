@@ -147,16 +147,16 @@ func _environment_is_dark(main: Node3D) -> bool:
 		return false
 	var env := world.environment
 	var bg_black := env.background_color.r < 0.02 and env.background_color.g < 0.02 and env.background_color.b < 0.02
-	var ambient_off := (
-		env.ambient_light_source == Environment.AMBIENT_SOURCE_DISABLED
-		or env.ambient_light_energy <= 0.001
+	var ambient_dim := (
+		env.ambient_light_source == Environment.AMBIENT_SOURCE_COLOR
+		and absf(env.ambient_light_energy - 0.10) < 0.02
 	)
 	print(
 		"env_bg=", env.background_color,
 		" ambient_source=", env.ambient_light_source,
 		" ambient_energy=", env.ambient_light_energy
 	)
-	return bg_black and ambient_off
+	return bg_black and ambient_dim
 
 
 func _sun_is_off(main: Node3D) -> bool:

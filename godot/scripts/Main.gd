@@ -10,6 +10,11 @@ signal level_ready(layout: Dictionary)
 enum GameState { LOADING, PLAYING, WON, LOST }
 
 const LOADING_SCREEN := preload("res://scenes/LoadingScreen.tscn")
+const ARISTOCRAT_SCREEN := preload("res://scenes/AristocratScreen.tscn")
+## 50% more zoom onto the player than the original 20 m ortho height.
+const PLAY_CAMERA_SIZE := 20.0 / 1.5
+## 10% ambient so rooms are faintly readable with the flashlight off.
+const DARK_AMBIENT_ENERGY := 0.10
 
 @onready var camera: Camera3D = $IsoCamera
 @onready var player: CharacterBody3D = $Player
@@ -33,10 +38,11 @@ var _loading: CanvasLayer
 
 func _ready() -> void:
 	camera.projection = Camera3D.PROJECTION_ORTHOGONAL
-	camera.size = 20.0
+	camera.size = PLAY_CAMERA_SIZE
 	camera.near = 0.05
 	camera.far = 250.0
 	camera.current = true
+	_apply_level_lighting()
 	_setup_hud()
 	_wire_game_loop()
 	# Nothing exists to walk around in until generation lands.
@@ -130,6 +136,19 @@ func _apply_preview_overrides() -> void:
 	_status_label.add_theme_constant_override("margin_top", 24)
 
 
+func _apply_level_lighting() -> void:
+	var world := get_node_or_null("WorldEnvironment") as WorldEnvironment
+	if world == null or world.environment == null:
+		return
+	var env := world.environment
+	env.background_mode = Environment.BG_COLOR
+	env.background_color = Color(0.0, 0.0, 0.0)
+	env.ambient_light_source = Environment.AMBIENT_SOURCE_COLOR
+	env.ambient_light_color = Color(0.55, 0.60, 0.58)
+	env.ambient_light_energy = DARK_AMBIENT_ENERGY
+	env.reflected_light_source = Environment.REFLECTION_SOURCE_DISABLED
+
+
 func _snap_camera() -> void:
 	camera.global_position = player.global_position + Vector3(camera_distance * 0.55, camera_height, camera_distance)
 	camera.look_at(player.global_position + Vector3(0.0, 0.6, 0.0), Vector3.UP)
@@ -166,6 +185,9 @@ func _on_item_collected() -> void:
 		return
 	if monster and monster.has_method("alert_item_stolen"):
 		monster.alert_item_stolen()
+	var exit_zone := get_node_or_null("ExitZone")
+	if exit_zone and exit_zone.has_method("set_glow_visible"):
+		exit_zone.set_glow_visible(true)
 
 func _on_player_died() -> void:
 	if _state != GameState.PLAYING:
@@ -179,7 +201,27 @@ func _on_player_escaped(_body: Node3D) -> void:
 	if player == null or not player.has_collected_item():
 		return
 	_state = GameState.WON
-	_end_run("WIN")
+	_begin_victory()
+
+func _begin_victory() -> void:
+	if player and player.has_method("lock_input"):
+		player.lock_input()
+	if monster:
+		monster.set_physics_process(false)
+	GameProgress.award_escape()
+	GameProgress.aristocrat_mode = GameProgress.AristocratMode.VICTORY
+	_show_victory_aristocrat()
+
+func _show_victory_aristocrat() -> void:
+	if get_node_or_null("VictoryOverlay") != null:
+		return
+	var layer := CanvasLayer.new()
+	layer.name = "VictoryOverlay"
+	layer.layer = 64
+	add_child(layer)
+	var screen: Control = ARISTOCRAT_SCREEN.instantiate()
+	screen.name = "AristocratScreen"
+	layer.add_child(screen)
 
 func _end_run(message: String) -> void:
 	if player and player.has_method("lock_input"):

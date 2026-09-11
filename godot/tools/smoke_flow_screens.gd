@@ -61,13 +61,17 @@ func _run() -> void:
 	await _wait_for_scene("GameMap")
 	var map := current_scene
 	var level_btn: Button = map.get_level_1_button() if map and map.has_method("get_level_1_button") else null
-	var map_nodes_ok := (
+	var map_nodes_ok: bool = (
 		map != null
 		and map.name == "GameMap"
 		and map.get_node_or_null("MapImage") != null
 		and map.get_node_or_null("Level1Marker/Level1Button") != null
+		and map.get_node_or_null("ShopButton") != null
 		and level_btn != null
 		and level_btn.text == "LEVEL 1"
+		and map.has_method("get_shop_button")
+		and map.get_shop_button() != null
+		and String(map.get_shop_button().text) == "SHOP"
 	)
 	print("map_nodes_ok=", map_nodes_ok, " button=", level_btn.text if level_btn else "")
 
