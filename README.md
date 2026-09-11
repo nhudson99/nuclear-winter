@@ -46,7 +46,7 @@ cd godot && /home/ubuntu/tools/godot/Godot --headless --import
 
 ```bash
 cd godot
-for t in smoke_procgen smoke_monster_doors smoke_game_loop smoke_flow_screens; do
+for t in smoke_procgen smoke_monster_doors smoke_game_loop smoke_flow_screens smoke_player_anims; do
   /home/ubuntu/tools/godot/Godot --headless -s res://tools/$t.gd
 done
 ```

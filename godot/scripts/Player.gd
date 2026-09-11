@@ -28,8 +28,17 @@ var _alive: bool = true
 var _has_item: bool = false
 var _input_locked: bool = false
 
+func current_clip() -> String:
+	return _clip
+
+
 func _ready() -> void:
 	add_to_group("player")
+	if not InputMap.has_action("sprint"):
+		InputMap.add_action("sprint")
+		var sprint_key := InputEventKey.new()
+		sprint_key.physical_keycode = KEY_SHIFT
+		InputMap.action_add_event("sprint", sprint_key)
 	health = max_health
 	_anim = _find_animation_player(visual)
 	if _anim:
@@ -70,7 +79,7 @@ func _physics_process(delta: float) -> void:
 		direction = direction.normalized()
 
 	# Digital WASD is otherwise always full speed, which would skip Walk.
-	var gait := run_speed if Input.is_key_pressed(KEY_SHIFT) else move_speed
+	var gait := run_speed if Input.is_action_pressed("sprint") else move_speed
 	velocity.x = direction.x * gait
 	velocity.z = direction.z * gait
 	_apply_gravity(delta)
