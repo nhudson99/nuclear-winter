@@ -5,6 +5,11 @@ class_name ShopMenu
 
 signal closed
 
+var _ration_label: Label
+var _cards: Array = []
+var _status: Label
+
+
 func _card_specs() -> Array:
 	return [
 		{
@@ -24,17 +29,16 @@ func _card_specs() -> Array:
 		},
 	]
 
-var _ration_label: Label
-var _cards: Array = []
-var _status: Label
-
 
 func _ready() -> void:
 	name = "ShopMenu"
-	set_anchors_preset(PRESET_FULL_RECT)
 	mouse_filter = Control.MOUSE_FILTER_STOP
 	process_mode = Node.PROCESS_MODE_ALWAYS
-	_build()
+	set_anchors_and_offsets_preset(PRESET_FULL_RECT)
+	var view := get_viewport_rect().size
+	if view.x < 64.0:
+		view = Vector2(1280, 720)
+	_build(view)
 	_refresh()
 	if not GameProgress.rations_changed.is_connected(_on_rations_changed):
 		GameProgress.rations_changed.connect(_on_rations_changed)
@@ -69,62 +73,59 @@ func _on_rations_changed(_amount: int) -> void:
 	_refresh()
 
 
-func _build() -> void:
+func _build(view: Vector2) -> void:
 	var dim := ColorRect.new()
 	dim.name = "Dim"
-	dim.color = Color(0.0, 0.04, 0.0, 0.78)
+	dim.color = Color(0.0, 0.04, 0.0, 0.82)
 	dim.mouse_filter = Control.MOUSE_FILTER_STOP
+	dim.position = Vector2.ZERO
+	dim.size = view
 	add_child(dim)
-	dim.set_anchors_preset(PRESET_FULL_RECT)
-	dim.set_offsets_preset(PRESET_FULL_RECT)
 
 	var title := Label.new()
 	title.name = "Title"
 	title.text = "BLACK MARKET"
 	title.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	title.position = Vector2(0, 28)
+	title.size = Vector2(view.x, 44)
 	UiStyle.apply_label(title, 28, UiStyle.PIP_GREEN, Color(0.0, 0.08, 0.0), 4)
 	add_child(title)
-	title.set_anchors_preset(PRESET_TOP_WIDE)
-	title.offset_left = 0
-	title.offset_top = 36
-	title.offset_right = 0
-	title.offset_bottom = 80
 
 	_ration_label = Label.new()
 	_ration_label.name = "Rations"
 	_ration_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	_ration_label.position = Vector2(0, 76)
+	_ration_label.size = Vector2(view.x, 32)
 	UiStyle.apply_label(_ration_label, 20, UiStyle.PIP_GREEN, Color(0.0, 0.08, 0.0), 3)
 	add_child(_ration_label)
-	_ration_label.set_anchors_preset(PRESET_TOP_WIDE)
-	_ration_label.offset_top = 80
-	_ration_label.offset_bottom = 112
 
-	var row := HBoxContainer.new()
+	var card_w := 300.0
+	var card_h := 420.0
+	var gap := 28.0
+	var specs := _card_specs()
+	var total := card_w * float(specs.size()) + gap * float(specs.size() - 1)
+	var x0 := (view.x - total) * 0.5
+	var y0 := 128.0
+
+	var row := Control.new()
 	row.name = "Cards"
-	row.alignment = BoxContainer.ALIGNMENT_CENTER
-	row.add_theme_constant_override("separation", 24)
+	row.position = Vector2(x0, y0)
+	row.size = Vector2(total, card_h)
 	add_child(row)
-	row.anchor_left = 0.06
-	row.anchor_right = 0.94
-	row.anchor_top = 0.22
-	row.anchor_bottom = 0.78
-	row.offset_left = 0
-	row.offset_right = 0
-	row.offset_top = 0
-	row.offset_bottom = 0
 
-	for spec in _card_specs():
-		row.add_child(_make_card(spec))
+	for i in specs.size():
+		var panel := _make_card(specs[i], Vector2(card_w, card_h))
+		panel.position = Vector2(float(i) * (card_w + gap), 0.0)
+		row.add_child(panel)
 
 	_status = Label.new()
 	_status.name = "Status"
 	_status.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	_status.text = ""
+	_status.position = Vector2(0, view.y - 92)
+	_status.size = Vector2(view.x, 28)
 	UiStyle.apply_label(_status, 18, UiStyle.PIP_GREEN, Color(0.0, 0.08, 0.0), 3)
 	add_child(_status)
-	_status.set_anchors_preset(PRESET_BOTTOM_WIDE)
-	_status.offset_top = -88
-	_status.offset_bottom = -56
 
 	var close_btn := Button.new()
 	close_btn.name = "CloseButton"
@@ -136,19 +137,17 @@ func _build() -> void:
 	close_btn.add_theme_stylebox_override("hover", UiStyle.make_flat(Color(0.06, 0.28, 0.10, 0.96), Color(0.7, 1.0, 0.7), 2))
 	close_btn.add_theme_stylebox_override("pressed", UiStyle.make_flat(Color(0.10, 0.40, 0.14, 1.0), Color.WHITE, 2))
 	close_btn.pressed.connect(close_shop)
+	close_btn.position = Vector2(view.x * 0.5 - 90.0, view.y - 56.0)
+	close_btn.size = Vector2(180, 40)
 	add_child(close_btn)
-	close_btn.set_anchors_preset(PRESET_BOTTOM_WIDE)
-	close_btn.offset_left = 520
-	close_btn.offset_right = -520
-	close_btn.offset_top = -48
-	close_btn.offset_bottom = -12
 
 
-func _make_card(spec: Dictionary) -> Panel:
+func _make_card(spec: Dictionary, card_size: Vector2) -> Panel:
 	var item: GameProgress.ShopItem = spec["item"]
 	var panel := Panel.new()
 	panel.name = String(spec["title"]).replace(" ", "")
-	panel.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	panel.size = card_size
+	panel.custom_minimum_size = card_size
 	panel.add_theme_stylebox_override(
 		"panel",
 		UiStyle.make_flat(Color(0.02, 0.10, 0.04, 0.96), UiStyle.PIP_GREEN, 2)
@@ -156,13 +155,10 @@ func _make_card(spec: Dictionary) -> Panel:
 
 	var vbox := VBoxContainer.new()
 	vbox.name = "Layout"
-	vbox.add_theme_constant_override("separation", 10)
+	vbox.add_theme_constant_override("separation", 12)
+	vbox.position = Vector2(18, 18)
+	vbox.size = card_size - Vector2(36, 36)
 	panel.add_child(vbox)
-	vbox.set_anchors_preset(PRESET_FULL_RECT)
-	vbox.offset_left = 18
-	vbox.offset_top = 18
-	vbox.offset_right = -18
-	vbox.offset_bottom = -18
 
 	var title := Label.new()
 	title.name = "Title"
@@ -192,6 +188,7 @@ func _make_card(spec: Dictionary) -> Panel:
 	buy.text = "BUY"
 	buy.focus_mode = Control.FOCUS_ALL
 	buy.mouse_default_cursor_shape = Control.CURSOR_POINTING_HAND
+	buy.custom_minimum_size = Vector2(0, 40)
 	UiStyle.apply_button_font(buy, 18, UiStyle.PIP_GREEN, Color(0.0, 0.08, 0.0), 3)
 	buy.add_theme_stylebox_override("normal", UiStyle.make_flat(Color(0.04, 0.18, 0.08, 0.95), UiStyle.PIP_GREEN, 2))
 	buy.add_theme_stylebox_override("hover", UiStyle.make_flat(Color(0.08, 0.32, 0.12, 0.98), Color(0.7, 1.0, 0.7), 2))

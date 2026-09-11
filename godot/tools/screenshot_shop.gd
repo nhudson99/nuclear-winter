@@ -22,7 +22,7 @@ func _run() -> void:
 
 	map.open_shop()
 	await create_timer(0.35).timeout
-	_shot(out_dir, "godot_shop_cards.png")
+	_shot(out_dir, "godot_shop_three_cards.png")
 	map.queue_free()
 	await create_timer(0.05).timeout
 
@@ -56,21 +56,26 @@ func _run() -> void:
 	await create_timer(0.05).timeout
 	player._physics_process(0.033)
 	Input.action_release("interact")
-	await create_timer(0.2).timeout
+	await create_timer(0.15).timeout
 	var exit_zone: Node3D = main.get_node("ExitZone")
-	player.global_position = exit_zone.global_position
-	main.camera.global_position = exit_zone.global_position + Vector3(8.0, 10.0, 8.0)
-	main.camera.look_at(exit_zone.global_position + Vector3(0.0, 0.6, 0.0), Vector3.UP)
+	# Stand next to the doorway (outside the trigger) so the follow cam
+	# frames the green beacon without winning the run.
+	player.global_position = exit_zone.global_position + Vector3(3.6, 0.05, 0.0)
+	player.velocity = Vector3.ZERO
+	for _i in 12:
+		await physics_frame
 	await create_timer(0.25).timeout
-	_shot(out_dir, "godot_exit_green_glow.png")
+	_shot(out_dir, "godot_green_exit_glow.png")
 
-	exit_zone._on_body_entered(player)
-	await create_timer(0.6).timeout
+	player.global_position = exit_zone.global_position + Vector3(0.0, 0.05, 0.0)
+	if exit_zone.has_method("_on_body_entered"):
+		exit_zone._on_body_entered(player)
+	await create_timer(0.25).timeout
 	var overlay := main.get_node_or_null("VictoryOverlay/AristocratScreen")
 	if overlay and overlay.has_method("finish_typing_now"):
 		overlay.finish_typing_now()
-	await create_timer(0.2).timeout
-	_shot(out_dir, "godot_victory_aristocrat.png")
+	await create_timer(0.25).timeout
+	_shot(out_dir, "godot_victory_aristocrat_line.png")
 	quit(0)
 
 
