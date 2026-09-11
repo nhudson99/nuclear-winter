@@ -15,6 +15,12 @@ signal item_collected
 @export var walk_cycle_metres: float = 1.45
 @export var run_cycle_metres: float = 2.3
 @export var run_threshold: float = 3.0
+## Spot range in metres. One room tile is 12 m; this reaches the far wall and
+## a little into the next doorway.
+@export var flashlight_range: float = 16.0
+@export var flashlight_angle: float = 28.0
+@export var flashlight_energy: float = 8.0
+@export var flashlight_fill_energy: float = 0.45
 
 @onready var visual: Node3D = $Model
 
@@ -27,6 +33,11 @@ var _health_bar: HealthBar3D
 var _alive: bool = true
 var _has_item: bool = false
 var _input_locked: bool = false
+var _flashlight: SpotLight3D
+var _flashlight_fill: OmniLight3D
+var _flashlight_on: bool = false
+var _aim_override_enabled: bool = false
+var _aim_override: Vector3 = Vector3.ZERO
 
 func current_clip() -> String:
 	return _clip
@@ -34,11 +45,8 @@ func current_clip() -> String:
 
 func _ready() -> void:
 	add_to_group("player")
-	if not InputMap.has_action("sprint"):
-		InputMap.add_action("sprint")
-		var sprint_key := InputEventKey.new()
-		sprint_key.physical_keycode = KEY_SHIFT
-		InputMap.action_add_event("sprint", sprint_key)
+	_ensure_key_action("sprint", KEY_SHIFT)
+	_ensure_mouse_action("flashlight", MOUSE_BUTTON_RIGHT)
 	health = max_health
 	_anim = _find_animation_player(visual)
 	if _anim:
@@ -48,6 +56,7 @@ func _ready() -> void:
 			if _anim.has_animation(clip_name):
 				_anim.get_animation(clip_name).loop_mode = Animation.LOOP_LINEAR
 		_play("Idle", 1.0)
+	_setup_flashlight()
 	_health_bar = HealthBar3D.new()
 	_health_bar.name = "HealthBar"
 	_health_bar.fill_color = Color(0.25, 0.9, 0.4, 1.0)
@@ -57,12 +66,17 @@ func _ready() -> void:
 
 func _physics_process(delta: float) -> void:
 	if not _alive or _input_locked:
+		set_flashlight_on(false)
 		velocity = Vector3.ZERO
 		_apply_gravity(delta)
 		move_and_slide()
 		if _alive:
 			_play("Idle", 1.0)
 		return
+
+	# Hold RMB: light on and yaw lock onto the cursor. WASD still strafes.
+	var aiming := Input.is_action_pressed("flashlight")
+	set_flashlight_on(aiming)
 
 	if Input.is_action_just_pressed("interact"):
 		_try_interact()
@@ -87,11 +101,14 @@ func _physics_process(delta: float) -> void:
 
 	var planar := Vector3(velocity.x, 0.0, velocity.z)
 	var speed := planar.length()
-	if speed > 0.15:
+	var aim_dir := _aim_planar() if aiming else Vector3.ZERO
+	if aim_dir.length() > 0.2:
+		_face_planar(aim_dir, delta)
+	elif speed > 0.15:
 		# glTF forward is -Z, so the yaw that points the model down the travel
 		# direction is half a turn from atan2 of the velocity.
-		var target_yaw := atan2(planar.x, planar.z) + PI
-		visual.rotation.y = lerp_angle(visual.rotation.y, target_yaw, clampf(turn_speed * delta, 0.0, 1.0))
+		_face_planar(planar, delta)
+	if speed > 0.15:
 		var clip := "Run" if speed >= run_threshold else "Walk"
 		var metres: float = run_cycle_metres if clip == "Run" else walk_cycle_metres
 		_play(clip, _cycle_speed(clip, speed, metres))
@@ -119,9 +136,34 @@ func has_collected_item() -> bool:
 func lock_input() -> void:
 	_input_locked = true
 	velocity = Vector3.ZERO
+	set_flashlight_on(false)
 
 func unlock_input() -> void:
 	_input_locked = false
+
+func is_flashlight_on() -> bool:
+	return _flashlight_on
+
+func set_flashlight_on(enabled: bool) -> void:
+	_flashlight_on = enabled
+	if _flashlight:
+		_flashlight.visible = enabled
+	if _flashlight_fill:
+		_flashlight_fill.visible = enabled
+
+func get_flashlight() -> SpotLight3D:
+	return _flashlight
+
+func is_aiming() -> bool:
+	return _flashlight_on
+
+## Tests and screenshot tools can pin the aim point without a real cursor.
+func set_aim_world_override(point: Vector3) -> void:
+	_aim_override_enabled = true
+	_aim_override = point
+
+func clear_aim_world_override() -> void:
+	_aim_override_enabled = false
 
 func _try_interact() -> void:
 	if _has_item:
@@ -165,6 +207,85 @@ func _cycle_speed(clip: String, speed: float, cycle_metres: float) -> float:
 		return 1.0
 	var cycle_seconds := _anim.get_animation(clip).length
 	return clampf(speed * cycle_seconds / cycle_metres, 0.35, 2.5)
+
+func _face_planar(dir: Vector3, delta: float) -> void:
+	var target_yaw := atan2(dir.x, dir.z) + PI
+	visual.rotation.y = lerp_angle(visual.rotation.y, target_yaw, clampf(turn_speed * delta, 0.0, 1.0))
+
+func _aim_planar() -> Vector3:
+	var point := _aim_world_point()
+	var to_point := point - global_position
+	to_point.y = 0.0
+	return to_point
+
+func _aim_world_point() -> Vector3:
+	if _aim_override_enabled:
+		return _aim_override
+	var camera := get_viewport().get_camera_3d() if get_viewport() else null
+	if camera == null:
+		return global_position
+	var screen := get_viewport().get_mouse_position()
+	var origin := camera.project_ray_origin(screen)
+	var ray := camera.project_ray_normal(screen)
+	if absf(ray.y) < 0.0001:
+		return global_position
+	var distance := (global_position.y - origin.y) / ray.y
+	if distance < 0.0:
+		return global_position
+	return origin + ray * distance
+
+func _ensure_key_action(action: String, keycode: Key) -> void:
+	var event := InputEventKey.new()
+	event.physical_keycode = keycode
+	_ensure_action_event(action, event)
+
+func _ensure_mouse_action(action: String, button: MouseButton) -> void:
+	var event := InputEventMouseButton.new()
+	event.button_index = button
+	_ensure_action_event(action, event)
+
+func _ensure_action_event(action: String, event: InputEvent) -> void:
+	if not InputMap.has_action(action):
+		InputMap.add_action(action)
+	for existing in InputMap.action_get_events(action):
+		if existing is InputEventKey and event is InputEventKey:
+			if (existing as InputEventKey).physical_keycode == (event as InputEventKey).physical_keycode:
+				return
+		elif existing is InputEventMouseButton and event is InputEventMouseButton:
+			if (existing as InputEventMouseButton).button_index == (event as InputEventMouseButton).button_index:
+				return
+	InputMap.action_add_event(action, event)
+
+func _setup_flashlight() -> void:
+	# Parent to the yawing model so the cone follows facing. glTF forward is
+	# -Z, which is also the default SpotLight3D beam direction.
+	var host: Node3D = visual if visual else self
+	_flashlight = SpotLight3D.new()
+	_flashlight.name = "Flashlight"
+	_flashlight.light_color = Color(1.0, 0.95, 0.78)
+	_flashlight.light_energy = flashlight_energy
+	_flashlight.spot_range = flashlight_range
+	_flashlight.spot_angle = flashlight_angle
+	_flashlight.spot_attenuation = 0.55
+	_flashlight.shadow_enabled = true
+	_flashlight.shadow_bias = 0.04
+	# Chest height, a few centimetres forward of the torso so the beam does
+	# not start inside the prisoner mesh.
+	_flashlight.position = Vector3(0.12, 1.35, -0.18)
+	_flashlight.rotation_degrees = Vector3(-16.0, 0.0, 0.0)
+	host.add_child(_flashlight)
+
+	# Without a fill, the beam origin sits in front of the chest and the
+	# prisoner is a silhouette against the lit floor.
+	_flashlight_fill = OmniLight3D.new()
+	_flashlight_fill.name = "FlashlightFill"
+	_flashlight_fill.light_color = Color(1.0, 0.95, 0.78)
+	_flashlight_fill.light_energy = flashlight_fill_energy
+	_flashlight_fill.omni_range = 2.8
+	_flashlight_fill.omni_attenuation = 1.4
+	_flashlight_fill.position = Vector3(0.0, 1.1, 0.0)
+	host.add_child(_flashlight_fill)
+	set_flashlight_on(false)
 
 func _find_animation_player(root: Node) -> AnimationPlayer:
 	if root == null:

@@ -1,6 +1,6 @@
 extends SceneTree
 
-## Build a clean Main.tscn: lighting, iso camera, and the actors.
+## Build a clean Main.tscn: dark environment, iso camera, and the actors.
 ##
 ## The floorplan is deliberately absent. Main.gd runs MapGenerator at load time,
 ## which fills the empty `GeneratedMap` node with room tiles and then moves the
@@ -34,23 +34,24 @@ func _build() -> void:
 	world_env.name = "WorldEnvironment"
 	var env := Environment.new()
 	env.background_mode = Environment.BG_COLOR
-	# Overcast fallout haze rather than the old clear blue sky.
-	env.background_color = Color(0.13, 0.14, 0.13)
-	env.ambient_light_source = Environment.AMBIENT_SOURCE_COLOR
-	env.ambient_light_color = Color(0.60, 0.64, 0.63)
-	# Rooms have no ceilings, so ambient plus sun hit the floors head-on. Keeping
-	# the total near 1.0 renders surfaces close to their authored albedo instead
-	# of blowing the palette out to pastel.
-	env.ambient_light_energy = 0.34
+	# Level 1 is unlit: no sky, no ambient, no sun. The only light is the
+	# player's flashlight (hold RMB in Player.gd to aim and light).
+	env.background_color = Color(0.0, 0.0, 0.0)
+	env.ambient_light_source = Environment.AMBIENT_SOURCE_DISABLED
+	env.ambient_light_energy = 0.0
+	env.reflected_light_source = Environment.REFLECTION_SOURCE_DISABLED
 	world_env.environment = env
 	main.add_child(world_env)
 	world_env.owner = main
 
+	# Kept in the tree so debug tools can re-enable it, but it contributes
+	# nothing at runtime.
 	var sun := DirectionalLight3D.new()
 	sun.name = "Sun"
-	sun.light_energy = 0.95
+	sun.light_energy = 0.0
 	sun.light_color = Color(1.0, 0.95, 0.86)
-	sun.shadow_enabled = true
+	sun.shadow_enabled = false
+	sun.visible = false
 	sun.rotation_degrees = Vector3(-50, 30, 0)
 	main.add_child(sun)
 	sun.owner = main
