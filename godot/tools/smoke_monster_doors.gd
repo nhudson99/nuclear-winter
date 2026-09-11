@@ -1,6 +1,6 @@
 extends SceneTree
 
-## Headless gameplay smoke: doors, proximity chase, section patrol, touch damage,
+## Headless gameplay smoke: doors, proximity chase, track patrol, touch damage,
 ## health bars. Positions are read from the generated layout rather than authored
 ## coordinates, since every run rolls a different floorplan.
 
@@ -127,37 +127,33 @@ func _run() -> void:
 	var touch_ok: bool = float(player.health) <= 0.0 or not player.is_alive()
 	print("touch_damage_ok=", touch_ok, " player_hp=", player.health)
 
-	# Section patrol: park the monster in the far south, aim it at section 0
-	# (the northern band) so it has ground to cover, and hide the player.
+	# Track patrol: hide the player and walk from the southern room centre. The
+	# monster should move and stay on the generated doorway track.
 	player._alive = true
 	player.health = 100.0
 	player.global_position = start_center + Vector3(0.0, 0.05, 0.0) + Vector3(500.0, 0.0, 500.0)
 	monster.global_position = _southernmost_center(layout) + Vector3(0.0, 0.05, 0.0)
 	monster.configure_patrol_for_test(1.0, 0)
-	print("patrol_setup dwell=", monster.section_dwell_time, " timer=", monster._section_timer)
+	print("patrol_setup mode=", monster.get_ai_mode_name(), " grace=", monster.lose_sight_grace)
 	monster.set_physics_process(true)
-	var section_start: int = monster.get_current_section()
-	var rooms_in_start: Array = monster.get_section_rooms(section_start)
-	var rooms_ok := rooms_in_start.size() >= 1
-	print("section_rooms_ok=", rooms_ok, " section=", section_start, " rooms=", rooms_in_start.size())
 	var patrol_start := monster.global_position
 	await create_timer(1.6).timeout
-	var section_after: int = monster.get_current_section()
-	var section_advanced := section_after != section_start
 	var patrol_moved := monster.global_position.distance_to(patrol_start) > 0.35
+	var on_track := (
+		MapGenerator.closest_distance_to_track(monster.global_position, layout["monster_track"]) < 1.2
+	)
+	var grace_ok := is_equal_approx(monster.lose_sight_grace, 5.0)
 	print(
-		"section_patrol_ok=",
-		section_advanced and patrol_moved,
-		" from=",
-		section_start,
-		" to=",
-		section_after,
+		"track_patrol_ok=",
+		patrol_moved and on_track,
 		" moved=",
 		patrol_moved,
-		" timer=",
-		monster._section_timer,
-		" dwell=",
-		monster.section_dwell_time
+		" on_track=",
+		on_track,
+		" mode=",
+		monster.get_ai_mode_name(),
+		" grace_ok=",
+		grace_ok
 	)
 
 	var ok: bool = (
@@ -167,9 +163,9 @@ func _run() -> void:
 		and sealed_blocked
 		and proximity_chased
 		and touch_ok
-		and rooms_ok
-		and section_advanced
 		and patrol_moved
+		and on_track
+		and grace_ok
 	)
 	print("SMOKE_RESULT=", ok)
 	quit(0 if ok else 2)

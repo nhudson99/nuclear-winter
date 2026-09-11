@@ -1,7 +1,8 @@
 extends SceneTree
 
 ## Headless smoke for the procedural map: room module contract, seed replay,
-## layout variety, full connectivity, doorway carving and collision cooking.
+## layout variety, full connectivity, doorway carving, collision cooking and
+## the monster track through room and doorway centres.
 
 const ROOM_COUNT := 9
 
@@ -54,6 +55,9 @@ func _run() -> void:
 	var ground_ok: bool = (first["container"] as Node3D).get_node_or_null("Ground") != null
 	print("ground_ok=", ground_ok)
 
+	var track_ok := _check_monster_track(first) and _check_monster_track(other)
+	print("monster_track_ok=", track_ok)
+
 	var all_ok: bool = (
 		modules_ok
 		and exits_ok
@@ -66,6 +70,7 @@ func _run() -> void:
 		and collision_ok
 		and spawns_ok
 		and ground_ok
+		and track_ok
 	)
 	print("procgen_smoke_ok=", all_ok)
 	quit(0 if all_ok else 1)
@@ -246,3 +251,118 @@ func _check_spawns(layout: Dictionary) -> bool:
 		" in_map=", in_map
 	)
 	return in_map and objective_away and monster_away
+
+
+## Room centres and interior doorway centres must form one connected graph.
+func _check_monster_track(result: Dictionary) -> bool:
+	var layout: Dictionary = result["layout"]
+	var container: Node3D = result["container"]
+	var track: Dictionary = layout.get("monster_track", {})
+	var nodes: Dictionary = track.get("nodes", {})
+	if nodes.is_empty():
+		print("track_missing")
+		return false
+
+	var scene_root := container.get_node_or_null("MonsterTrack")
+	if scene_root == null or scene_root.get_child_count() != nodes.size():
+		print(
+			"track_scene_wrong root=",
+			scene_root != null,
+			" children=",
+			scene_root.get_child_count() if scene_root else 0,
+			" nodes=",
+			nodes.size()
+		)
+		return false
+
+	for room in layout["rooms"]:
+		var cell: Vector2i = room["cell"]
+		var room_id := MapGenerator.room_track_id(cell)
+		if not nodes.has(room_id):
+			print("room_track_missing=", cell)
+			return false
+		var pos: Vector3 = nodes[room_id]["position"]
+		var expected := MapGenerator.cell_to_world(cell) + Vector3(0.0, MapGenerator.TRACK_Y, 0.0)
+		if _planar_distance(pos, expected) > 0.01:
+			print("room_center_wrong cell=", cell, " pos=", pos, " expected=", expected)
+			return false
+
+	var occupied := {}
+	for room in layout["rooms"]:
+		occupied[room["cell"]] = true
+
+	var expected_doors := 0
+	for room in layout["rooms"]:
+		var cell: Vector2i = room["cell"]
+		for side in MapGenerator.TRACK_CANONICAL_SIDES:
+			var neighbor: Vector2i = cell + MapGenerator.SIDE_STEPS[side]
+			if not occupied.has(neighbor):
+				continue
+			expected_doors += 1
+			var door_id := MapGenerator.door_track_id(cell, side)
+			if not nodes.has(door_id):
+				print("door_track_missing cell=", cell, " side=", side)
+				return false
+			var door_pos: Vector3 = nodes[door_id]["position"]
+			var door_expected := MapGenerator.door_track_position(cell, side)
+			if _planar_distance(door_pos, door_expected) > 0.01:
+				print("door_center_wrong id=", door_id, " pos=", door_pos)
+				return false
+			var exits: Dictionary = nodes[door_id].get("exits", {})
+			var room_a := MapGenerator.room_track_id(cell)
+			var room_b := MapGenerator.room_track_id(neighbor)
+			var has_a := false
+			var has_b := false
+			for dir in exits:
+				var dest := str(exits[dir])
+				if dest == room_a:
+					has_a = true
+				if dest == room_b:
+					has_b = true
+			if not has_a or not has_b:
+				print("door_links_wrong id=", door_id, " exits=", exits)
+				return false
+
+	var room_count: int = (layout["rooms"] as Array).size()
+	if nodes.size() != room_count + expected_doors:
+		print(
+			"track_count_wrong nodes=", nodes.size(),
+			" rooms=", room_count,
+			" doors=", expected_doors
+		)
+		return false
+
+	var start_id := MapGenerator.room_track_id(layout["start_cell"])
+	if not _track_graph_connected(nodes, start_id):
+		print("track_not_connected start=", start_id)
+		return false
+
+	print(
+		"track_graph_ok=true rooms=", room_count,
+		" doors=", expected_doors,
+		" nodes=", nodes.size()
+	)
+	return true
+
+
+func _planar_distance(a: Vector3, b: Vector3) -> float:
+	return Vector2(a.x - b.x, a.z - b.z).length()
+
+
+func _track_graph_connected(nodes: Dictionary, start_id: String) -> bool:
+	if not nodes.has(start_id):
+		return false
+	var seen := {start_id: true}
+	var queue: Array[String] = [start_id]
+	while not queue.is_empty():
+		var cur: String = queue.pop_back()
+		var exits: Dictionary = nodes[cur].get("exits", {})
+		for dir in exits:
+			var nxt := str(exits[dir])
+			if seen.has(nxt):
+				continue
+			if not nodes.has(nxt):
+				return false
+			seen[nxt] = true
+			queue.append(nxt)
+	return seen.size() == nodes.size()
