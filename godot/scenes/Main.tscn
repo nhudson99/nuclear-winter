@@ -2,7 +2,7 @@
 
 [ext_resource type="Script" path="res://scripts/Main.gd" id="1_nxtc6"]
 [ext_resource type="Script" path="res://scripts/Player.gd" id="2_jlsqs"]
-[ext_resource type="PackedScene" path="res://assets/characters/humanoid_scavenger.glb" id="3_q8u5g"]
+[ext_resource type="PackedScene" path="res://assets/characters/player_prisoner.glb" id="3_q8u5g"]
 [ext_resource type="Script" path="res://scripts/Monster.gd" id="4_lhr70"]
 [ext_resource type="PackedScene" path="res://assets/characters/enemy_monster.glb" id="5_wp0k4"]
 [ext_resource type="Script" path="res://scripts/PickupItem.gd" id="6_bjd11"]
@@ -16,8 +16,8 @@ ambient_light_color = Color(0.6, 0.64, 0.63, 1)
 ambient_light_energy = 0.34
 
 [sub_resource type="CapsuleShape3D" id="CapsuleShape3D_3p2gp"]
-radius = 0.35
-height = 1.2
+radius = 0.3
+height = 1.6
 
 [sub_resource type="CapsuleShape3D" id="CapsuleShape3D_cvmbd"]
 radius = 0.42
@@ -46,10 +46,10 @@ collision_layer = 2
 script = ExtResource("2_jlsqs")
 
 [node name="CollisionShape3D" type="CollisionShape3D" parent="Player"]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.9, 0)
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.8, 0)
 shape = SubResource("CapsuleShape3D_3p2gp")
 
-[node name="Humanoid" type="Node3D" parent="Player" instance=ExtResource("3_q8u5g")]
+[node name="Model" type="Node3D" parent="Player" instance=ExtResource("3_q8u5g")]
 
 [node name="Monster" type="CharacterBody3D" parent="."]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.05, -12)

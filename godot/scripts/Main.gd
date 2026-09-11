@@ -49,6 +49,8 @@ func _physics_process(delta: float) -> void:
 	var target := player.global_position + Vector3(camera_distance * 0.55, camera_height, camera_distance)
 	camera.global_position = camera.global_position.lerp(target, clampf(follow_lerp * delta, 0.0, 1.0))
 	camera.look_at(player.global_position + Vector3(0.0, 0.6, 0.0), Vector3.UP)
+	if OS.get_environment("NW_PREVIEW_PLAYER") == "1" and _status_label and player.has_method("current_clip"):
+		_status_label.text = player.current_clip()
 
 func get_game_state() -> GameState:
 	return _state
@@ -71,9 +73,13 @@ func _build_level() -> void:
 	generator.progress.connect(_loading.set_progress)
 
 	var used_seed := level_seed if level_seed != 0 else randi()
+	var seed_override := OS.get_environment("NW_LEVEL_SEED")
+	if seed_override.is_valid_int():
+		used_seed = int(seed_override)
 	_layout = await generator.generate(map_root, used_seed, room_count)
 	generator.queue_free()
 	_apply_layout(_layout)
+	_apply_preview_overrides()
 
 	while Time.get_ticks_msec() - started < int(min_loading_seconds * 1000.0):
 		await get_tree().process_frame
@@ -85,7 +91,8 @@ func _build_level() -> void:
 
 	_state = GameState.PLAYING
 	player.unlock_input()
-	monster.set_physics_process(true)
+	if OS.get_environment("NW_PREVIEW_PLAYER") != "1":
+		monster.set_physics_process(true)
 	level_ready.emit(_layout)
 
 func _apply_layout(layout: Dictionary) -> void:
@@ -103,6 +110,25 @@ func _apply_layout(layout: Dictionary) -> void:
 
 	monster.configure_level(layout.get("rooms", []), layout.get("bounds", AABB()))
 	_snap_camera()
+
+func _apply_preview_overrides() -> void:
+	## NW_PREVIEW_PLAYER parks the monster and tightens the iso framing so the
+	## player mesh can be reviewed without dying on the first physics tick.
+	if OS.get_environment("NW_PREVIEW_PLAYER") != "1":
+		return
+	if monster:
+		monster.set_physics_process(false)
+		monster.visible = false
+		monster.global_position += Vector3(200.0, 0.0, 200.0)
+	camera.size = 4.2
+	camera_distance = 5.5
+	camera_height = 5.5
+	_snap_camera()
+	_status_label.visible = true
+	_status_label.add_theme_font_size_override("font_size", 36)
+	_status_label.vertical_alignment = VERTICAL_ALIGNMENT_TOP
+	_status_label.add_theme_constant_override("margin_top", 24)
+
 
 func _snap_camera() -> void:
 	camera.global_position = player.global_position + Vector3(camera_distance * 0.55, camera_height, camera_distance)

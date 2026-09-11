@@ -11,10 +11,10 @@ func _initialize() -> void:
 	call_deferred("_build")
 
 func _build() -> void:
-	var humanoid_path := "res://assets/characters/humanoid_scavenger.glb"
+	var player_path := "res://assets/characters/player_prisoner.glb"
 	var monster_path := "res://assets/characters/enemy_monster.glb"
 
-	for path in [humanoid_path, monster_path]:
+	for path in [player_path, monster_path]:
 		if not ResourceLoader.exists(path):
 			push_error("Missing: " + path)
 			quit(1)
@@ -73,17 +73,19 @@ func _build() -> void:
 	var col := CollisionShape3D.new()
 	col.name = "CollisionShape3D"
 	var capsule := CapsuleShape3D.new()
-	capsule.radius = 0.35
-	capsule.height = 1.2
+	capsule.radius = 0.30
+	# The prisoner is 1.8 m and stands on his origin, so the capsule has to
+	# reach down to y = 0 or the body floats half a metre off the floor.
+	capsule.height = 1.6
 	col.shape = capsule
-	col.position = Vector3(0, 0.9, 0)
+	col.position = Vector3(0, 0.8, 0)
 	player.add_child(col)
 	col.owner = main
 
-	var humanoid: Node3D = (load(humanoid_path) as PackedScene).instantiate()
-	humanoid.name = "Humanoid"
-	player.add_child(humanoid)
-	humanoid.owner = main
+	var model: Node3D = (load(player_path) as PackedScene).instantiate()
+	model.name = "Model"
+	player.add_child(model)
+	model.owner = main
 
 	var monster := CharacterBody3D.new()
 	monster.name = "Monster"

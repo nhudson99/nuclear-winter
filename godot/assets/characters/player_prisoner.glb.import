@@ -3,13 +3,13 @@
 importer="scene"
 importer_version=1
 type="PackedScene"
-uid="uid://c0inof44ms4xf"
-path="res://.godot/imported/humanoid_scavenger.glb-ceff2f6bd4e6ea31daf31a178dc8f928.scn"
+uid="uid://b5npupkltek1"
+path="res://.godot/imported/player_prisoner.glb-265d7b6f3b1bf180c4ab93a41e03f597.scn"
 
 [deps]
 
-source_file="res://assets/characters/humanoid_scavenger.glb"
-dest_files=["res://.godot/imported/humanoid_scavenger.glb-ceff2f6bd4e6ea31daf31a178dc8f928.scn"]
+source_file="res://assets/characters/player_prisoner.glb"
+dest_files=["res://.godot/imported/player_prisoner.glb-265d7b6f3b1bf180c4ab93a41e03f597.scn"]
 
 [params]
 

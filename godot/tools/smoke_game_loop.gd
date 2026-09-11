@@ -28,6 +28,20 @@ func _run() -> void:
 	var nodes_ok := true
 	print("loop_nodes_ok=", nodes_ok)
 
+	var anim := _find_animation_player(player)
+	var clips := PackedStringArray()
+	if anim:
+		for clip_name in anim.get_animation_list():
+			clips.append(clip_name)
+	var clips_ok := (
+		anim != null
+		and clips.has("Idle")
+		and clips.has("Walk")
+		and clips.has("Run")
+		and clips.has("Die")
+	)
+	print("player_clips_ok=", clips_ok, " clips=", clips)
+
 	# Baseline monster difficulty.
 	var base_dwell: float = monster.section_dwell_time
 	var base_prox: float = monster.proximity_radius
@@ -108,7 +122,8 @@ func _run() -> void:
 	print("game_over_ok=", lose_ok and lose_text_ok, " state=", main.get_game_state(), " text=", lose_label.text if lose_label else "")
 
 	var all_ok: bool = (
-		has_item
+		clips_ok
+		and has_item
 		and pickup_gone
 		and alerted
 		and dwell_halved
@@ -120,3 +135,15 @@ func _run() -> void:
 	)
 	print("game_loop_smoke_ok=", all_ok)
 	quit(0 if all_ok else 1)
+
+
+func _find_animation_player(root: Node) -> AnimationPlayer:
+	if root == null:
+		return null
+	if root is AnimationPlayer:
+		return root as AnimationPlayer
+	for child in root.get_children():
+		var found := _find_animation_player(child)
+		if found:
+			return found
+	return null

@@ -3,35 +3,51 @@ extends CharacterBody3D
 signal died
 signal item_collected
 
-@export var move_speed: float = 5.5
+@export var move_speed: float = 2.4
+@export var run_speed: float = 5.5
 @export var gravity: float = 20.0
 @export var turn_speed: float = 12.0
-@export var walk_anim_speed: float = 10.0
-@export var stride_angle_deg: float = 28.0
 @export var max_health: float = 100.0
-@export var health_bar_height: float = 2.15
+@export var health_bar_height: float = 2.1
 @export var interact_range: float = 2.2
+## Ground covered by one full cycle of each clip. Playback is scaled to match
+## it so the boots do not skate across the floor.
+@export var walk_cycle_metres: float = 1.45
+@export var run_cycle_metres: float = 2.3
+@export var run_threshold: float = 3.0
 
-@onready var visual: Node3D = $Humanoid
+@onready var visual: Node3D = $Model
 
-var pivot_arm_l: Node3D
-var pivot_arm_r: Node3D
-var pivot_leg_l: Node3D
-var pivot_leg_r: Node3D
-var _walk_phase: float = 0.0
+const LOOPING_CLIPS := ["Idle", "Walk", "Run"]
+
+var _anim: AnimationPlayer
+var _clip: String = ""
 var health: float = 100.0
 var _health_bar: HealthBar3D
 var _alive: bool = true
 var _has_item: bool = false
 var _input_locked: bool = false
 
+func current_clip() -> String:
+	return _clip
+
+
 func _ready() -> void:
 	add_to_group("player")
+	if not InputMap.has_action("sprint"):
+		InputMap.add_action("sprint")
+		var sprint_key := InputEventKey.new()
+		sprint_key.physical_keycode = KEY_SHIFT
+		InputMap.action_add_event("sprint", sprint_key)
 	health = max_health
-	pivot_arm_l = _find_node_by_name(visual, "Pivot_Arm_L") as Node3D
-	pivot_arm_r = _find_node_by_name(visual, "Pivot_Arm_R") as Node3D
-	pivot_leg_l = _find_node_by_name(visual, "Pivot_Leg_L") as Node3D
-	pivot_leg_r = _find_node_by_name(visual, "Pivot_Leg_R") as Node3D
+	_anim = _find_animation_player(visual)
+	if _anim:
+		# The glTF importer leaves every clip one-shot; the locomotion cycles
+		# have to be told they loop.
+		for clip_name in LOOPING_CLIPS:
+			if _anim.has_animation(clip_name):
+				_anim.get_animation(clip_name).loop_mode = Animation.LOOP_LINEAR
+		_play("Idle", 1.0)
 	_health_bar = HealthBar3D.new()
 	_health_bar.name = "HealthBar"
 	_health_bar.fill_color = Color(0.25, 0.9, 0.4, 1.0)
@@ -44,7 +60,8 @@ func _physics_process(delta: float) -> void:
 		velocity = Vector3.ZERO
 		_apply_gravity(delta)
 		move_and_slide()
-		_animate_walk(_walk_phase, 0.0)
+		if _alive:
+			_play("Idle", 1.0)
 		return
 
 	if Input.is_action_just_pressed("interact"):
@@ -61,20 +78,25 @@ func _physics_process(delta: float) -> void:
 	if direction.length() > 1.0:
 		direction = direction.normalized()
 
-	velocity.x = direction.x * move_speed
-	velocity.z = direction.z * move_speed
+	# Digital WASD is otherwise always full speed, which would skip Walk.
+	var gait := run_speed if Input.is_action_pressed("sprint") else move_speed
+	velocity.x = direction.x * gait
+	velocity.z = direction.z * gait
 	_apply_gravity(delta)
 	move_and_slide()
 
 	var planar := Vector3(velocity.x, 0.0, velocity.z)
 	var speed := planar.length()
 	if speed > 0.15:
-		var target_yaw := atan2(planar.x, planar.z)
+		# glTF forward is -Z, so the yaw that points the model down the travel
+		# direction is half a turn from atan2 of the velocity.
+		var target_yaw := atan2(planar.x, planar.z) + PI
 		visual.rotation.y = lerp_angle(visual.rotation.y, target_yaw, clampf(turn_speed * delta, 0.0, 1.0))
-		_walk_phase += delta * walk_anim_speed * clampf(speed / move_speed, 0.35, 1.25)
-		_animate_walk(_walk_phase, 1.0)
+		var clip := "Run" if speed >= run_threshold else "Walk"
+		var metres: float = run_cycle_metres if clip == "Run" else walk_cycle_metres
+		_play(clip, _cycle_speed(clip, speed, metres))
 	else:
-		_animate_walk(_walk_phase, 0.0)
+		_play("Idle", 1.0)
 
 func take_damage(amount: float) -> void:
 	if not _alive or amount <= 0.0:
@@ -85,6 +107,7 @@ func take_damage(amount: float) -> void:
 	if health <= 0.0:
 		_alive = false
 		velocity = Vector3.ZERO
+		_play("Die", 1.0)
 		died.emit()
 
 func is_alive() -> bool:
@@ -128,26 +151,28 @@ func _apply_gravity(delta: float) -> void:
 	else:
 		velocity.y = 0.0
 
-func _animate_walk(phase: float, amount: float) -> void:
-	var swing := deg_to_rad(stride_angle_deg) * amount * sin(phase)
-	if pivot_arm_l:
-		pivot_arm_l.rotation.x = -swing
-	if pivot_arm_r:
-		pivot_arm_r.rotation.x = swing
-	if pivot_leg_l:
-		pivot_leg_l.rotation.x = swing
-	if pivot_leg_r:
-		pivot_leg_r.rotation.x = -swing
-	if visual:
-		visual.position.y = 0.03 * amount * absf(sin(phase * 2.0))
+func _play(clip: String, speed: float) -> void:
+	if _anim == null or not _anim.has_animation(clip):
+		return
+	_anim.speed_scale = speed
+	if _clip == clip:
+		return
+	_clip = clip
+	_anim.play(clip, 0.15, speed)
 
-func _find_node_by_name(root: Node, node_name: String) -> Node:
+func _cycle_speed(clip: String, speed: float, cycle_metres: float) -> float:
+	if _anim == null or not _anim.has_animation(clip) or cycle_metres <= 0.0:
+		return 1.0
+	var cycle_seconds := _anim.get_animation(clip).length
+	return clampf(speed * cycle_seconds / cycle_metres, 0.35, 2.5)
+
+func _find_animation_player(root: Node) -> AnimationPlayer:
 	if root == null:
 		return null
-	if root.name == node_name:
-		return root
+	if root is AnimationPlayer:
+		return root as AnimationPlayer
 	for child in root.get_children():
-		var found := _find_node_by_name(child, node_name)
+		var found := _find_animation_player(child)
 		if found:
 			return found
 	return null
