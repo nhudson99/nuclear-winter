@@ -12,6 +12,7 @@ ffmpeg writer so nothing else has to be installed.
 from __future__ import annotations
 
 import math
+import subprocess
 import sys
 from pathlib import Path
 
@@ -115,7 +116,9 @@ def use_action(name: str) -> bpy.types.Action:
     return action
 
 
-def render_video(path: Path, frames: int, repeats: int = 1, fps: int = 24) -> None:
+def render_video(path: Path, repeats: int = 1, fps: int = 24) -> None:
+    """Render the current frame range. Repeats are tiled afterwards with ffmpeg;
+    extending frame_end past the action instead just renders frozen frames."""
     scene = bpy.context.scene
     scene.render.fps = fps
     scene.render.image_settings.file_format = "FFMPEG"
@@ -123,9 +126,16 @@ def render_video(path: Path, frames: int, repeats: int = 1, fps: int = 24) -> No
     scene.render.ffmpeg.codec = "H264"
     scene.render.ffmpeg.constant_rate_factor = "HIGH"
     scene.render.ffmpeg.ffmpeg_preset = "GOOD"
-    scene.render.filepath = str(path)
-    scene.frame_end = scene.frame_start + frames * repeats - 1
+    once = path if repeats == 1 else path.with_name(f"{path.stem}_once.mp4")
+    scene.render.filepath = str(once)
     bpy.ops.render.render(animation=True)
+    if repeats > 1:
+        subprocess.run(
+            ["ffmpeg", "-y", "-loglevel", "error", "-stream_loop", str(repeats - 1),
+             "-i", str(once), "-c", "copy", str(path)],
+            check=True,
+        )
+        once.unlink()
     print(f"Wrote {path}")
 
 
@@ -149,14 +159,12 @@ def cmd_anim(name: str, quick: bool = False) -> None:
     studio(samples=10 if quick else 28,
            resolution=(320, 480) if quick else (520, 780))
     add_camera(34.0)
-    action = use_action(name)
-    frames = int(action.frame_range[1] - action.frame_range[0]) + 1
-    loops = 3 if name in {"Walk", "Run"} else 1
+    use_action(name)
+    loops = {"Walk": 4, "Run": 6, "Idle": 1, "Die": 1}.get(name, 1)
     # A looping cycle repeats its first frame at the end; drop it when tiling.
     if loops > 1:
-        frames -= 1
-        bpy.context.scene.frame_end = bpy.context.scene.frame_start + frames - 1
-    render_video(ART / f"prisoner_{name.lower()}.mp4", frames, repeats=loops)
+        bpy.context.scene.frame_end -= 1
+    render_video(ART / f"prisoner_{name.lower()}.mp4", repeats=loops)
 
 
 def cmd_poses(name: str, angle: float, frames: list[int]) -> None:
@@ -186,7 +194,8 @@ def cmd_turntable(steps: int = 48) -> None:
         for keyframe in curve.keyframe_points:
             keyframe.interpolation = "LINEAR"
     scene.frame_start = 1
-    render_video(ART / "prisoner_turntable.mp4", steps, fps=24)
+    scene.frame_end = steps
+    render_video(ART / "prisoner_turntable.mp4", fps=24)
 
 
 def main() -> None:

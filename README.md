@@ -70,7 +70,7 @@ done
 - **Texture**: wear is authored as procedural noise shaders and then Cycles-baked to one 1024² colour atlas, because glTF cannot carry shader nodes. Grime is weighted by object-space height, so dirt collects on the boots and knees. Three materials (fabric, leather, skin) share the atlas.
 - **Rig**: 17 bones, skinned with inverse-distance weights restricted to a per-part bone whitelist. Bone-heat auto weights bleed across the overlapping lofted parts.
 - **Clips**: `Idle` (96 f loop), `Walk` (24 f loop), `Run` (16 f loop), `Die` (34 f one-shot), exported through muted NLA tracks. The gait is phased from foot contact, with knee flex, ankle counter-rotation to keep planted feet flat, toe-off and a pelvis bob.
-- **Playback**: `Player.gd` sets `LOOP_LINEAR` on the three cycles at load — the glTF importer leaves every clip one-shot — picks walk or run by ground speed, and scales the playback rate to the distance covered per cycle so the boots do not skate.
+- **Playback**: `Player.gd` sets `LOOP_LINEAR` on the three cycles at load — the glTF importer leaves every clip one-shot — picks walk or run by ground speed, and scales the playback rate to the distance covered per cycle so the boots do not skate. WASD walks; hold **Shift** to run.
 
 ```bash
 # Preview renders (views | head | turntable | anim <Clip> | poses <Clip> <angle> <frames...>)

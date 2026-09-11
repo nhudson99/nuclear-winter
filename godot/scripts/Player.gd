@@ -3,7 +3,8 @@ extends CharacterBody3D
 signal died
 signal item_collected
 
-@export var move_speed: float = 5.5
+@export var move_speed: float = 2.4
+@export var run_speed: float = 5.5
 @export var gravity: float = 20.0
 @export var turn_speed: float = 12.0
 @export var max_health: float = 100.0
@@ -68,8 +69,10 @@ func _physics_process(delta: float) -> void:
 	if direction.length() > 1.0:
 		direction = direction.normalized()
 
-	velocity.x = direction.x * move_speed
-	velocity.z = direction.z * move_speed
+	# Digital WASD is otherwise always full speed, which would skip Walk.
+	var gait := run_speed if Input.is_key_pressed(KEY_SHIFT) else move_speed
+	velocity.x = direction.x * gait
+	velocity.z = direction.z * gait
 	_apply_gravity(delta)
 	move_and_slide()
 
