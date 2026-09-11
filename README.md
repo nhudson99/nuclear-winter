@@ -13,7 +13,7 @@ godot --path godot
 - Player authored in Blender (`blender/build_prisoner.py`) → `godot/assets/characters/player_prisoner.glb`
 - Monster authored in Blender (`blender/build_monster.py`) → `godot/assets/characters/enemy_monster.glb`
 - Flow: `TitleScreen.tscn` → `AristocratScreen.tscn` → `GameMap.tscn` (click **LEVEL 1** or **SHOP**) → `Main.tscn`
-- Level 1: `godot/scenes/Main.tscn` (10% ambient so rooms are faintly readable, hold RMB to aim the flashlight, isometric camera zoomed 50% onto the player, wall/prop collision, WASD walk, E to pick up the objective, escape through the outer doorway, monster patrol/proximity chase, health bars)
+- Level 1: `godot/scenes/Main.tscn` (10% ambient so rooms are faintly readable, hold RMB to aim the flashlight, isometric camera zoomed 50% onto the player, wall/prop collision, WASD walk, E to pick up the objective, escape through the outer doorway, monster track patrol/proximity chase, health bars)
 - The earlier hand-authored mansion (`blender/build_mansion_map.py` → `godot/assets/maps/ussr_mansion_map.glb`) is kept for reference but no longer loaded.
 
 ## Procedural maps
@@ -24,6 +24,7 @@ godot --path godot
 - **Layout**: the generator grows the map one neighbour at a time from the start cell, which keeps every room reachable without a separate connectivity pass. The footprint is capped to roughly square so the level does not sprawl into a corridor.
 - **Room types**: one of each type is dealt first so every level shows all four; the remainder is random, then the whole bag is shuffled with the seeded RNG.
 - **Doorways**: each module ships a removable `Plug_<side>` block filling its doorway. The generator deletes the plug where two rooms meet and keeps it where a room faces the outside, which seals the map edge without needing per-room wall variants. One outward wall of the start room is opened as the escape route.
+- **Monster track**: the generator also builds a graph whose nodes sit on every room centre and every interior doorway centre, then instances it as `MonsterTrack` under the map. The monster patrols that graph so it never cuts through walls or furniture.
 - **Collision**: one `StaticBody3D` per room with a box per mesh, taken from mesh bounds. The modules are built from axis-aligned boxes and cylinders, so bounds are a close fit and far cheaper to cook than trimesh collision over a few hundred props. Blender names decoration `NoCol_*` to opt it out.
 - **Seeding**: `Main.level_seed` defaults to `0`, which draws a fresh layout per run. Any other value replays that exact map.
 - **Loading screen**: `godot/scenes/LoadingScreen.tscn` overlays the level while the generator runs, driven by the generator's `progress` signal. Generation yields a frame per room so the bar keeps moving, and the overlay eases its progress and honours `Main.min_loading_seconds` so a fast machine still shows the sweep.
@@ -45,23 +46,23 @@ godot --headless -s res://tools/build_main_scene.gd
 
 ```bash
 cd godot
-for t in smoke_procgen smoke_monster_doors smoke_game_loop smoke_flow_screens smoke_player_anims smoke_flashlight smoke_shop smoke_loadout; do
+for t in smoke_procgen smoke_monster_doors smoke_monster_track smoke_game_loop smoke_flow_screens smoke_player_anims smoke_flashlight smoke_shop smoke_loadout; do
   godot --headless -s res://tools/$t.gd
 done
 ```
 
-`smoke_procgen.gd` covers the room-module contract, seed replay, layout variety, full connectivity, doorway carving and collision cooking.
+`smoke_procgen.gd` covers the room-module contract, seed replay, layout variety, full connectivity, doorway carving, collision cooking and the monster track graph.
 
 ### Gameplay notes
 
 - **Lighting**: Level 1 has no sun. Ambient is 10% so you can pick a path with the flashlight off. Hold **RMB** to turn on the flashlight and aim the prisoner (and the cone) at the cursor; WASD still strafes independently. Release to go dark again. The glowing objective is the other light; collecting it lights a green exit beacon.
 - **Camera**: the isometric view is zoomed 50% onto the player (ortho size 20 → 13.3).
 - **Objective**: a glowing pickup sits in the room furthest from where you start. Press **E** nearby to collect it, then reach the exit doorway of the start room without dying.
-- **Alarm**: collecting the item halves the monster's section patrol time and doubles its proximity detection radius, and turns on the green exit glow.
+- **Alarm**: collecting the item halves the monster's dwell timer and doubles its proximity detection radius, and turns on the green exit glow.
 - **Win / lose**: escaping with the item awards **5 rations** and brings up the fat aristocrat ("Well, you survived. Good for you. Here is your ration reward"); dying shows **GAME OVER**.
 - **Shop**: the Pip-Boy map has **SHOP** in the top right. Cards are **pistol** (5 rations, LMB fires 10 damage along the flashlight), **speed upgrade** (1 ration, +5% speed, stackable), and **sneak** (3 rations, hold **Ctrl** with the flashlight off to avoid sight detection).
 - **Doorways**: every adjacent room is linked by an open wall gap; player and monster can walk through. Outward-facing walls are sealed.
-- **Monster**: patrols the generated rooms in equal level sections (30s each), checking every room in the current section; detects players in a close proximity radius or via FOV + line of sight; deals 100 touch damage.
+- **Monster**: patrols the generated monster track (room centres through doorway centres). At a track intersection it rolls 0–99 and turns left (0–24), right (25–49), up (50–74) or down (75–99). When it detects the player (proximity, or FOV + line of sight) it path-follows the track toward them; 5 seconds after losing detection it returns to the main track. Sneak owned + Ctrl with the light off skips sight detection. Touch damage is 100.
 - **Health**: player starts at 100 HP with a billboard bar. The monster's bar stays hidden until the flashlight cone hits it (or it takes damage).
 
 ## Player character
