@@ -66,10 +66,29 @@ func _run() -> void:
 	monster.global_position = Vector3(1000.0, 0.05, 1000.0)
 	player.set_physics_process(false)
 
-	# A shared wall must be walkable: cross from the start room into a neighbour.
+	# Unobstructed 0.5s walk should cover ~move_speed/2 toward the neighbouring room.
 	var neighbour_cell := _first_neighbour(layout, start_cell)
 	var neighbour_center := _cell_center(neighbour_cell)
-	var walk_dir := (neighbour_center - start_center).normalized()
+	var speed_dir := (neighbour_center - start_center).normalized()
+	var speed_frames := int(Engine.physics_ticks_per_second * 0.5)
+	var speed_origin := start_center + Vector3(0.0, 0.05, 0.0)
+	await _walk_from(player, start_center, speed_dir, speed_frames, player.move_speed)
+	var speed_travelled: float = _planar_distance(player.global_position, speed_origin)
+	var speed_expected: float = float(player.move_speed) * 0.5
+	var speed_travel_ok: bool = absf(speed_travelled - speed_expected) < 0.45
+	print(
+		"player_speed_travel_ok=",
+		speed_travel_ok,
+		" travelled=",
+		speed_travelled,
+		" expected=",
+		speed_expected,
+		" move_speed=",
+		player.move_speed
+	)
+
+	# A shared wall must be walkable: cross from the start room into a neighbour.
+	var walk_dir := speed_dir
 	await _walk_from(player, start_center, walk_dir, WALK_STEPS)
 	var walked_distance := _planar_distance(player.global_position, neighbour_center)
 	var walked_through := walked_distance < MapGenerator.TILE * 0.5
@@ -181,6 +200,7 @@ func _run() -> void:
 		and hp_ok
 		and pivots_ok
 		and hare_ok
+		and speed_travel_ok
 		and walked_through
 		and sealed_blocked
 		and proximity_chased
@@ -196,7 +216,7 @@ func _run() -> void:
 ## Drives the body straight from a room centre. Stepping on `physics_frame`
 ## keeps move_and_slide's delta in sync with the engine, which a wall-clock
 ## timer does not.
-func _walk_from(body: CharacterBody3D, from: Vector3, dir: Vector3, steps: int) -> void:
+func _walk_from(body: CharacterBody3D, from: Vector3, dir: Vector3, steps: int, speed: float = WALK_SPEED) -> void:
 	body.global_position = from + Vector3(0.0, 0.05, 0.0)
 	body.velocity = Vector3.ZERO
 	await physics_frame
@@ -206,8 +226,8 @@ func _walk_from(body: CharacterBody3D, from: Vector3, dir: Vector3, steps: int) 
 			body.velocity.y = 0.0
 		else:
 			body.velocity.y -= WALK_GRAVITY * step_delta
-		body.velocity.x = dir.x * WALK_SPEED
-		body.velocity.z = dir.z * WALK_SPEED
+		body.velocity.x = dir.x * speed
+		body.velocity.z = dir.z * speed
 		body.move_and_slide()
 		await physics_frame
 
