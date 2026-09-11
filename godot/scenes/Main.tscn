@@ -10,10 +10,10 @@
 
 [sub_resource type="Environment" id="Environment_mwfav"]
 background_mode = 1
-background_color = Color(0.13, 0.14, 0.13, 1)
-ambient_light_source = 2
-ambient_light_color = Color(0.6, 0.64, 0.63, 1)
-ambient_light_energy = 0.34
+background_color = Color(0, 0, 0, 1)
+ambient_light_source = 1
+ambient_light_energy = 0.0
+reflected_light_source = 1
 
 [sub_resource type="CapsuleShape3D" id="CapsuleShape3D_3p2gp"]
 radius = 0.3
@@ -34,9 +34,10 @@ environment = SubResource("Environment_mwfav")
 
 [node name="Sun" type="DirectionalLight3D" parent="."]
 transform = Transform3D(0.866025, -0.383022, 0.321394, 0, 0.642788, 0.766044, -0.5, -0.663414, 0.55667, 0, 0, 0)
+visible = false
 light_color = Color(1, 0.95, 0.86, 1)
-light_energy = 0.95
-shadow_enabled = true
+light_energy = 0.0
+shadow_enabled = false
 
 [node name="GeneratedMap" type="Node3D" parent="."]
 

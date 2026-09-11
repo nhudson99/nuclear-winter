@@ -15,6 +15,12 @@ signal item_collected
 @export var walk_cycle_metres: float = 1.45
 @export var run_cycle_metres: float = 2.3
 @export var run_threshold: float = 3.0
+## Spot range in metres. One room tile is 12 m; this reaches the far wall and
+## a little into the next doorway.
+@export var flashlight_range: float = 16.0
+@export var flashlight_angle: float = 28.0
+@export var flashlight_energy: float = 8.0
+@export var flashlight_fill_energy: float = 0.45
 
 @onready var visual: Node3D = $Model
 
@@ -27,6 +33,9 @@ var _health_bar: HealthBar3D
 var _alive: bool = true
 var _has_item: bool = false
 var _input_locked: bool = false
+var _flashlight: SpotLight3D
+var _flashlight_fill: OmniLight3D
+var _flashlight_on: bool = true
 
 func current_clip() -> String:
 	return _clip
@@ -34,11 +43,8 @@ func current_clip() -> String:
 
 func _ready() -> void:
 	add_to_group("player")
-	if not InputMap.has_action("sprint"):
-		InputMap.add_action("sprint")
-		var sprint_key := InputEventKey.new()
-		sprint_key.physical_keycode = KEY_SHIFT
-		InputMap.action_add_event("sprint", sprint_key)
+	_ensure_action("sprint", KEY_SHIFT)
+	_ensure_action("flashlight", KEY_F)
 	health = max_health
 	_anim = _find_animation_player(visual)
 	if _anim:
@@ -48,6 +54,7 @@ func _ready() -> void:
 			if _anim.has_animation(clip_name):
 				_anim.get_animation(clip_name).loop_mode = Animation.LOOP_LINEAR
 		_play("Idle", 1.0)
+	_setup_flashlight()
 	_health_bar = HealthBar3D.new()
 	_health_bar.name = "HealthBar"
 	_health_bar.fill_color = Color(0.25, 0.9, 0.4, 1.0)
@@ -56,6 +63,9 @@ func _ready() -> void:
 	_health_bar.set_health(health, max_health)
 
 func _physics_process(delta: float) -> void:
+	if Input.is_action_just_pressed("flashlight"):
+		set_flashlight_on(not _flashlight_on)
+
 	if not _alive or _input_locked:
 		velocity = Vector3.ZERO
 		_apply_gravity(delta)
@@ -123,6 +133,19 @@ func lock_input() -> void:
 func unlock_input() -> void:
 	_input_locked = false
 
+func is_flashlight_on() -> bool:
+	return _flashlight_on
+
+func set_flashlight_on(enabled: bool) -> void:
+	_flashlight_on = enabled
+	if _flashlight:
+		_flashlight.visible = enabled
+	if _flashlight_fill:
+		_flashlight_fill.visible = enabled
+
+func get_flashlight() -> SpotLight3D:
+	return _flashlight
+
 func _try_interact() -> void:
 	if _has_item:
 		return
@@ -165,6 +188,45 @@ func _cycle_speed(clip: String, speed: float, cycle_metres: float) -> float:
 		return 1.0
 	var cycle_seconds := _anim.get_animation(clip).length
 	return clampf(speed * cycle_seconds / cycle_metres, 0.35, 2.5)
+
+func _ensure_action(action: String, keycode: Key) -> void:
+	if InputMap.has_action(action):
+		return
+	InputMap.add_action(action)
+	var event := InputEventKey.new()
+	event.physical_keycode = keycode
+	InputMap.action_add_event(action, event)
+
+func _setup_flashlight() -> void:
+	# Parent to the yawing model so the cone follows facing. glTF forward is
+	# -Z, which is also the default SpotLight3D beam direction.
+	var host: Node3D = visual if visual else self
+	_flashlight = SpotLight3D.new()
+	_flashlight.name = "Flashlight"
+	_flashlight.light_color = Color(1.0, 0.95, 0.78)
+	_flashlight.light_energy = flashlight_energy
+	_flashlight.spot_range = flashlight_range
+	_flashlight.spot_angle = flashlight_angle
+	_flashlight.spot_attenuation = 0.55
+	_flashlight.shadow_enabled = true
+	_flashlight.shadow_bias = 0.04
+	# Chest height, a few centimetres forward of the torso so the beam does
+	# not start inside the prisoner mesh.
+	_flashlight.position = Vector3(0.12, 1.35, -0.18)
+	_flashlight.rotation_degrees = Vector3(-16.0, 0.0, 0.0)
+	host.add_child(_flashlight)
+
+	# Without a fill, the beam origin sits in front of the chest and the
+	# prisoner is a silhouette against the lit floor.
+	_flashlight_fill = OmniLight3D.new()
+	_flashlight_fill.name = "FlashlightFill"
+	_flashlight_fill.light_color = Color(1.0, 0.95, 0.78)
+	_flashlight_fill.light_energy = flashlight_fill_energy
+	_flashlight_fill.omni_range = 2.8
+	_flashlight_fill.omni_attenuation = 1.4
+	_flashlight_fill.position = Vector3(0.0, 1.1, 0.0)
+	host.add_child(_flashlight_fill)
+	set_flashlight_on(true)
 
 func _find_animation_player(root: Node) -> AnimationPlayer:
 	if root == null:
