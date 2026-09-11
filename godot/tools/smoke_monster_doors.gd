@@ -43,6 +43,23 @@ func _run() -> void:
 	var hp_ok := is_equal_approx(float(player.health), 100.0) and is_equal_approx(float(monster.health), 100.0)
 	print("starting_hp_ok=", hp_ok, " player=", player.health, " monster=", monster.health)
 
+	var pivots_ok := (
+		monster.pivot_arm_l != null
+		and monster.pivot_arm_r != null
+		and monster.pivot_leg_l != null
+		and monster.pivot_leg_r != null
+	)
+	print("monster_pivots_ok=", pivots_ok)
+
+	var mesh: Node3D = monster.get_node("MonsterMesh")
+	var hare_ok := (
+		_find_named(mesh, "Ear_L") != null
+		and _find_named(mesh, "Ear_R") != null
+		and _find_named(mesh, "InnerEar_L") != null
+		and _find_named(mesh, "Fang_L") != null
+	)
+	print("hare_mesh_ok=", hare_ok)
+
 	# Park the monster far away so it cannot interfere with the walk tests.
 	monster.set_physics_process(false)
 	monster.touch_damage = 0.0
@@ -90,7 +107,6 @@ func _run() -> void:
 	# Proximity chase: player beside the monster, outside its FOV cone.
 	monster.global_position = start_center + Vector3(0.0, 0.05, 0.0)
 	player.global_position = start_center + Vector3(2.4, 0.05, 0.0)
-	var mesh: Node3D = monster.get_node("MonsterMesh")
 	# Face north (-Z); player is due east → outside 75° FOV, inside proximity radius.
 	mesh.rotation.y = 0.0
 	monster._time_since_seen = 999.0
@@ -163,6 +179,8 @@ func _run() -> void:
 	var ok: bool = (
 		bars_ok
 		and hp_ok
+		and pivots_ok
+		and hare_ok
 		and walked_through
 		and sealed_blocked
 		and proximity_chased
@@ -237,3 +255,15 @@ func _southernmost_center(layout: Dictionary) -> Vector3:
 		if (room["cell"] as Vector2i).y > best.y:
 			best = room["cell"]
 	return _cell_center(best)
+
+
+func _find_named(root: Node, node_name: String) -> Node:
+	if root == null:
+		return null
+	if root.name == node_name:
+		return root
+	for child in root.get_children():
+		var found := _find_named(child, node_name)
+		if found:
+			return found
+	return null
