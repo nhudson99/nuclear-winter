@@ -1,7 +1,7 @@
 extends SceneTree
 
-## Capture Level 1 with the flashlight on, then off, so the dark map and cone
-## can be eyeballed. Needs a real renderer:
+## Capture Level 1 dark, then with RMB-aim held in two directions, then
+## strafing while the beam stays locked. Needs a real renderer:
 ##   Godot --rendering-driver opengl3 --resolution 1280x720 \
 ##         -s res://tools/screenshot_flashlight.gd
 
@@ -27,22 +27,33 @@ func _run() -> void:
 		monster.visible = false
 		monster.global_position += Vector3(200.0, 0.0, 200.0)
 
-	# Face the beam into the room so the cone reads on the floor.
-	var visual: Node3D = player.get_node("Model")
-	visual.rotation.y = PI
-	player.set_flashlight_on(true)
-	await create_timer(0.5).timeout
-	_snap("godot_flashlight_on.png")
-
-	player.set_flashlight_on(false)
 	await create_timer(0.35).timeout
-	_snap("godot_flashlight_off.png")
+	_snap("godot_flashlight_rmb_off.png")
 
-	player.set_flashlight_on(true)
-	visual.rotation.y = PI * 0.5
-	await create_timer(0.35).timeout
-	_snap("godot_flashlight_yaw.png")
+	player.set_aim_world_override(player.global_position + Vector3(0.0, 0.0, -8.0))
+	Input.action_press("flashlight")
+	for _i in range(20):
+		await physics_frame
+	await create_timer(0.2).timeout
+	_snap("godot_flashlight_rmb_aim.png")
 
+	player.set_aim_world_override(player.global_position + Vector3(8.0, 0.0, 0.0))
+	for _i in range(20):
+		await physics_frame
+	await create_timer(0.2).timeout
+	_snap("godot_flashlight_rmb_aim_yaw.png")
+
+	var start := player.global_position
+	Input.action_press("move_up")
+	for _i in range(24):
+		await physics_frame
+	Input.action_release("move_up")
+	await create_timer(0.15).timeout
+	print("strafe_dist=", player.global_position.distance_to(start))
+	_snap("godot_flashlight_rmb_strafe.png")
+
+	Input.action_release("flashlight")
+	player.clear_aim_world_override()
 	quit(0)
 
 func _snap(filename: String) -> void:

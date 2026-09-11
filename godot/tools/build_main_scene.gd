@@ -35,7 +35,7 @@ func _build() -> void:
 	var env := Environment.new()
 	env.background_mode = Environment.BG_COLOR
 	# Level 1 is unlit: no sky, no ambient, no sun. The only light is the
-	# player's flashlight (toggled with F in Player.gd).
+	# player's flashlight (hold RMB in Player.gd to aim and light).
 	env.background_color = Color(0.0, 0.0, 0.0)
 	env.ambient_light_source = Environment.AMBIENT_SOURCE_DISABLED
 	env.ambient_light_energy = 0.0
