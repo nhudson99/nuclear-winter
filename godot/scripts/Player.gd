@@ -21,10 +21,14 @@ signal item_collected
 @export var flashlight_angle: float = 28.0
 @export var flashlight_energy: float = 8.0
 @export var flashlight_fill_energy: float = 0.45
+@export var pistol_damage: float = 10.0
+@export var pistol_speed: float = 28.0
+@export var pistol_cooldown: float = 0.4
 
 @onready var visual: Node3D = $Model
 
 const LOOPING_CLIPS := ["Idle", "Walk", "Run"]
+const BULLET_SCRIPT := preload("res://scripts/Bullet.gd")
 
 var _anim: AnimationPlayer
 var _clip: String = ""
@@ -38,6 +42,9 @@ var _flashlight_fill: OmniLight3D
 var _flashlight_on: bool = false
 var _aim_override_enabled: bool = false
 var _aim_override: Vector3 = Vector3.ZERO
+var _fire_cooldown: float = 0.0
+var _base_move_speed: float = 2.4
+var _base_run_speed: float = 5.5
 
 func current_clip() -> String:
 	return _clip
@@ -46,7 +53,12 @@ func current_clip() -> String:
 func _ready() -> void:
 	add_to_group("player")
 	_ensure_key_action("sprint", KEY_SHIFT)
+	_ensure_key_action("sneak", KEY_CTRL)
 	_ensure_mouse_action("flashlight", MOUSE_BUTTON_RIGHT)
+	_ensure_mouse_action("fire", MOUSE_BUTTON_LEFT)
+	_base_move_speed = move_speed
+	_base_run_speed = run_speed
+	_apply_loadout()
 	health = max_health
 	_anim = _find_animation_player(visual)
 	if _anim:
@@ -57,6 +69,7 @@ func _ready() -> void:
 				_anim.get_animation(clip_name).loop_mode = Animation.LOOP_LINEAR
 		_play("Idle", 1.0)
 	_setup_flashlight()
+	_setup_pistol_visual()
 	_health_bar = HealthBar3D.new()
 	_health_bar.name = "HealthBar"
 	_health_bar.fill_color = Color(0.25, 0.9, 0.4, 1.0)
@@ -65,6 +78,7 @@ func _ready() -> void:
 	_health_bar.set_health(health, max_health)
 
 func _physics_process(delta: float) -> void:
+	_fire_cooldown = maxf(0.0, _fire_cooldown - delta)
 	if not _alive or _input_locked:
 		set_flashlight_on(false)
 		velocity = Vector3.ZERO
@@ -80,6 +94,8 @@ func _physics_process(delta: float) -> void:
 
 	if Input.is_action_just_pressed("interact"):
 		_try_interact()
+	if Input.is_action_just_pressed("fire"):
+		fire_weapon()
 
 	var input := Vector2.ZERO
 	input.x = Input.get_action_strength("move_right") - Input.get_action_strength("move_left")
@@ -156,6 +172,104 @@ func get_flashlight() -> SpotLight3D:
 
 func is_aiming() -> bool:
 	return _flashlight_on
+
+func has_pistol() -> bool:
+	return GameProgress.has_pistol
+
+func is_sneaking() -> bool:
+	if not GameProgress.has_sneak:
+		return false
+	if _flashlight_on:
+		return false
+	return Input.is_action_pressed("sneak")
+
+func get_aim_direction() -> Vector3:
+	if _flashlight:
+		var beam := -_flashlight.global_transform.basis.z
+		beam.y = 0.0
+		if beam.length() > 0.05:
+			return beam.normalized()
+	if visual:
+		var facing := -visual.global_transform.basis.z
+		facing.y = 0.0
+		if facing.length() > 0.05:
+			return facing.normalized()
+	return Vector3(0.0, 0.0, -1.0)
+
+## True when the flashlight is on, the point is inside the cone, and world geometry does not block it.
+func illuminates_point(world_pos: Vector3) -> bool:
+	if not _flashlight_on or _flashlight == null:
+		return false
+	var origin := _flashlight.global_position
+	var to_target := world_pos - origin
+	var distance := to_target.length()
+	if distance > flashlight_range or distance < 0.05:
+		return false
+	var beam := -_flashlight.global_transform.basis.z
+	beam.y = 0.0
+	var planar := to_target
+	planar.y = 0.0
+	if beam.length() < 0.001 or planar.length() < 0.05:
+		return false
+	var angle := rad_to_deg(acos(clampf(beam.normalized().dot(planar / planar.length()), -1.0, 1.0)))
+	if angle > flashlight_angle:
+		return false
+	var space := get_world_3d().direct_space_state
+	var query := PhysicsRayQueryParameters3D.create(origin, world_pos)
+	query.collide_with_areas = false
+	query.collide_with_bodies = true
+	query.collision_mask = 1
+	query.exclude = [get_rid()]
+	var hit := space.intersect_ray(query)
+	return hit.is_empty()
+
+func fire_weapon() -> Node3D:
+	if not _alive or _input_locked:
+		return null
+	if not GameProgress.has_pistol:
+		return null
+	if _fire_cooldown > 0.0:
+		return null
+	_fire_cooldown = pistol_cooldown
+	var bullet: Node3D = BULLET_SCRIPT.new()
+	bullet.name = "Bullet"
+	bullet.damage = pistol_damage
+	var direction := get_aim_direction()
+	var origin := global_position + Vector3(0.0, 1.15, 0.0) + direction * 0.55
+	if _flashlight:
+		origin = _flashlight.global_position + direction * 0.35
+	var host := get_parent()
+	if host == null:
+		host = self
+	host.add_child(bullet)
+	bullet.global_position = origin
+	bullet.velocity = direction * pistol_speed
+	return bullet
+
+func _apply_loadout() -> void:
+	var multiplier := GameProgress.speed_multiplier()
+	move_speed = _base_move_speed * multiplier
+	run_speed = _base_run_speed * multiplier
+
+func _setup_pistol_visual() -> void:
+	if not GameProgress.has_pistol:
+		return
+	var host: Node3D = visual if visual else self
+	if host.get_node_or_null("PistolMesh") != null:
+		return
+	var mesh := MeshInstance3D.new()
+	mesh.name = "PistolMesh"
+	var box := BoxMesh.new()
+	box.size = Vector3(0.07, 0.12, 0.28)
+	mesh.mesh = box
+	mesh.position = Vector3(0.22, 1.05, -0.18)
+	mesh.rotation_degrees = Vector3(8.0, 0.0, 8.0)
+	var mat := StandardMaterial3D.new()
+	mat.albedo_color = Color(0.12, 0.12, 0.12, 1.0)
+	mat.metallic = 0.7
+	mat.roughness = 0.35
+	mesh.material_override = mat
+	host.add_child(mesh)
 
 ## Tests and screenshot tools can pin the aim point without a real cursor.
 func set_aim_world_override(point: Vector3) -> void:

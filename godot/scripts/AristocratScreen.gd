@@ -2,7 +2,6 @@ extends Control
 
 const CRT_TEX := preload("res://assets/ui/boss-crt.png")
 const PANEL_TEX := preload("res://assets/ui/dialogue-panel.png")
-const BOSS_LINE := "You want to eat? Then get to work"
 const CHAR_DELAY := 0.038
 
 var _advancing: bool = false
@@ -12,9 +11,11 @@ var _accum: float = 0.0
 var _dialogue: Label
 var _continue: Label
 var _blink: float = 0.0
+var _line: String = GameProgress.BRIEFING_LINE
 
 
 func _ready() -> void:
+	_line = GameProgress.dialogue_line()
 	set_anchors_preset(PRESET_FULL_RECT)
 	mouse_filter = Control.MOUSE_FILTER_STOP
 	gui_input.connect(_on_gui_input)
@@ -92,11 +93,11 @@ func _ready() -> void:
 func _process(delta: float) -> void:
 	if not _typing_complete:
 		_accum += delta
-		while _accum >= CHAR_DELAY and _char_index < BOSS_LINE.length():
+		while _accum >= CHAR_DELAY and _char_index < _line.length():
 			_accum -= CHAR_DELAY
 			_char_index += 1
-			_dialogue.text = BOSS_LINE.substr(0, _char_index)
-		if _char_index >= BOSS_LINE.length():
+			_dialogue.text = _line.substr(0, _char_index)
+		if _char_index >= _line.length():
 			_finish_typing()
 		return
 
@@ -119,16 +120,16 @@ func on_any_input() -> void:
 	if _advancing:
 		return
 	if not _typing_complete:
-		_char_index = BOSS_LINE.length()
-		_dialogue.text = BOSS_LINE
+		_char_index = _line.length()
+		_dialogue.text = _line
 		_finish_typing()
 		return
 	advance()
 
 
 func finish_typing_now() -> void:
-	_char_index = BOSS_LINE.length()
-	_dialogue.text = BOSS_LINE
+	_char_index = _line.length()
+	_dialogue.text = _line
 	_finish_typing()
 
 
@@ -139,11 +140,16 @@ func advance() -> void:
 		finish_typing_now()
 		return
 	_advancing = true
+	GameProgress.aristocrat_mode = GameProgress.AristocratMode.BRIEFING
 	SceneFlow.request_change(self, SceneFlow.GAME_MAP, UiStyle.CRT_VOID)
 
 
 func is_typing_complete() -> bool:
 	return _typing_complete
+
+
+func spoken_line() -> String:
+	return _line
 
 
 func _finish_typing() -> void:

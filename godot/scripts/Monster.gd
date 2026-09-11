@@ -38,6 +38,7 @@ var _last_seen_pos: Vector3 = Vector3.ZERO
 var health: float = 100.0
 var _health_bar: HealthBar3D
 var _alive: bool = true
+var _health_revealed: bool = false
 
 # Level depth along Z, replaced by configure_level once the map is generated.
 # Defaults cover a single room tile centred on the origin.
@@ -103,6 +104,7 @@ func _physics_process(delta: float) -> void:
 
 	_apply_gravity(delta)
 	move_and_slide()
+	_update_health_bar_visibility()
 
 func take_damage(amount: float) -> void:
 	if not _alive or amount <= 0.0:
@@ -110,6 +112,7 @@ func take_damage(amount: float) -> void:
 	health = maxf(0.0, health - amount)
 	if _health_bar:
 		_health_bar.set_health(health, max_health)
+	reveal_health_bar()
 	if health <= 0.0:
 		_alive = false
 		velocity = Vector3.ZERO
@@ -146,11 +149,30 @@ func alert_item_stolen() -> void:
 func is_item_alerted() -> bool:
 	return _item_alerted
 
+func is_health_bar_revealed() -> bool:
+	return _health_revealed
+
+func reveal_health_bar() -> void:
+	_health_revealed = true
+	if _health_bar:
+		_health_bar.visible = true
+
+func _update_health_bar_visibility() -> void:
+	if _health_revealed:
+		return
+	if player == null or not is_instance_valid(player):
+		return
+	if not player.has_method("illuminates_point"):
+		return
+	if player.illuminates_point(global_position + Vector3(0.0, 1.2, 0.0)):
+		reveal_health_bar()
+
 func _setup_health_bar() -> void:
 	_health_bar = HealthBar3D.new()
 	_health_bar.name = "HealthBar"
 	_health_bar.fill_color = Color(0.9, 0.2, 0.18, 1.0)
 	_health_bar.position = Vector3(0.0, health_bar_height, 0.0)
+	_health_bar.visible = false
 	add_child(_health_bar)
 	_health_bar.set_health(health, max_health)
 
@@ -255,6 +277,8 @@ func _is_player_in_proximity() -> bool:
 
 func _can_see_player() -> bool:
 	if player.has_method("is_alive") and not player.is_alive():
+		return false
+	if player.has_method("is_sneaking") and player.is_sneaking():
 		return false
 	var to_player := player.global_position - global_position
 	to_player.y = 0.0

@@ -58,6 +58,7 @@ func advance() -> void:
 	if _advancing:
 		return
 	_advancing = true
+	GameProgress.aristocrat_mode = GameProgress.AristocratMode.BRIEFING
 	SceneFlow.request_change(self, SceneFlow.ARISTOCRAT, UiStyle.VOID)
 
 

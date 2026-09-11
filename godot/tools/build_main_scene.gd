@@ -34,11 +34,12 @@ func _build() -> void:
 	world_env.name = "WorldEnvironment"
 	var env := Environment.new()
 	env.background_mode = Environment.BG_COLOR
-	# Level 1 is unlit: no sky, no ambient, no sun. The only light is the
-	# player's flashlight (hold RMB in Player.gd to aim and light).
+	# Dim ambient (10% energy) so the map is faintly readable with the
+	# flashlight off. The sun stays dark; hold RMB for the beam.
 	env.background_color = Color(0.0, 0.0, 0.0)
-	env.ambient_light_source = Environment.AMBIENT_SOURCE_DISABLED
-	env.ambient_light_energy = 0.0
+	env.ambient_light_source = Environment.AMBIENT_SOURCE_COLOR
+	env.ambient_light_color = Color(0.55, 0.60, 0.58)
+	env.ambient_light_energy = 0.10
 	env.reflected_light_source = Environment.REFLECTION_SOURCE_DISABLED
 	world_env.environment = env
 	main.add_child(world_env)
@@ -116,7 +117,7 @@ func _build() -> void:
 	var camera := Camera3D.new()
 	camera.name = "IsoCamera"
 	camera.projection = Camera3D.PROJECTION_ORTHOGONAL
-	camera.size = 20.0
+	camera.size = 20.0 / 1.5
 	camera.current = true
 	camera.near = 0.05
 	camera.far = 250.0
