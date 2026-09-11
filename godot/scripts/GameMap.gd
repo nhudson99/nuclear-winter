@@ -7,6 +7,9 @@ const LEVEL_1_ANCHOR := Vector2(0.195, 0.505)
 
 var _advancing: bool = false
 var _level_button: Button
+var _shop_button: Button
+var _rations_label: Label
+var _shop_menu: ShopMenu
 var _reticle: Label
 var _blink: float = 0.0
 
@@ -107,6 +110,40 @@ func _ready() -> void:
 	_level_button.offset_bottom = -2
 	_level_button.grab_focus()
 
+	_rations_label = Label.new()
+	_rations_label.name = "RationsLabel"
+	_rations_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
+	_rations_label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	UiStyle.apply_label(_rations_label, 18, UiStyle.PIP_GREEN, Color(0.0, 0.08, 0.0), 3)
+	add_child(_rations_label)
+	_rations_label.set_anchors_preset(PRESET_TOP_RIGHT)
+	_rations_label.offset_left = -360
+	_rations_label.offset_top = 16
+	_rations_label.offset_right = -168
+	_rations_label.offset_bottom = 56
+
+	_shop_button = Button.new()
+	_shop_button.name = "ShopButton"
+	_shop_button.text = "SHOP"
+	_shop_button.focus_mode = Control.FOCUS_ALL
+	_shop_button.mouse_default_cursor_shape = Control.CURSOR_POINTING_HAND
+	UiStyle.apply_button_font(_shop_button, 20, UiStyle.PIP_GREEN, Color(0.0, 0.08, 0.0), 3)
+	_shop_button.add_theme_stylebox_override("normal", UiStyle.make_flat(Color(0.02, 0.12, 0.04, 0.92), UiStyle.PIP_GREEN, 2))
+	_shop_button.add_theme_stylebox_override("hover", UiStyle.make_flat(Color(0.06, 0.28, 0.10, 0.96), Color(0.7, 1.0, 0.7), 2))
+	_shop_button.add_theme_stylebox_override("pressed", UiStyle.make_flat(Color(0.10, 0.40, 0.14, 1.0), Color.WHITE, 2))
+	_shop_button.add_theme_stylebox_override("focus", UiStyle.make_flat(Color(0.04, 0.20, 0.08, 0.95), Color(0.7, 1.0, 0.7), 2))
+	_shop_button.pressed.connect(open_shop)
+	add_child(_shop_button)
+	_shop_button.set_anchors_preset(PRESET_TOP_RIGHT)
+	_shop_button.offset_left = -156
+	_shop_button.offset_top = 16
+	_shop_button.offset_right = -20
+	_shop_button.offset_bottom = 56
+
+	_refresh_rations()
+	if not GameProgress.rations_changed.is_connected(_on_rations_changed):
+		GameProgress.rations_changed.connect(_on_rations_changed)
+
 
 func _process(delta: float) -> void:
 	_blink += delta
@@ -123,6 +160,50 @@ func enter_level_1() -> void:
 
 func get_level_1_button() -> Button:
 	return _level_button
+
+
+func get_shop_button() -> Button:
+	return _shop_button
+
+
+func get_shop_menu() -> ShopMenu:
+	return _shop_menu
+
+
+func get_rations_label() -> Label:
+	return _rations_label
+
+
+func is_shop_open() -> bool:
+	return _shop_menu != null and is_instance_valid(_shop_menu)
+
+
+func open_shop() -> void:
+	if _shop_menu != null and is_instance_valid(_shop_menu):
+		return
+	_shop_menu = ShopMenu.new()
+	_shop_menu.name = "ShopMenu"
+	_shop_menu.closed.connect(_on_shop_closed)
+	add_child(_shop_menu)
+
+
+func close_shop() -> void:
+	if _shop_menu and is_instance_valid(_shop_menu):
+		_shop_menu.close_shop()
+
+
+func _on_shop_closed() -> void:
+	_shop_menu = null
+	_refresh_rations()
+
+
+func _on_rations_changed(_amount: int) -> void:
+	_refresh_rations()
+
+
+func _refresh_rations() -> void:
+	if _rations_label:
+		_rations_label.text = "RATIONS  %d" % GameProgress.rations
 
 
 func _add_scanlines() -> void:

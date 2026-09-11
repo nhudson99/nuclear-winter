@@ -12,8 +12,8 @@ godot --path godot
 - Room modules authored in Blender (`blender/build_rooms.py`) → `godot/assets/rooms/room_{bedroom,living_room,office,storage}.glb`
 - Player authored in Blender (`blender/build_prisoner.py`) → `godot/assets/characters/player_prisoner.glb`
 - Monster authored in Blender (`blender/build_monster.py`) → `godot/assets/characters/enemy_monster.glb`
-- Flow: `TitleScreen.tscn` → `AristocratScreen.tscn` → `GameMap.tscn` (click **LEVEL 1**) → `Main.tscn`
-- Level 1: `godot/scenes/Main.tscn` (pitch-black lighting, hold RMB to aim the flashlight at the cursor, isometric camera, wall/prop collision, WASD walk, E to pick up the objective, escape through the outer doorway, monster track patrol/proximity chase, health bars)
+- Flow: `TitleScreen.tscn` → `AristocratScreen.tscn` → `GameMap.tscn` (click **LEVEL 1** or **SHOP**) → `Main.tscn`
+- Level 1: `godot/scenes/Main.tscn` (10% ambient so rooms are faintly readable, hold RMB to aim the flashlight, isometric camera zoomed 50% onto the player, wall/prop collision, WASD walk, E to pick up the objective, escape through the outer doorway, monster track patrol/proximity chase, health bars)
 - The earlier hand-authored mansion (`blender/build_mansion_map.py` → `godot/assets/maps/ussr_mansion_map.glb`) is kept for reference but no longer loaded.
 
 ## Procedural maps
@@ -46,7 +46,7 @@ godot --headless -s res://tools/build_main_scene.gd
 
 ```bash
 cd godot
-for t in smoke_procgen smoke_monster_doors smoke_monster_track smoke_game_loop smoke_flow_screens smoke_player_anims smoke_flashlight; do
+for t in smoke_procgen smoke_monster_doors smoke_monster_track smoke_game_loop smoke_flow_screens smoke_player_anims smoke_flashlight smoke_shop smoke_loadout; do
   godot --headless -s res://tools/$t.gd
 done
 ```
@@ -55,13 +55,15 @@ done
 
 ### Gameplay notes
 
-- **Lighting**: Level 1 has no sun and no ambient light. Hold **RMB** to turn on the flashlight and aim the prisoner (and the cone) at the cursor; WASD still strafes independently. Release to go dark again. The glowing objective is the other light.
+- **Lighting**: Level 1 has no sun. Ambient is 10% so you can pick a path with the flashlight off. Hold **RMB** to turn on the flashlight and aim the prisoner (and the cone) at the cursor; WASD still strafes independently. Release to go dark again. The glowing objective is the other light; collecting it lights a green exit beacon.
+- **Camera**: the isometric view is zoomed 50% onto the player (ortho size 20 → 13.3).
 - **Objective**: a glowing pickup sits in the room furthest from where you start. Press **E** nearby to collect it, then reach the exit doorway of the start room without dying.
-- **Alarm**: collecting the item halves the monster's dwell timer and doubles its proximity detection radius.
-- **Win / lose**: escaping with the item shows **WIN**; dying shows **GAME OVER**.
+- **Alarm**: collecting the item halves the monster's dwell timer and doubles its proximity detection radius, and turns on the green exit glow.
+- **Win / lose**: escaping with the item awards **5 rations** and brings up the fat aristocrat ("Well, you survived. Good for you. Here is your ration reward"); dying shows **GAME OVER**.
+- **Shop**: the Pip-Boy map has **SHOP** in the top right. Cards are **pistol** (5 rations, LMB fires 10 damage along the flashlight), **speed upgrade** (1 ration, +5% speed, stackable), and **sneak** (3 rations, hold **Ctrl** with the flashlight off to avoid sight detection).
 - **Doorways**: every adjacent room is linked by an open wall gap; player and monster can walk through. Outward-facing walls are sealed.
-- **Monster**: patrols the generated monster track (room centres through doorway centres). At a track intersection it rolls 0–99 and turns left (0–24), right (25–49), up (50–74) or down (75–99). When it detects the player (proximity, or FOV + line of sight) it path-follows the track toward them; 5 seconds after losing detection it returns to the main track. Touch damage is 100.
-- **Health**: player and monster both start at 100 HP with billboard health bars above their heads.
+- **Monster**: patrols the generated monster track (room centres through doorway centres). At a track intersection it rolls 0–99 and turns left (0–24), right (25–49), up (50–74) or down (75–99). When it detects the player (proximity, or FOV + line of sight) it path-follows the track toward them; 5 seconds after losing detection it returns to the main track. Sneak owned + Ctrl with the light off skips sight detection. Touch damage is 100.
+- **Health**: player starts at 100 HP with a billboard bar. The monster's bar stays hidden until the flashlight cone hits it (or it takes damage).
 
 ## Player character
 
@@ -71,7 +73,7 @@ done
 - **Texture**: wear is authored as procedural noise shaders and then Cycles-baked to one 1024² colour atlas, because glTF cannot carry shader nodes. Grime is weighted by object-space height, so dirt collects on the boots and knees. Three materials (fabric, leather, skin) share the atlas.
 - **Rig**: 17 bones, skinned with inverse-distance weights restricted to a per-part bone whitelist. Bone-heat auto weights bleed across the overlapping lofted parts.
 - **Clips**: `Idle` (96 f loop), `Walk` (24 f loop), `Run` (16 f loop), `Die` (34 f one-shot), exported through muted NLA tracks. The gait is phased from foot contact, with knee flex, ankle counter-rotation to keep planted feet flat, toe-off and a pelvis bob.
-- **Playback**: `Player.gd` sets `LOOP_LINEAR` on the three cycles at load — the glTF importer leaves every clip one-shot — picks walk or run by ground speed, and scales the playback rate to the distance covered per cycle so the boots do not skate. WASD walks; hold **Shift** to run. Hold **RMB** to keep the flashlight on and face the cursor; movement and facing are independent while aiming.
+- **Playback**: `Player.gd` sets `LOOP_LINEAR` on the three cycles at load — the glTF importer leaves every clip one-shot — picks walk or run by ground speed, and scales the playback rate to the distance covered per cycle so the boots do not skate. WASD walks; hold **Shift** to run. Hold **RMB** to keep the flashlight on and face the cursor; movement and facing are independent while aiming. If the pistol is owned, **LMB** fires along that aim. Hold **Ctrl** with sneak owned and the light off to slip the monster's sight cone.
 
 ```bash
 # Preview renders (views | head | turntable | anim <Clip> | poses <Clip> <angle> <frames...>)
@@ -98,9 +100,11 @@ godot/                     Godot 4.4 game (menus + Level 1)
   assets/characters/{player_prisoner,enemy_monster}.glb
   assets/props/{crate,wardrobe,couch}.glb
   scenes/{TitleScreen,AristocratScreen,GameMap,Main}.tscn
-  scripts/{SceneFlow,TitleScreen,AristocratScreen,GameMap,Main,Player,Monster,PickupItem,ExitZone}.gd
+  scripts/{SceneFlow,GameProgress,TitleScreen,AristocratScreen,GameMap,ShopMenu,Main,Player,Monster,PickupItem,ExitZone,Bullet}.gd
   tools/smoke_flow_screens.gd
   tools/smoke_game_loop.gd
+  tools/smoke_shop.gd
+  tools/smoke_loadout.gd
 blender/
   build_mansion_map.py
   build_prisoner.py
