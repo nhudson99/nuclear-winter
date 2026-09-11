@@ -108,7 +108,11 @@ func _apply_layout(layout: Dictionary) -> void:
 	if exit_zone:
 		exit_zone.global_position = layout.get("exit", Vector3.ZERO)
 
-	monster.configure_level(layout.get("rooms", []), layout.get("bounds", AABB()))
+	monster.configure_level(
+		layout.get("rooms", []),
+		layout.get("bounds", AABB()),
+		layout.get("monster_track", {})
+	)
 	_snap_camera()
 
 func _apply_preview_overrides() -> void:

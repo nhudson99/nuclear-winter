@@ -9,6 +9,10 @@ extends Node
 ## the outside keep their plug, so the map edge stays sealed without needing
 ## separate wall variants per room.
 ##
+## Generation also lays a monster track: a graph whose nodes sit on every room
+## centre and every interior doorway centre, so the monster can patrol and chase
+## without walking into walls or furniture.
+##
 ## Generation is a coroutine: it yields a frame per room and reports `progress`
 ## so the loading screen keeps animating while the map is assembled.
 
@@ -54,9 +58,81 @@ const SIDE_STEPS := {
 
 const OPPOSITE_SIDE := {"N": "S", "S": "N", "E": "W", "W": "E"}
 
+## Cardinal names used by the monster track and intersection rolls.
+## Up is north (-Z), down is south (+Z), matching SIDE_STEPS.
+const TRACK_LEFT := "left"
+const TRACK_RIGHT := "right"
+const TRACK_UP := "up"
+const TRACK_DOWN := "down"
+const TRACK_DIRS: Array[String] = ["left", "right", "up", "down"]
+const TRACK_Y := 0.05
+## Only east/south sides are stored so each interior doorway is one node.
+const TRACK_CANONICAL_SIDES: Array[String] = ["E", "S"]
 
-func cell_to_world(cell: Vector2i) -> Vector3:
+
+static func cell_to_world(cell: Vector2i) -> Vector3:
 	return Vector3(float(cell.x) * TILE, 0.0, float(cell.y) * TILE)
+
+
+static func room_track_id(cell: Vector2i) -> String:
+	return "room:%d:%d" % [cell.x, cell.y]
+
+
+static func door_track_id(cell: Vector2i, side: String) -> String:
+	return "door:%d:%d:%s" % [cell.x, cell.y, side]
+
+
+static func door_track_position(cell: Vector2i, side: String) -> Vector3:
+	var step: Vector2i = SIDE_STEPS[side]
+	return (
+		cell_to_world(cell)
+		+ Vector3(float(step.x), 0.0, float(step.y)) * (TILE * 0.5)
+		+ Vector3(0.0, TRACK_Y, 0.0)
+	)
+
+
+static func cardinal_from_delta(delta: Vector3) -> String:
+	if absf(delta.x) >= absf(delta.z):
+		return TRACK_RIGHT if delta.x >= 0.0 else TRACK_LEFT
+	return TRACK_DOWN if delta.z >= 0.0 else TRACK_UP
+
+
+## Shortest planar distance from `pos` to any track node or doorway edge.
+static func closest_distance_to_track(pos: Vector3, track: Dictionary) -> float:
+	var nodes: Dictionary = track.get("nodes", {})
+	if nodes.is_empty():
+		return INF
+	var best := INF
+	for id in nodes:
+		var node: Dictionary = nodes[id]
+		var origin: Vector3 = node["position"]
+		best = minf(best, _planar_distance(pos, origin))
+		var exits: Dictionary = node.get("exits", {})
+		for dir in exits:
+			var other_id: String = str(exits[dir])
+			if other_id < str(id):
+				continue
+			if not nodes.has(other_id):
+				continue
+			var dest: Vector3 = nodes[other_id]["position"]
+			best = minf(best, _distance_to_segment(pos, origin, dest))
+	return best
+
+
+static func _planar_distance(a: Vector3, b: Vector3) -> float:
+	return Vector2(a.x - b.x, a.z - b.z).length()
+
+
+static func _distance_to_segment(point: Vector3, a: Vector3, b: Vector3) -> float:
+	var px := Vector2(point.x, point.z)
+	var pa := Vector2(a.x, a.z)
+	var pb := Vector2(b.x, b.z)
+	var ab := pb - pa
+	var length_sq := ab.length_squared()
+	if length_sq <= 0.0001:
+		return px.distance_to(pa)
+	var t := clampf((px - pa).dot(ab) / length_sq, 0.0, 1.0)
+	return px.distance_to(pa + ab * t)
 
 
 ## Assembles the level under `container` and returns the layout description
@@ -101,6 +177,7 @@ func generate(container: Node3D, level_seed: int, room_count: int) -> Dictionary
 	progress.emit(0.96, "РАССТАНОВКА / PLACING ASSETS")
 	var layout := _describe_layout(rooms, cells, start_cell, exit_info, level_seed)
 	_add_ground(container, layout["bounds"])
+	_add_monster_track(container, layout["monster_track"])
 	progress.emit(1.0, "ГОТОВО / READY")
 	return layout
 
@@ -340,6 +417,74 @@ static func find_child_by_name(root: Node, node_name: String) -> Node:
 
 
 # --------------------------------------------------------------------------- #
+# Monster track
+# --------------------------------------------------------------------------- #
+
+
+## Graph of room centres linked through the centre of every interior doorway.
+## Each node stores cardinal exits (`left` / `right` / `up` / `down`) so the
+## monster can roll a turn at intersections.
+func build_monster_track(rooms: Array, occupied: Dictionary) -> Dictionary:
+	var nodes := {}
+	for room in rooms:
+		var cell: Vector2i = room["cell"]
+		var id := room_track_id(cell)
+		nodes[id] = {
+			"id": id,
+			"kind": "room",
+			"cell": cell,
+			"position": cell_to_world(cell) + Vector3(0.0, TRACK_Y, 0.0),
+			"exits": {},
+		}
+
+	for room in rooms:
+		var cell: Vector2i = room["cell"]
+		for side in TRACK_CANONICAL_SIDES:
+			var neighbor: Vector2i = cell + SIDE_STEPS[side]
+			if not occupied.has(neighbor):
+				continue
+			var door_id := door_track_id(cell, side)
+			nodes[door_id] = {
+				"id": door_id,
+				"kind": "door",
+				"cell": cell,
+				"side": side,
+				"position": door_track_position(cell, side),
+				"exits": {},
+			}
+			_link_track_nodes(nodes, room_track_id(cell), door_id)
+			_link_track_nodes(nodes, door_id, room_track_id(neighbor))
+
+	return {"nodes": nodes}
+
+
+func _link_track_nodes(nodes: Dictionary, a_id: String, b_id: String) -> void:
+	if not nodes.has(a_id) or not nodes.has(b_id):
+		return
+	var from_pos: Vector3 = nodes[a_id]["position"]
+	var to_pos: Vector3 = nodes[b_id]["position"]
+	var ab := cardinal_from_delta(to_pos - from_pos)
+	var ba := cardinal_from_delta(from_pos - to_pos)
+	(nodes[a_id]["exits"] as Dictionary)[ab] = b_id
+	(nodes[b_id]["exits"] as Dictionary)[ba] = a_id
+
+
+func _add_monster_track(container: Node3D, track: Dictionary) -> void:
+	var root := Node3D.new()
+	root.name = "MonsterTrack"
+	container.add_child(root)
+	var nodes: Dictionary = track.get("nodes", {})
+	for id in nodes:
+		var info: Dictionary = nodes[id]
+		var marker := Marker3D.new()
+		marker.name = str(id).replace(":", "_")
+		marker.position = info["position"]
+		marker.set_meta("track_id", id)
+		marker.set_meta("kind", String(info.get("kind", "")))
+		root.add_child(marker)
+
+
+# --------------------------------------------------------------------------- #
 # Spawn points
 # --------------------------------------------------------------------------- #
 
@@ -445,6 +590,10 @@ func _describe_layout(
 			"center": room["center"],
 		})
 
+	var occupied := {}
+	for cell in cells:
+		occupied[cell] = true
+
 	return {
 		"seed": level_seed,
 		"rooms": room_summaries,
@@ -457,6 +606,7 @@ func _describe_layout(
 		"objective_cell": objective_cell,
 		"monster": cell_to_world(monster_cell) + Vector3(0.0, 0.05, 0.0),
 		"monster_cell": monster_cell,
+		"monster_track": build_monster_track(rooms, occupied),
 		"bounds": AABB(
 			Vector3(float(min_cell.x) * TILE - TILE * 0.5, 0.0, float(min_cell.y) * TILE - TILE * 0.5),
 			Vector3(
