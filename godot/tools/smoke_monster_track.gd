@@ -31,7 +31,7 @@ func _run() -> void:
 	var start_cell: Vector2i = layout["start_cell"]
 	var start_center := _cell_center(start_cell)
 
-	var rolls_ok := (
+	var rolls_ok: bool = (
 		monster.direction_from_roll(0) == MapGenerator.TRACK_LEFT
 		and monster.direction_from_roll(24) == MapGenerator.TRACK_LEFT
 		and monster.direction_from_roll(25) == MapGenerator.TRACK_RIGHT
@@ -123,13 +123,13 @@ func _run() -> void:
 	monster.debug_enter_chase()
 	monster.set_physics_process(true)
 	await create_timer(0.12).timeout
-	var still_chasing := monster.get_ai_mode_name() == "chase"
+	var still_chasing: bool = monster.get_ai_mode_name() == "chase"
 	await create_timer(0.4).timeout
-	var returning := monster.get_ai_mode_name() == "return" or monster.get_ai_mode_name() == "patrol"
+	var returning: bool = monster.get_ai_mode_name() == "return" or monster.get_ai_mode_name() == "patrol"
 	await create_timer(1.6).timeout
-	var back_on_track := MapGenerator.closest_distance_to_track(monster.global_position, track) < 0.95
-	var settled := monster.get_ai_mode_name() == "patrol" or monster.get_ai_mode_name() == "return"
-	var return_ok := still_chasing and returning and back_on_track and settled
+	var back_on_track: bool = MapGenerator.closest_distance_to_track(monster.global_position, track) < 0.95
+	var settled: bool = monster.get_ai_mode_name() == "patrol" or monster.get_ai_mode_name() == "return"
+	var return_ok: bool = still_chasing and returning and back_on_track and settled
 	print(
 		"return_to_track_ok=",
 		return_ok,
