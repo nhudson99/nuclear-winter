@@ -28,6 +28,10 @@ func _run() -> void:
 	var nodes_ok := true
 	print("loop_nodes_ok=", nodes_ok)
 
+	var expected_speed := 5.5 * 1.25
+	var speed_ok := is_equal_approx(player.move_speed, expected_speed)
+	print("player_speed_ok=", speed_ok, " speed=", player.move_speed, " expected=", expected_speed)
+
 	# Baseline monster difficulty.
 	var base_dwell: float = monster.section_dwell_time
 	var base_prox: float = monster.proximity_radius
@@ -117,6 +121,7 @@ func _run() -> void:
 		and win_text_ok
 		and lose_ok
 		and lose_text_ok
+		and speed_ok
 	)
 	print("game_loop_smoke_ok=", all_ok)
 	quit(0 if all_ok else 1)

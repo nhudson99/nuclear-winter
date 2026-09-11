@@ -3,7 +3,7 @@ extends CharacterBody3D
 signal died
 signal item_collected
 
-@export var move_speed: float = 5.5
+@export var move_speed: float = 6.875
 @export var gravity: float = 20.0
 @export var turn_speed: float = 12.0
 @export var walk_anim_speed: float = 10.0
