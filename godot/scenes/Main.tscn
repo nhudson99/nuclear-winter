@@ -25,15 +25,15 @@ height = 1.6
 radius = 0.42
 height = 1.35
 
-[sub_resource type="CapsuleShape3D" id="CapsuleShape3D_1iba3"]
+[sub_resource type="CapsuleShape3D" id="CapsuleShape3D_1a61f"]
 radius = 0.36
 height = 0.85
 
-[sub_resource type="CapsuleShape3D" id="CapsuleShape3D_yxlcp"]
+[sub_resource type="CapsuleShape3D" id="CapsuleShape3D_1iba3"]
 radius = 0.58
 height = 1.45
 
-[sub_resource type="BoxShape3D" id="BoxShape3D_ebg2g"]
+[sub_resource type="BoxShape3D" id="BoxShape3D_yxlcp"]
 size = Vector3(3.2, 3, 3.2)
 
 [node name="Main" type="Node3D"]
@@ -92,10 +92,11 @@ hit_clip = "hit"
 death_clip = "death"
 attack_clip = "attack"
 walk_cycle_metres = 1.1
+grow_and_split = true
 
 [node name="CollisionShape3D" type="CollisionShape3D" parent="Slime"]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.48, 0)
-shape = SubResource("CapsuleShape3D_1iba3")
+shape = SubResource("CapsuleShape3D_1a61f")
 
 [node name="MonsterMesh" type="Node3D" parent="Slime" instance=ExtResource("6_mwfav")]
 transform = Transform3D(-1, 0, -8.74228e-08, 0, 1, 0, 8.74228e-08, 0, -1, 0, 0, 0)
@@ -120,7 +121,7 @@ walk_cycle_metres = 1.9
 
 [node name="CollisionShape3D" type="CollisionShape3D" parent="Tank"]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.95, 0)
-shape = SubResource("CapsuleShape3D_yxlcp")
+shape = SubResource("CapsuleShape3D_1iba3")
 
 [node name="MonsterMesh" type="Node3D" parent="Tank" instance=ExtResource("7_3p2gp")]
 transform = Transform3D(-1, 0, -8.74228e-08, 0, 1, 0, 8.74228e-08, 0, -1, 0, 0, 0)
@@ -141,4 +142,4 @@ script = ExtResource("9_ft6cd")
 
 [node name="CollisionShape3D" type="CollisionShape3D" parent="ExitZone"]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 1.5, 0)
-shape = SubResource("BoxShape3D_ebg2g")
+shape = SubResource("BoxShape3D_yxlcp")

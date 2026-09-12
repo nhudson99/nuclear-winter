@@ -68,7 +68,7 @@ done
 - **Doorways**: every adjacent room is linked by an open wall gap; player and enemies can walk through. Outward-facing walls are sealed.
 - **Enemies**: three creatures share the generated monster track (room centres through doorway centres). At a track intersection each rolls 0–99 and turns left (0–24), right (25–49), up (50–74) or down (75–99). When one detects the player (proximity, or FOV + line of sight) it path-follows the track toward them; 5 seconds after losing detection it returns to the main track. Sneak owned + Ctrl with the light off skips sight detection.
   - **Monster**: the original hunched stalker. 100 HP, lethal touch (100).
-  - **Slime**: Charlie's Poly Pizza slime, scaled to about a metre. Fast, 45 HP, 35 touch damage, plays `idle` / `moving` / `hit` / `attack` / `death`.
+  - **Slime**: Charlie's Poly Pizza slime, scaled to about a metre. Fast, 45 HP, 35 touch damage, plays `idle` / `moving` / `hit` / `attack` / `death`. Over 30 seconds it doubles in size and health, then splits into two original-sized slimes; each child repeats the cycle (capped at 16 living slimes).
   - **Tank**: Left 4 Dead-style brute in jeans. Slow, 320 HP, lethal touch, hulking knuckle-dragger silhouette.
 - **Health**: player starts at 100 HP with a billboard bar. Enemy bars stay hidden until the flashlight cone hits them (or they take damage).
 

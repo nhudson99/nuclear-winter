@@ -15,6 +15,9 @@ const ARISTOCRAT_SCREEN := preload("res://scenes/AristocratScreen.tscn")
 const PLAY_CAMERA_SIZE := 20.0 / 1.5
 ## 10% ambient so rooms are faintly readable with the flashlight off.
 const DARK_AMBIENT_ENERGY := 0.10
+const SLIME_SCENE_PATH := "res://scenes/Slime.tscn"
+const MAX_LIVING_SLIMES := 16
+const SLIME_SPLIT_SPREAD := 0.6
 
 @onready var camera: Camera3D = $IsoCamera
 @onready var player: CharacterBody3D = $Player
@@ -37,6 +40,7 @@ var _state: GameState = GameState.LOADING
 var _status_label: Label
 var _layout: Dictionary = {}
 var _loading: CanvasLayer
+var _slime_serial: int = 1
 
 func _ready() -> void:
 	camera.projection = Camera3D.PROJECTION_ORTHOGONAL
@@ -155,6 +159,69 @@ func park_monsters(keep: Node = null) -> void:
 		body.touch_damage = 0.0
 		body.visible = false
 		body.global_position += Vector3(200.0, 0.0, 200.0)
+
+
+func living_slime_count() -> int:
+	var n := 0
+	for node in get_tree().get_nodes_in_group("slime"):
+		if not is_instance_valid(node) or node.is_queued_for_deletion():
+			continue
+		if node.has_method("is_alive") and not node.is_alive():
+			continue
+		n += 1
+	return n
+
+
+## Spawns two original-sized slimes beside `parent`. Returns false when the
+## living-slime cap would be exceeded so the parent can restart its grow cycle.
+func spawn_split_slimes(parent: CharacterBody3D) -> bool:
+	if parent == null or not is_instance_valid(parent):
+		return false
+	if living_slime_count() + 1 > MAX_LIVING_SLIMES:
+		return false
+	if not ResourceLoader.exists(SLIME_SCENE_PATH):
+		push_error("Missing %s" % SLIME_SCENE_PATH)
+		return false
+	var packed: PackedScene = load(SLIME_SCENE_PATH)
+	if packed == null:
+		return false
+	var processing := parent.is_physics_processing()
+	for offset in _slime_split_offsets(parent):
+		var child: CharacterBody3D = packed.instantiate()
+		_slime_serial += 1
+		child.name = "Slime_%d" % _slime_serial
+		child.set("grow_and_split", true)
+		child.set("grow_duration", parent.get("grow_duration"))
+		child.set("grow_scale_target", parent.get("grow_scale_target"))
+		child.touch_damage = parent.touch_damage
+		add_child(child)
+		var where := parent.global_position + offset
+		where.y = parent.global_position.y
+		child.global_position = where
+		child.velocity = Vector3.ZERO
+		var src_mesh := parent.get_node_or_null("MonsterMesh") as Node3D
+		var dst_mesh := child.get_node_or_null("MonsterMesh") as Node3D
+		if src_mesh and dst_mesh:
+			dst_mesh.rotation.y = src_mesh.rotation.y
+		if parent.has_method("copy_split_level_state"):
+			parent.copy_split_level_state(child)
+		child.set_physics_process(processing)
+	return true
+
+
+func _slime_split_offsets(parent: Node3D) -> Array[Vector3]:
+	var mesh := parent.get_node_or_null("MonsterMesh") as Node3D
+	var yaw := mesh.rotation.y if mesh else 0.0
+	var facing := Vector3(-sin(yaw), 0.0, -cos(yaw))
+	var right := Vector3.UP.cross(facing)
+	if right.length() < 0.01:
+		right = Vector3.RIGHT
+	else:
+		right = right.normalized()
+	var offsets: Array[Vector3] = []
+	offsets.append(-right * SLIME_SPLIT_SPREAD)
+	offsets.append(right * SLIME_SPLIT_SPREAD)
+	return offsets
 
 func _apply_preview_overrides() -> void:
 	## NW_PREVIEW_PLAYER parks the monster and tightens the iso framing so the

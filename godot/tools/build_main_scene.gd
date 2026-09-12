@@ -136,11 +136,15 @@ func _build() -> void:
 			"death_clip": "death",
 			"attack_clip": "attack",
 			"walk_cycle_metres": 1.1,
+			"grow_and_split": true,
+			"grow_duration": 30.0,
+			"grow_scale_target": 2.0,
 		},
 		0.36,
 		0.85,
 		0.48
 	)
+	_save_packed_subtree(main.get_node("Slime"), "res://scenes/Slime.tscn")
 	_add_enemy(
 		main,
 		"Tank",
@@ -252,3 +256,24 @@ func _add_enemy(
 	mesh.rotation.y = PI
 	body.add_child(mesh)
 	mesh.owner = main
+
+
+func _save_packed_subtree(root: Node, path: String) -> void:
+	var parent := root.get_parent()
+	root.owner = null
+	for child in root.get_children():
+		child.owner = root
+	var packed := PackedScene.new()
+	if packed.pack(root) != OK:
+		push_error("Failed to pack %s" % path)
+		quit(1)
+		return
+	var save_err := ResourceSaver.save(packed, path)
+	if save_err != OK:
+		push_error("Failed to save %s: %s" % [path, save_err])
+		quit(1)
+		return
+	root.owner = parent
+	for child in root.get_children():
+		child.owner = parent
+	print("Wrote ", path)

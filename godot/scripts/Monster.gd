@@ -35,6 +35,11 @@ enum AiMode { PATROL, CHASE, RETURN }
 @export var death_clip: String = ""
 @export var attack_clip: String = ""
 @export var walk_cycle_metres: float = 1.6
+## When set, this enemy grows to `grow_scale_target` over `grow_duration`
+## seconds (size and max health), then splits into two original-sized copies.
+@export var grow_and_split: bool = false
+@export var grow_duration: float = 30.0
+@export var grow_scale_target: float = 2.0
 
 @onready var visual: Node3D = $MonsterMesh
 
@@ -69,6 +74,26 @@ var _anim: AnimationPlayer
 var _clip: String = ""
 var _anim_locked: bool = false
 
+var _level_rooms: Array = []
+var _level_bounds: AABB = AABB()
+var _grow_elapsed: float = 0.0
+var _split_started: bool = false
+var _growth_bases_ready: bool = false
+var _base_max_health: float = 100.0
+var _base_eye_height: float = 1.7
+var _base_health_bar_height: float = 2.35
+var _base_touch_radius: float = 0.95
+var _visual_base_scale: Vector3 = Vector3.ONE
+var _capsule_node: CollisionShape3D
+var _capsule_shape: CapsuleShape3D
+var _base_capsule_radius: float = 0.36
+var _base_capsule_height: float = 0.85
+var _base_capsule_pos: Vector3 = Vector3.ZERO
+var _touch_shape_node: CollisionShape3D
+var _touch_sphere: SphereShape3D
+var _base_touch_sphere_radius: float = 0.95
+var _base_touch_pos: Vector3 = Vector3.ZERO
+
 func _ready() -> void:
 	add_to_group("monster")
 	health = max_health
@@ -83,6 +108,9 @@ func _ready() -> void:
 	_setup_animations()
 	_setup_health_bar()
 	_setup_touch_area()
+	if grow_and_split:
+		add_to_group("slime")
+		_capture_growth_bases()
 
 func _physics_process(delta: float) -> void:
 	if not _alive:
@@ -91,6 +119,12 @@ func _physics_process(delta: float) -> void:
 		_apply_gravity(delta)
 		move_and_slide()
 		_animate_walk(_walk_phase, 0.0)
+		return
+
+	_tick_growth(delta)
+	if _split_started or is_queued_for_deletion():
+		velocity.x = 0.0
+		velocity.z = 0.0
 		return
 
 	if player == null or not is_instance_valid(player):
@@ -248,6 +282,11 @@ func _update_health_bar_visibility() -> void:
 		reveal_health_bar()
 
 func _setup_health_bar() -> void:
+	var existing := get_node_or_null("HealthBar")
+	if existing is HealthBar3D:
+		_health_bar = existing
+		_health_bar.set_health(health, max_health)
+		return
 	_health_bar = HealthBar3D.new()
 	_health_bar.name = "HealthBar"
 	_health_bar.fill_color = Color(0.9, 0.2, 0.18, 1.0)
@@ -257,6 +296,11 @@ func _setup_health_bar() -> void:
 	_health_bar.set_health(health, max_health)
 
 func _setup_touch_area() -> void:
+	var existing := get_node_or_null("TouchArea") as Area3D
+	if existing != null:
+		if not existing.body_entered.is_connected(_on_touch_body_entered):
+			existing.body_entered.connect(_on_touch_body_entered)
+		return
 	var area := Area3D.new()
 	area.name = "TouchArea"
 	area.collision_layer = 0
@@ -490,7 +534,9 @@ func _can_see_player() -> bool:
 	return hit.is_empty()
 
 ## Adopts a generated floorplan: rooms and the monster track from MapGenerator.
-func configure_level(rooms: Array, _bounds: AABB, track: Dictionary = {}) -> void:
+func configure_level(rooms: Array, bounds: AABB, track: Dictionary = {}) -> void:
+	_level_rooms = rooms.duplicate(true)
+	_level_bounds = bounds
 	_track_nodes = track.get("nodes", {}).duplicate(true)
 	if _track_nodes.is_empty():
 		_track_nodes = _track_from_rooms(rooms)
@@ -499,6 +545,127 @@ func configure_level(rooms: Array, _bounds: AABB, track: Dictionary = {}) -> voi
 	_came_from_id = ""
 	_current_node_id = _nearest_node_id(global_position)
 	_choose_patrol_target()
+
+
+func copy_split_level_state(child: CharacterBody3D) -> void:
+	if child.has_method("configure_level"):
+		child.configure_level(_level_rooms, _level_bounds, {"nodes": _track_nodes})
+	if _item_alerted and child.has_method("alert_item_stolen"):
+		child.alert_item_stolen()
+	child.set("player", player)
+
+
+func get_growth_scale() -> float:
+	if not grow_and_split or grow_duration <= 0.0:
+		return 1.0
+	var t := clampf(_grow_elapsed / grow_duration, 0.0, 1.0)
+	return lerpf(1.0, grow_scale_target, t)
+
+
+func reset_growth_cycle() -> void:
+	_grow_elapsed = 0.0
+	_split_started = false
+	if grow_and_split:
+		add_to_group("slime")
+		if not _growth_bases_ready:
+			_capture_growth_bases()
+		_apply_growth(0.0)
+
+
+func debug_set_growth_progress(t: float) -> void:
+	if not grow_and_split:
+		return
+	if not _growth_bases_ready:
+		_capture_growth_bases()
+	var clamped := clampf(t, 0.0, 1.0)
+	_grow_elapsed = clamped * maxf(grow_duration, 0.001)
+	_apply_growth(clamped)
+
+
+func debug_split_now() -> void:
+	_try_split()
+
+
+func _tick_growth(delta: float) -> void:
+	if not grow_and_split or _split_started:
+		return
+	if grow_duration <= 0.0:
+		return
+	if not _growth_bases_ready:
+		_capture_growth_bases()
+	_grow_elapsed += delta
+	var t := clampf(_grow_elapsed / grow_duration, 0.0, 1.0)
+	_apply_growth(t)
+	if t >= 1.0:
+		_try_split()
+
+
+func _capture_growth_bases() -> void:
+	if grow_and_split:
+		add_to_group("slime")
+	if _growth_bases_ready:
+		return
+	_base_max_health = max_health
+	_base_eye_height = eye_height
+	_base_health_bar_height = health_bar_height
+	_base_touch_radius = touch_radius
+	_visual_base_scale = visual.scale if visual else Vector3.ONE
+	var col := get_node_or_null("CollisionShape3D") as CollisionShape3D
+	if col != null and col.shape is CapsuleShape3D:
+		_capsule_node = col
+		_capsule_shape = (col.shape as CapsuleShape3D).duplicate()
+		col.shape = _capsule_shape
+		_base_capsule_radius = _capsule_shape.radius
+		_base_capsule_height = _capsule_shape.height
+		_base_capsule_pos = col.position
+	var touch := get_node_or_null("TouchArea")
+	if touch:
+		var shape_node := touch.get_node_or_null("CollisionShape3D") as CollisionShape3D
+		if shape_node != null and shape_node.shape is SphereShape3D:
+			_touch_shape_node = shape_node
+			_touch_sphere = (shape_node.shape as SphereShape3D).duplicate()
+			shape_node.shape = _touch_sphere
+			_base_touch_sphere_radius = _touch_sphere.radius
+			_base_touch_pos = shape_node.position
+	_growth_bases_ready = true
+
+
+func _apply_growth(t: float) -> void:
+	if not _growth_bases_ready:
+		return
+	var factor := lerpf(1.0, grow_scale_target, clampf(t, 0.0, 1.0))
+	if visual:
+		visual.scale = _visual_base_scale * factor
+	if _capsule_shape != null and _capsule_node != null:
+		_capsule_shape.radius = _base_capsule_radius * factor
+		_capsule_shape.height = maxf(_base_capsule_height * factor, _capsule_shape.radius * 2.0)
+		_capsule_node.position = _base_capsule_pos * factor
+	if _touch_sphere != null and _touch_shape_node != null:
+		_touch_sphere.radius = _base_touch_sphere_radius * factor
+		_touch_shape_node.position = _base_touch_pos * factor
+	touch_radius = _base_touch_radius * factor
+	eye_height = _base_eye_height * factor
+	if _health_bar:
+		_health_bar.position = Vector3(0.0, _base_health_bar_height * factor, 0.0)
+	var new_max := _base_max_health * factor
+	var gained := new_max - max_health
+	max_health = new_max
+	health = clampf(health + gained, 0.0, max_health)
+	if _health_bar:
+		_health_bar.set_health(health, max_health)
+
+
+func _try_split() -> void:
+	if _split_started or not _alive:
+		return
+	var host := get_parent()
+	if host != null and host.has_method("spawn_split_slimes"):
+		if host.spawn_split_slimes(self):
+			_split_started = true
+			velocity = Vector3.ZERO
+			queue_free()
+			return
+	reset_growth_cycle()
 
 func _track_from_rooms(rooms: Array) -> Dictionary:
 	var nodes := {}

@@ -1,0 +1,36 @@
+[gd_scene load_steps=4 format=3]
+
+[ext_resource type="Script" path="res://scripts/Monster.gd" id="1_2hd65"]
+[ext_resource type="PackedScene" path="res://assets/characters/enemy_slime.glb" id="2_wcugo"]
+
+[sub_resource type="CapsuleShape3D" id="CapsuleShape3D_1a61f"]
+radius = 0.36
+height = 0.85
+
+[node name="Slime" type="CharacterBody3D"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.05, -12)
+collision_layer = 4
+script = ExtResource("1_2hd65")
+move_speed = 5.2
+detect_range = 12.0
+proximity_radius = 2.4
+eye_height = 0.65
+max_health = 45.0
+touch_damage = 35.0
+health_bar_height = 1.35
+section_dwell_time = 16.0
+touch_radius = 0.7
+idle_clip = "idle"
+walk_clip = "moving"
+hit_clip = "hit"
+death_clip = "death"
+attack_clip = "attack"
+walk_cycle_metres = 1.1
+grow_and_split = true
+
+[node name="CollisionShape3D" type="CollisionShape3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.48, 0)
+shape = SubResource("CapsuleShape3D_1a61f")
+
+[node name="MonsterMesh" type="Node3D" parent="." instance=ExtResource("2_wcugo")]
+transform = Transform3D(-1, 0, -8.74228e-08, 0, 1, 0, 8.74228e-08, 0, -1, 0, 0, 0)
