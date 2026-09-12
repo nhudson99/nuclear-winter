@@ -1,68 +1,128 @@
-[gd_scene load_steps=12 format=3]
+[gd_scene load_steps=16 format=3]
 
-[ext_resource type="Script" path="res://scripts/Main.gd" id="1_nxtc6"]
-[ext_resource type="Script" path="res://scripts/Player.gd" id="2_jlsqs"]
-[ext_resource type="PackedScene" path="res://assets/characters/player_prisoner.glb" id="3_q8u5g"]
-[ext_resource type="Script" path="res://scripts/Monster.gd" id="4_lhr70"]
-[ext_resource type="PackedScene" path="res://assets/characters/enemy_monster.glb" id="5_wp0k4"]
-[ext_resource type="Script" path="res://scripts/PickupItem.gd" id="6_bjd11"]
-[ext_resource type="Script" path="res://scripts/ExitZone.gd" id="7_qmy6f"]
+[ext_resource type="Script" path="res://scripts/Main.gd" id="1_q8u5g"]
+[ext_resource type="Script" path="res://scripts/Player.gd" id="2_lhr70"]
+[ext_resource type="PackedScene" path="res://assets/characters/player_prisoner.glb" id="3_wp0k4"]
+[ext_resource type="Script" path="res://scripts/Monster.gd" id="4_bjd11"]
+[ext_resource type="PackedScene" path="res://assets/characters/enemy_monster.glb" id="5_qmy6f"]
+[ext_resource type="PackedScene" path="res://assets/characters/enemy_slime.glb" id="6_mwfav"]
+[ext_resource type="PackedScene" path="res://assets/characters/enemy_tank.glb" id="7_3p2gp"]
+[ext_resource type="Script" path="res://scripts/PickupItem.gd" id="8_cvmbd"]
+[ext_resource type="Script" path="res://scripts/ExitZone.gd" id="9_ft6cd"]
 
-[sub_resource type="Environment" id="Environment_mwfav"]
+[sub_resource type="Environment" id="Environment_bb450"]
 background_mode = 1
-background_color = Color(0, 0, 0, 1)
 ambient_light_source = 2
 ambient_light_color = Color(0.55, 0.6, 0.58, 1)
 ambient_light_energy = 0.1
 reflected_light_source = 1
 
-[sub_resource type="CapsuleShape3D" id="CapsuleShape3D_3p2gp"]
+[sub_resource type="CapsuleShape3D" id="CapsuleShape3D_nfivy"]
 radius = 0.3
 height = 1.6
 
-[sub_resource type="CapsuleShape3D" id="CapsuleShape3D_cvmbd"]
+[sub_resource type="CapsuleShape3D" id="CapsuleShape3D_1nqs0"]
 radius = 0.42
 height = 1.35
 
-[sub_resource type="BoxShape3D" id="BoxShape3D_ft6cd"]
+[sub_resource type="CapsuleShape3D" id="CapsuleShape3D_1iba3"]
+radius = 0.36
+height = 0.85
+
+[sub_resource type="CapsuleShape3D" id="CapsuleShape3D_yxlcp"]
+radius = 0.58
+height = 1.45
+
+[sub_resource type="BoxShape3D" id="BoxShape3D_ebg2g"]
 size = Vector3(3.2, 3, 3.2)
 
 [node name="Main" type="Node3D"]
-script = ExtResource("1_nxtc6")
+script = ExtResource("1_q8u5g")
 
 [node name="WorldEnvironment" type="WorldEnvironment" parent="."]
-environment = SubResource("Environment_mwfav")
+environment = SubResource("Environment_bb450")
 
 [node name="Sun" type="DirectionalLight3D" parent="."]
 transform = Transform3D(0.866025, -0.383022, 0.321394, 0, 0.642788, 0.766044, -0.5, -0.663414, 0.55667, 0, 0, 0)
 visible = false
 light_color = Color(1, 0.95, 0.86, 1)
 light_energy = 0.0
-shadow_enabled = false
 
 [node name="GeneratedMap" type="Node3D" parent="."]
 
 [node name="Player" type="CharacterBody3D" parent="."]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.05, 0)
 collision_layer = 2
-script = ExtResource("2_jlsqs")
+script = ExtResource("2_lhr70")
 
 [node name="CollisionShape3D" type="CollisionShape3D" parent="Player"]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.8, 0)
-shape = SubResource("CapsuleShape3D_3p2gp")
+shape = SubResource("CapsuleShape3D_nfivy")
 
-[node name="Model" type="Node3D" parent="Player" instance=ExtResource("3_q8u5g")]
+[node name="Model" type="Node3D" parent="Player" instance=ExtResource("3_wp0k4")]
 
 [node name="Monster" type="CharacterBody3D" parent="."]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.05, -12)
 collision_layer = 4
-script = ExtResource("4_lhr70")
+script = ExtResource("4_bjd11")
 
 [node name="CollisionShape3D" type="CollisionShape3D" parent="Monster"]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 1, 0)
-shape = SubResource("CapsuleShape3D_cvmbd")
+shape = SubResource("CapsuleShape3D_1nqs0")
 
-[node name="MonsterMesh" type="Node3D" parent="Monster" instance=ExtResource("5_wp0k4")]
+[node name="MonsterMesh" type="Node3D" parent="Monster" instance=ExtResource("5_qmy6f")]
+transform = Transform3D(-1, 0, -8.74228e-08, 0, 1, 0, 8.74228e-08, 0, -1, 0, 0, 0)
+
+[node name="Slime" type="CharacterBody3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.05, -12)
+collision_layer = 4
+script = ExtResource("4_bjd11")
+move_speed = 5.2
+detect_range = 12.0
+proximity_radius = 2.4
+eye_height = 0.65
+max_health = 45.0
+touch_damage = 35.0
+health_bar_height = 1.35
+section_dwell_time = 16.0
+touch_radius = 0.7
+idle_clip = "idle"
+walk_clip = "moving"
+hit_clip = "hit"
+death_clip = "death"
+attack_clip = "attack"
+walk_cycle_metres = 1.1
+
+[node name="CollisionShape3D" type="CollisionShape3D" parent="Slime"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.48, 0)
+shape = SubResource("CapsuleShape3D_1iba3")
+
+[node name="MonsterMesh" type="Node3D" parent="Slime" instance=ExtResource("6_mwfav")]
+transform = Transform3D(-1, 0, -8.74228e-08, 0, 1, 0, 8.74228e-08, 0, -1, 0, 0, 0)
+
+[node name="Tank" type="CharacterBody3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.05, -12)
+collision_layer = 4
+script = ExtResource("4_bjd11")
+move_speed = 2.35
+turn_speed = 4.6
+detect_range = 14.0
+proximity_radius = 4.2
+eye_height = 1.72
+max_health = 320.0
+health_bar_height = 2.55
+section_dwell_time = 40.0
+touch_radius = 1.25
+idle_clip = "Idle"
+walk_clip = "Walk"
+death_clip = "Die"
+walk_cycle_metres = 1.9
+
+[node name="CollisionShape3D" type="CollisionShape3D" parent="Tank"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.95, 0)
+shape = SubResource("CapsuleShape3D_yxlcp")
+
+[node name="MonsterMesh" type="Node3D" parent="Tank" instance=ExtResource("7_3p2gp")]
 transform = Transform3D(-1, 0, -8.74228e-08, 0, 1, 0, 8.74228e-08, 0, -1, 0, 0, 0)
 
 [node name="IsoCamera" type="Camera3D" parent="."]
@@ -73,12 +133,12 @@ far = 250.0
 
 [node name="PickupItem" type="Area3D" parent="."]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.05, -24)
-script = ExtResource("6_bjd11")
+script = ExtResource("8_cvmbd")
 
 [node name="ExitZone" type="Area3D" parent="."]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 6)
-script = ExtResource("7_qmy6f")
+script = ExtResource("9_ft6cd")
 
 [node name="CollisionShape3D" type="CollisionShape3D" parent="ExitZone"]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 1.5, 0)
-shape = SubResource("BoxShape3D_ft6cd")
+shape = SubResource("BoxShape3D_ebg2g")

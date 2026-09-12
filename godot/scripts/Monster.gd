@@ -26,6 +26,15 @@ enum AiMode { PATROL, CHASE, RETURN }
 @export var section_dwell_time: float = 30.0
 @export var room_arrive_distance: float = 0.7
 @export var touch_radius: float = 0.95
+## Added to travel yaw so imported meshes that rest on -Z face the walk direction.
+@export var facing_yaw_offset: float = PI
+## Optional AnimationPlayer clips. Empty strings keep the procedural pivot walk.
+@export var idle_clip: String = ""
+@export var walk_clip: String = ""
+@export var hit_clip: String = ""
+@export var death_clip: String = ""
+@export var attack_clip: String = ""
+@export var walk_cycle_metres: float = 1.6
 
 @onready var visual: Node3D = $MonsterMesh
 
@@ -56,6 +65,9 @@ var _target_node_id: String = ""
 var _patrol_target: Vector3 = Vector3.ZERO
 var _return_node_id: String = ""
 var _rng := RandomNumberGenerator.new()
+var _anim: AnimationPlayer
+var _clip: String = ""
+var _anim_locked: bool = false
 
 func _ready() -> void:
 	add_to_group("monster")
@@ -68,6 +80,7 @@ func _ready() -> void:
 	pivot_arm_r = _find_node_by_name(visual, "Pivot_Arm_R") as Node3D
 	pivot_leg_l = _find_node_by_name(visual, "Pivot_Leg_L") as Node3D
 	pivot_leg_r = _find_node_by_name(visual, "Pivot_Leg_R") as Node3D
+	_setup_animations()
 	_setup_health_bar()
 	_setup_touch_area()
 
@@ -124,6 +137,10 @@ func take_damage(amount: float) -> void:
 	if health <= 0.0:
 		_alive = false
 		velocity = Vector3.ZERO
+		_anim_locked = true
+		_play_clip(death_clip, 1.0)
+	else:
+		_play_clip(hit_clip, 1.0)
 
 func is_alive() -> bool:
 	return _alive
@@ -263,6 +280,7 @@ func _on_touch_body_entered(body: Node3D) -> void:
 		return
 	if body.has_method("take_damage"):
 		body.take_damage(touch_damage)
+	_play_clip(attack_clip, 1.0)
 
 func _reset_detection() -> void:
 	_time_since_seen = 999.0
@@ -402,7 +420,7 @@ func _move_toward(target: Vector3, delta: float) -> void:
 		velocity.x = direction.x * move_speed
 		velocity.z = direction.z * move_speed
 		# Mesh faces -Z at rest (Blender +Y); add PI so the creature looks toward travel.
-		var target_yaw := atan2(direction.x, direction.z) + PI
+		var target_yaw := atan2(direction.x, direction.z) + facing_yaw_offset
 		visual.rotation.y = lerp_angle(visual.rotation.y, target_yaw, clampf(turn_speed * delta, 0.0, 1.0))
 		_walk_phase += delta * walk_anim_speed
 		_animate_walk(_walk_phase, 1.0)
@@ -546,7 +564,70 @@ func _reconstruct_path(prev: Dictionary, start_id: String, goal_id: String) -> A
 	rev.reverse()
 	return rev
 
+func _setup_animations() -> void:
+	_anim = _find_animation_player(visual)
+	if _anim == null:
+		return
+	for clip_name in [idle_clip, walk_clip]:
+		if clip_name != "" and _anim.has_animation(clip_name):
+			_anim.get_animation(clip_name).loop_mode = Animation.LOOP_LINEAR
+	if not _anim.animation_finished.is_connected(_on_animation_finished):
+		_anim.animation_finished.connect(_on_animation_finished)
+	_play_clip(idle_clip, 1.0)
+
+
+func _play_clip(clip: String, speed: float) -> void:
+	if _anim == null or clip.is_empty() or not _anim.has_animation(clip):
+		return
+	if _anim_locked and clip != death_clip:
+		return
+	if clip == hit_clip or clip == attack_clip:
+		if _clip == clip:
+			return
+	elif _clip == clip:
+		if is_equal_approx(_anim.speed_scale, speed):
+			return
+	_clip = clip
+	_anim.play(clip, 0.12, speed)
+
+
+func _on_animation_finished(anim_name: StringName) -> void:
+	if String(anim_name) == death_clip:
+		return
+	_clip = ""
+	var moving := Vector2(velocity.x, velocity.z).length() > 0.2
+	_play_clip(walk_clip if moving else idle_clip, 1.0)
+
+
+func _find_animation_player(root: Node) -> AnimationPlayer:
+	if root == null:
+		return null
+	if root is AnimationPlayer:
+		return root as AnimationPlayer
+	for child in root.get_children():
+		var found := _find_animation_player(child)
+		if found:
+			return found
+	return null
+
+
+func get_animation_player() -> AnimationPlayer:
+	return _anim
+
+
 func _animate_walk(phase: float, amount: float) -> void:
+	if _anim != null and not walk_clip.is_empty() and _anim.has_animation(walk_clip):
+		if _anim_locked:
+			return
+		if amount > 0.15:
+			var speed := 1.0
+			if walk_cycle_metres > 0.0:
+				var cycle_seconds := _anim.get_animation(walk_clip).length
+				speed = clampf(move_speed * cycle_seconds / walk_cycle_metres, 0.4, 2.2)
+			_play_clip(walk_clip, speed)
+		elif _clip != hit_clip and _clip != attack_clip:
+			_play_clip(idle_clip, 1.0)
+		return
 	var swing := deg_to_rad(stride_angle_deg) * amount * sin(phase)
 	if pivot_arm_l:
 		pivot_arm_l.rotation.x = -swing * 1.15

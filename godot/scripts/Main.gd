@@ -20,6 +20,8 @@ const DARK_AMBIENT_ENERGY := 0.10
 @onready var player: CharacterBody3D = $Player
 @onready var map_root: Node3D = $GeneratedMap
 @onready var monster: CharacterBody3D = $Monster
+@onready var slime: CharacterBody3D = get_node_or_null("Slime")
+@onready var tank: CharacterBody3D = get_node_or_null("Tank")
 
 @export var camera_distance: float = 22.0
 @export var camera_height: float = 22.0
@@ -47,7 +49,7 @@ func _ready() -> void:
 	_wire_game_loop()
 	# Nothing exists to walk around in until generation lands.
 	player.lock_input()
-	monster.set_physics_process(false)
+	set_monsters_processing(false)
 	_build_level()
 
 func _physics_process(delta: float) -> void:
@@ -98,14 +100,16 @@ func _build_level() -> void:
 	_state = GameState.PLAYING
 	player.unlock_input()
 	if OS.get_environment("NW_PREVIEW_PLAYER") != "1":
-		monster.set_physics_process(true)
+		set_monsters_processing(true)
 	level_ready.emit(_layout)
 
 func _apply_layout(layout: Dictionary) -> void:
 	player.global_position = layout.get("start", Vector3.ZERO)
 	player.velocity = Vector3.ZERO
-	monster.global_position = layout.get("monster", Vector3.ZERO)
-	monster.velocity = Vector3.ZERO
+
+	_place_enemy(monster, layout.get("monster", Vector3.ZERO), layout)
+	_place_enemy(slime, layout.get("slime", Vector3.ZERO), layout)
+	_place_enemy(tank, layout.get("tank", Vector3.ZERO), layout)
 
 	var pickup := get_node_or_null("PickupItem") as Node3D
 	if pickup:
@@ -114,22 +118,50 @@ func _apply_layout(layout: Dictionary) -> void:
 	if exit_zone:
 		exit_zone.global_position = layout.get("exit", Vector3.ZERO)
 
-	monster.configure_level(
-		layout.get("rooms", []),
-		layout.get("bounds", AABB()),
-		layout.get("monster_track", {})
-	)
 	_snap_camera()
+
+
+func _place_enemy(body: CharacterBody3D, where: Vector3, layout: Dictionary) -> void:
+	if body == null:
+		return
+	body.global_position = where
+	body.velocity = Vector3.ZERO
+	if body.has_method("configure_level"):
+		body.configure_level(
+			layout.get("rooms", []),
+			layout.get("bounds", AABB()),
+			layout.get("monster_track", {})
+		)
+
+
+func monsters() -> Array[CharacterBody3D]:
+	var out: Array[CharacterBody3D] = []
+	for node in get_tree().get_nodes_in_group("monster"):
+		if node is CharacterBody3D:
+			out.append(node)
+	return out
+
+
+func set_monsters_processing(enabled: bool) -> void:
+	for body in monsters():
+		body.set_physics_process(enabled)
+
+
+func park_monsters(keep: Node = null) -> void:
+	for body in monsters():
+		if body == keep:
+			continue
+		body.set_physics_process(false)
+		body.touch_damage = 0.0
+		body.visible = false
+		body.global_position += Vector3(200.0, 0.0, 200.0)
 
 func _apply_preview_overrides() -> void:
 	## NW_PREVIEW_PLAYER parks the monster and tightens the iso framing so the
 	## player mesh can be reviewed without dying on the first physics tick.
 	if OS.get_environment("NW_PREVIEW_PLAYER") != "1":
 		return
-	if monster:
-		monster.set_physics_process(false)
-		monster.visible = false
-		monster.global_position += Vector3(200.0, 0.0, 200.0)
+	park_monsters()
 	camera.size = 4.2
 	camera_distance = 5.5
 	camera_height = 5.5
@@ -187,8 +219,9 @@ func _setup_hud() -> void:
 func _on_item_collected() -> void:
 	if _state != GameState.PLAYING:
 		return
-	if monster and monster.has_method("alert_item_stolen"):
-		monster.alert_item_stolen()
+	for body in monsters():
+		if body.has_method("alert_item_stolen"):
+			body.alert_item_stolen()
 	var exit_zone := get_node_or_null("ExitZone")
 	if exit_zone and exit_zone.has_method("set_glow_visible"):
 		exit_zone.set_glow_visible(true)
@@ -210,8 +243,7 @@ func _on_player_escaped(_body: Node3D) -> void:
 func _begin_victory() -> void:
 	if player and player.has_method("lock_input"):
 		player.lock_input()
-	if monster:
-		monster.set_physics_process(false)
+	set_monsters_processing(false)
 	GameProgress.award_escape()
 	GameProgress.aristocrat_mode = GameProgress.AristocratMode.VICTORY
 	_show_victory_aristocrat()
@@ -230,8 +262,7 @@ func _show_victory_aristocrat() -> void:
 func _end_run(message: String) -> void:
 	if player and player.has_method("lock_input"):
 		player.lock_input()
-	if monster:
-		monster.set_physics_process(false)
+	set_monsters_processing(false)
 	if _status_label:
 		_status_label.text = message
 		_status_label.visible = true

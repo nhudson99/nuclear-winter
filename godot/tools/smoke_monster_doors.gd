@@ -30,6 +30,8 @@ func _run() -> void:
 		push_error("Player or Monster missing")
 		quit(1)
 		return
+	if main.has_method("park_monsters"):
+		main.park_monsters(monster)
 
 	var layout: Dictionary = main.get_layout()
 	var start_cell: Vector2i = layout["start_cell"]

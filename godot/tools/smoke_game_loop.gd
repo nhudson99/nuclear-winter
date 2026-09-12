@@ -24,6 +24,8 @@ func _run() -> void:
 		push_error("Missing Player/Monster/PickupItem/ExitZone")
 		quit(1)
 		return
+	if main.has_method("park_monsters"):
+		main.park_monsters(monster)
 
 	var nodes_ok := true
 	print("loop_nodes_ok=", nodes_ok)
@@ -120,6 +122,8 @@ func _run() -> void:
 		await main.level_ready
 	player = main.get_node("Player")
 	monster = main.get_node("Monster")
+	if main.has_method("park_monsters"):
+		main.park_monsters(monster)
 	monster.set_physics_process(false)
 	monster.touch_damage = 100.0
 	# Overlap them in the start room of the freshly generated layout.
