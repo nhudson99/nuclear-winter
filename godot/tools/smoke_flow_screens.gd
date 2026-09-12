@@ -87,6 +87,8 @@ func _run() -> void:
 		and level.name == "Main"
 		and level.get_node_or_null("Player") != null
 		and level.get_node_or_null("Monster") != null
+		and level.get_node_or_null("Slime") != null
+		and level.get_node_or_null("Tank") != null
 		and level.get_node_or_null("PickupItem") != null
 		and level.get_node_or_null("ExitZone") != null
 	)

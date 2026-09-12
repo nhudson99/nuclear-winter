@@ -37,6 +37,8 @@ func _run() -> void:
 
 	var player: CharacterBody3D = main.get_node("Player")
 	var monster: CharacterBody3D = main.get_node("Monster")
+	if main.has_method("park_monsters"):
+		main.park_monsters(monster)
 	monster.set_physics_process(false)
 	var start: Vector3 = main.get_layout()["start"]
 	player.global_position = start

@@ -232,25 +232,33 @@ func _check_spawns(layout: Dictionary) -> bool:
 	var start_cell: Vector2i = layout["start_cell"]
 	var objective_cell: Vector2i = layout["objective_cell"]
 	var monster_cell: Vector2i = layout["monster_cell"]
+	var slime_cell: Vector2i = layout.get("slime_cell", monster_cell)
+	var tank_cell: Vector2i = layout.get("tank_cell", monster_cell)
 	var exit_cell: Vector2i = layout["exit_cell"]
 	var in_map := (
 		centers.has(start_cell)
 		and centers.has(objective_cell)
 		and centers.has(monster_cell)
+		and centers.has(slime_cell)
+		and centers.has(tank_cell)
 		and centers.has(exit_cell)
 	)
 	# Standing on the objective, or on the exit while holding it, would let a run
 	# resolve itself the moment it starts.
 	var objective_away: bool = objective_cell != start_cell and objective_cell != exit_cell
 	var monster_away: bool = monster_cell != start_cell
+	var slime_away: bool = slime_cell != start_cell
+	var tank_away: bool = tank_cell != start_cell
 	print(
 		"spawns start=", start_cell,
 		" objective=", objective_cell,
 		" monster=", monster_cell,
+		" slime=", slime_cell,
+		" tank=", tank_cell,
 		" exit=", exit_cell,
 		" in_map=", in_map
 	)
-	return in_map and objective_away and monster_away
+	return in_map and objective_away and monster_away and slime_away and tank_away
 
 
 ## Room centres and interior doorway centres must form one connected graph.

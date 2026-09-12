@@ -11,9 +11,11 @@ godot --path godot
 
 - Room modules authored in Blender (`blender/build_rooms.py`) → `godot/assets/rooms/room_{bedroom,living_room,office,storage}.glb`
 - Player authored in Blender (`blender/build_prisoner.py`) → `godot/assets/characters/player_prisoner.glb`
-- Monster authored in Blender (`blender/build_monster.py`) → `godot/assets/characters/enemy_monster.glb`
+- Original monster authored in Blender (`blender/build_monster.py`) → `godot/assets/characters/enemy_monster.glb`
+- Slime enemy from [Poly Pizza](https://poly.pizza/m/6O6XUMssAW) (Charlie, CC-BY) is scaled and reoriented by `blender/prepare_slime.py` → `godot/assets/characters/enemy_slime.glb`
+- Tank authored in Blender (`blender/build_tank.py`) → `godot/assets/characters/enemy_tank.glb`
 - Flow: `TitleScreen.tscn` → `AristocratScreen.tscn` → `GameMap.tscn` (click **LEVEL 1** or **SHOP**) → `Main.tscn`
-- Level 1: `godot/scenes/Main.tscn` (10% ambient so rooms are faintly readable, hold RMB to aim the flashlight, isometric camera zoomed 50% onto the player, wall/prop collision, WASD walk, E to pick up the objective, escape through the outer doorway, monster track patrol/proximity chase, health bars)
+- Level 1: `godot/scenes/Main.tscn` (10% ambient so rooms are faintly readable, hold RMB to aim the flashlight, isometric camera zoomed 50% onto the player, wall/prop collision, WASD walk, E to pick up the objective, escape through the outer doorway, three enemies on the monster track, health bars)
 - The earlier hand-authored mansion (`blender/build_mansion_map.py` → `godot/assets/maps/ussr_mansion_map.glb`) is kept for reference but no longer loaded.
 
 ## Procedural maps
@@ -35,6 +37,8 @@ godot --path godot
 # Requires Blender 4.2+ (the Cloud Agent environment pins 4.5.13 LTS)
 blender --background --python blender/build_rooms.py
 blender --background --python blender/build_monster.py
+blender --background --python blender/build_tank.py
+blender --background --python blender/prepare_slime.py
 blender --background --python blender/build_prisoner.py
 cd godot && godot --headless --import
 godot --headless -s res://tools/build_main_scene.gd
@@ -46,7 +50,7 @@ godot --headless -s res://tools/build_main_scene.gd
 
 ```bash
 cd godot
-for t in smoke_procgen smoke_monster_doors smoke_monster_track smoke_game_loop smoke_flow_screens smoke_player_anims smoke_flashlight smoke_shop smoke_loadout; do
+for t in smoke_procgen smoke_monster_doors smoke_monster_track smoke_game_loop smoke_flow_screens smoke_player_anims smoke_flashlight smoke_shop smoke_loadout smoke_enemies; do
   godot --headless -s res://tools/$t.gd
 done
 ```
@@ -58,12 +62,15 @@ done
 - **Lighting**: Level 1 has no sun. Ambient is 10% so you can pick a path with the flashlight off. Hold **RMB** to turn on the flashlight and aim the prisoner (and the cone) at the cursor; WASD still strafes independently. Release to go dark again. The glowing objective is the other light; collecting it lights a green exit beacon.
 - **Camera**: the isometric view is zoomed 50% onto the player (ortho size 20 → 13.3).
 - **Objective**: a glowing pickup sits in the room furthest from where you start. Press **E** nearby to collect it, then reach the exit doorway of the start room without dying.
-- **Alarm**: collecting the item halves the monster's dwell timer and doubles its proximity detection radius, and turns on the green exit glow.
+- **Alarm**: collecting the item halves every enemy's dwell timer and doubles its proximity detection radius, and turns on the green exit glow.
 - **Win / lose**: escaping with the item awards **5 rations** and brings up the fat aristocrat ("Well, you survived. Good for you. Here is your ration reward"); dying shows **GAME OVER**.
 - **Shop**: the Pip-Boy map has **SHOP** in the top right. Cards are **pistol** (5 rations, LMB fires 10 damage along the flashlight), **speed upgrade** (1 ration, +5% speed, stackable), and **sneak** (3 rations, hold **Ctrl** with the flashlight off to avoid sight detection).
-- **Doorways**: every adjacent room is linked by an open wall gap; player and monster can walk through. Outward-facing walls are sealed.
-- **Monster**: patrols the generated monster track (room centres through doorway centres). At a track intersection it rolls 0–99 and turns left (0–24), right (25–49), up (50–74) or down (75–99). When it detects the player (proximity, or FOV + line of sight) it path-follows the track toward them; 5 seconds after losing detection it returns to the main track. Sneak owned + Ctrl with the light off skips sight detection. Touch damage is 100.
-- **Health**: player starts at 100 HP with a billboard bar. The monster's bar stays hidden until the flashlight cone hits it (or it takes damage).
+- **Doorways**: every adjacent room is linked by an open wall gap; player and enemies can walk through. Outward-facing walls are sealed.
+- **Enemies**: three creatures share the generated monster track (room centres through doorway centres). At a track intersection each rolls 0–99 and turns left (0–24), right (25–49), up (50–74) or down (75–99). When one detects the player (proximity, or FOV + line of sight) it path-follows the track toward them; 5 seconds after losing detection it returns to the main track. Sneak owned + Ctrl with the light off skips sight detection.
+  - **Monster**: the original hunched stalker. 100 HP, lethal touch (100).
+  - **Slime**: Charlie's Poly Pizza slime, scaled to about a metre. Fast, 45 HP, 35 touch damage, plays `idle` / `moving` / `hit` / `attack` / `death`. Over 30 seconds it doubles in size and health, then splits into two original-sized slimes; each child repeats the cycle (capped at 16 living slimes).
+  - **Tank**: Left 4 Dead-style brute in jeans. Slow, 320 HP, lethal touch, hulking knuckle-dragger silhouette.
+- **Health**: player starts at 100 HP with a billboard bar. Enemy bars stay hidden until the flashlight cone hits them (or they take damage).
 
 ## Player character
 
@@ -97,7 +104,7 @@ Leftover web shell: title → boss CRT briefing → Pip-Boy map (returns to menu
 godot/                     Godot 4.4 game (menus + Level 1)
   assets/ui/               Title, aristocrat CRT, dialogue panel, Pip-Boy map
   assets/maps/ussr_mansion_map.glb
-  assets/characters/{player_prisoner,enemy_monster}.glb
+  assets/characters/{player_prisoner,enemy_monster,enemy_slime,enemy_tank}.glb
   assets/props/{crate,wardrobe,couch}.glb
   scenes/{TitleScreen,AristocratScreen,GameMap,Main}.tscn
   scripts/{SceneFlow,GameProgress,TitleScreen,AristocratScreen,GameMap,ShopMenu,Main,Player,Monster,PickupItem,ExitZone,Bullet}.gd
@@ -105,14 +112,19 @@ godot/                     Godot 4.4 game (menus + Level 1)
   tools/smoke_game_loop.gd
   tools/smoke_shop.gd
   tools/smoke_loadout.gd
+  tools/smoke_enemies.gd
 blender/
   build_mansion_map.py
   build_prisoner.py
   render_prisoner.py
   build_monster.py
+  build_tank.py
+  prepare_slime.py
   build_furniture.py
   ussr_mansion_map.blend
   enemy_monster.blend
+  enemy_tank.blend
+  SlimeEnemy.glb
   furniture_props.blend
   reference_floorplan.png
 src/                       Phaser title + tutorial

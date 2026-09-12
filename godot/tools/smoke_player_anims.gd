@@ -12,6 +12,9 @@ func _run() -> void:
 	if not main.is_level_ready():
 		await main.level_ready
 
+	if main.has_method("park_monsters"):
+		main.park_monsters()
+
 	var player: CharacterBody3D = main.get_node("Player")
 	player.unlock_input()
 	var anim := _find_anim(player)

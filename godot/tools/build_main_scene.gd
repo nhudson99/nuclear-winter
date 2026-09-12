@@ -13,8 +13,10 @@ func _initialize() -> void:
 func _build() -> void:
 	var player_path := "res://assets/characters/player_prisoner.glb"
 	var monster_path := "res://assets/characters/enemy_monster.glb"
+	var slime_path := "res://assets/characters/enemy_slime.glb"
+	var tank_path := "res://assets/characters/enemy_tank.glb"
 
-	for path in [player_path, monster_path]:
+	for path in [player_path, monster_path, slime_path, tank_path]:
 		if not ResourceLoader.exists(path):
 			push_error("Missing: " + path)
 			quit(1)
@@ -114,6 +116,60 @@ func _build() -> void:
 	monster.add_child(monster_mesh)
 	monster_mesh.owner = main
 
+	_add_enemy(
+		main,
+		"Slime",
+		slime_path,
+		{
+			"move_speed": 5.2,
+			"max_health": 45.0,
+			"touch_damage": 35.0,
+			"proximity_radius": 2.4,
+			"detect_range": 12.0,
+			"health_bar_height": 1.35,
+			"touch_radius": 0.7,
+			"eye_height": 0.65,
+			"section_dwell_time": 16.0,
+			"idle_clip": "idle",
+			"walk_clip": "moving",
+			"hit_clip": "hit",
+			"death_clip": "death",
+			"attack_clip": "attack",
+			"walk_cycle_metres": 1.1,
+			"grow_and_split": true,
+			"grow_duration": 30.0,
+			"grow_scale_target": 2.0,
+		},
+		0.36,
+		0.85,
+		0.48
+	)
+	_save_packed_subtree(main.get_node("Slime"), "res://scenes/Slime.tscn")
+	_add_enemy(
+		main,
+		"Tank",
+		tank_path,
+		{
+			"move_speed": 2.35,
+			"turn_speed": 4.6,
+			"max_health": 320.0,
+			"touch_damage": 100.0,
+			"proximity_radius": 4.2,
+			"detect_range": 14.0,
+			"health_bar_height": 2.55,
+			"touch_radius": 1.25,
+			"eye_height": 1.72,
+			"section_dwell_time": 40.0,
+			"idle_clip": "Idle",
+			"walk_clip": "Walk",
+			"death_clip": "Die",
+			"walk_cycle_metres": 1.9,
+		},
+		0.58,
+		1.45,
+		0.95
+	)
+
 	var camera := Camera3D.new()
 	camera.name = "IsoCamera"
 	camera.projection = Camera3D.PROJECTION_ORTHOGONAL
@@ -163,3 +219,61 @@ func _build() -> void:
 
 	print("Wrote res://scenes/Main.tscn (procedural map, %d room modules available)" % MapGenerator.ROOM_TYPES.size())
 	quit(0)
+
+
+func _add_enemy(
+	main: Node3D,
+	node_name: String,
+	glb_path: String,
+	stats: Dictionary,
+	capsule_r: float,
+	capsule_h: float,
+	capsule_y: float
+) -> void:
+	var body := CharacterBody3D.new()
+	body.name = node_name
+	body.set_script(load("res://scripts/Monster.gd"))
+	body.collision_layer = 4
+	body.collision_mask = 1
+	body.position = Vector3(0.0, 0.05, -MapGenerator.TILE)
+	for key in stats:
+		body.set(String(key), stats[key])
+	main.add_child(body)
+	body.owner = main
+
+	var col := CollisionShape3D.new()
+	col.name = "CollisionShape3D"
+	var capsule := CapsuleShape3D.new()
+	capsule.radius = capsule_r
+	capsule.height = capsule_h
+	col.shape = capsule
+	col.position = Vector3(0.0, capsule_y, 0.0)
+	body.add_child(col)
+	col.owner = main
+
+	var mesh: Node3D = (load(glb_path) as PackedScene).instantiate()
+	mesh.name = "MonsterMesh"
+	mesh.rotation.y = PI
+	body.add_child(mesh)
+	mesh.owner = main
+
+
+func _save_packed_subtree(root: Node, path: String) -> void:
+	var parent := root.get_parent()
+	root.owner = null
+	for child in root.get_children():
+		child.owner = root
+	var packed := PackedScene.new()
+	if packed.pack(root) != OK:
+		push_error("Failed to pack %s" % path)
+		quit(1)
+		return
+	var save_err := ResourceSaver.save(packed, path)
+	if save_err != OK:
+		push_error("Failed to save %s: %s" % [path, save_err])
+		quit(1)
+		return
+	root.owner = parent
+	for child in root.get_children():
+		child.owner = parent
+	print("Wrote ", path)

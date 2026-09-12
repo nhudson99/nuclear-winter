@@ -22,7 +22,9 @@ func _run() -> void:
 
 	var player: CharacterBody3D = main.get_node("Player")
 	var monster: CharacterBody3D = main.get_node_or_null("Monster")
-	if monster:
+	if main.has_method("park_monsters"):
+		main.park_monsters()
+	elif monster:
 		monster.set_physics_process(false)
 		monster.visible = false
 		monster.global_position += Vector3(200.0, 0.0, 200.0)

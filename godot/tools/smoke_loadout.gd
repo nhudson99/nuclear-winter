@@ -30,6 +30,8 @@ func _run() -> void:
 	var pickup: Area3D = main.get_node_or_null("PickupItem")
 	monster.set_physics_process(false)
 	monster.touch_damage = 0.0
+	if main.has_method("park_monsters"):
+		main.park_monsters(monster)
 
 	var zoom_ok := is_equal_approx(main.camera.size, 20.0 / 1.5)
 	print("zoom_ok=", zoom_ok, " camera_size=", main.camera.size)

@@ -559,7 +559,7 @@ func _describe_layout(
 			best_score = score
 			objective_cell = cell
 
-	# The monster starts between the two so it has ground to cover either way.
+	# The original monster starts between the two so it has ground to cover either way.
 	var objective_span := (
 		absi(objective_cell.x - start_cell.x) + absi(objective_cell.y - start_cell.y)
 	)
@@ -574,6 +574,12 @@ func _describe_layout(
 		if delta < closest:
 			closest = delta
 			monster_cell = cell
+
+	var slime_cell := _pick_spawn_cell(cells, {start_cell: true, monster_cell: true}, start_cell, true)
+	var tank_forbidden := {start_cell: true, monster_cell: true, slime_cell: true}
+	var tank_cell := _pick_spawn_cell(cells, tank_forbidden, objective_cell, true)
+	if tank_cell == start_cell:
+		tank_cell = objective_cell
 
 	var start_center := cell_to_world(start_cell)
 	var exit_position := cell_to_world(exit_cell)
@@ -606,6 +612,10 @@ func _describe_layout(
 		"objective_cell": objective_cell,
 		"monster": cell_to_world(monster_cell) + Vector3(0.0, 0.05, 0.0),
 		"monster_cell": monster_cell,
+		"slime": cell_to_world(slime_cell) + Vector3(0.0, 0.05, 0.0),
+		"slime_cell": slime_cell,
+		"tank": cell_to_world(tank_cell) + Vector3(0.0, 0.05, 0.0),
+		"tank_cell": tank_cell,
 		"monster_track": build_monster_track(rooms, occupied),
 		"bounds": AABB(
 			Vector3(float(min_cell.x) * TILE - TILE * 0.5, 0.0, float(min_cell.y) * TILE - TILE * 0.5),
@@ -616,3 +626,21 @@ func _describe_layout(
 			)
 		),
 	}
+
+
+## Picks a leftover room. `near_anchor` prefers the closest unused cell to
+## `anchor`; otherwise the furthest unused cell is used (the Tank camps the back).
+func _pick_spawn_cell(cells: Array, forbidden: Dictionary, anchor: Vector2i, near_anchor: bool) -> Vector2i:
+	var best: Vector2i = anchor
+	var found := false
+	var best_score := 0
+	for cell in cells:
+		if forbidden.has(cell):
+			continue
+		var dist := absi(cell.x - anchor.x) + absi(cell.y - anchor.y)
+		var score := -dist if near_anchor else dist
+		if not found or score > best_score:
+			best = cell
+			best_score = score
+			found = true
+	return best if found else anchor
