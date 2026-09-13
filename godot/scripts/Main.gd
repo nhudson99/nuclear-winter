@@ -276,7 +276,7 @@ func _place_objectives(layout: Dictionary) -> void:
 	if mission:
 		if mission.has_method("configure"):
 			mission.configure(PickupItem.Kind.MISSION)
-		var mission_here := (
+		var mission_here: bool = (
 			int(layout.get("objective_floor", 0)) == active
 			and (player == null or not player.has_collected_item())
 		)

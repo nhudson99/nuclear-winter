@@ -1198,7 +1198,7 @@ func _describe_layout(
 	for spec in stairs:
 		var stair_cell: Vector2i = spec["cell"]
 		var marker := _stair_use_position(rooms, stair_cell, floor_of)
-		var filled := spec.duplicate(true)
+		var filled: Dictionary = spec.duplicate(true)
 		filled["position"] = marker
 		filled["zone"] = int(zone_of.get(stair_cell, 0))
 		stair_specs.append(filled)

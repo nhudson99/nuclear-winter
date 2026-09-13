@@ -78,7 +78,7 @@ func _run() -> void:
 	var stairs_ok := _check_stairs(level3["layout"], 3) and _check_stairs(level4["layout"], 4)
 	print("stairs_ok=", stairs_ok)
 
-	var spawn_rand_ok := _check_spawn_randomization()
+	var spawn_rand_ok := await _check_spawn_randomization()
 	print("spawn_random_ok=", spawn_rand_ok)
 
 	var live_ok := await _check_live_level_2()
@@ -529,7 +529,7 @@ func _check_live_floor_change() -> bool:
 	print("live_stair_lock blocked=", blocked, " unlocked=", unlocked)
 
 	await main.change_floor(up.dest_floor, up.dest_cell)
-	var moved := main.get_active_floor() == 1
+	var moved: bool = main.get_active_floor() == 1
 	var rooms_floor1 := 0
 	for child in main.get_node("GeneratedMap").get_children():
 		if String(child.name).begins_with("Room_"):
