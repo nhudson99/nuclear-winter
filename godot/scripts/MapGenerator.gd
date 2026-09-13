@@ -1,7 +1,7 @@
 class_name MapGenerator
 extends Node
 
-## Builds a level out of the four Blender room modules.
+## Builds a level out of the Blender room modules, including up/down stairwells.
 ##
 ## A run picks a pseudorandom, always-connected set of grid cells, drops a room
 ## tile on each one, and opens the doorway between every pair of neighbours by
@@ -30,14 +30,22 @@ const NO_COLLISION_PREFIX := "NoCol_"
 const FLOOR_THICKNESS := 0.1
 const GROUND_THICKNESS := 0.6
 const GROUND_MARGIN := TILE
+## Unique-cell offset between stacked floors so zone keys never collide.
+const FLOOR_STRIDE := 80
+const SIDE_STAIR := "STAIR"
+const LOCK_KIND_WING := "wing"
+const LOCK_KIND_STAIR := "stair"
 
 const ROOM_TYPES: Array[String] = ["bedroom", "living_room", "office", "storage"]
+const STAIR_TYPES: Array[String] = ["stairwell_up", "stairwell_down"]
 
 const ROOM_SCENES := {
 	"bedroom": "res://assets/rooms/room_bedroom.glb",
 	"living_room": "res://assets/rooms/room_living_room.glb",
 	"office": "res://assets/rooms/room_office.glb",
 	"storage": "res://assets/rooms/room_storage.glb",
+	"stairwell_up": "res://assets/rooms/room_stairwell_up.glb",
+	"stairwell_down": "res://assets/rooms/room_stairwell_down.glb",
 }
 
 const ROOM_LABELS := {
@@ -45,6 +53,8 @@ const ROOM_LABELS := {
 	"living_room": "ГОСТИНАЯ / LIVING ROOM",
 	"office": "КАБИНЕТ / OFFICE",
 	"storage": "СКЛАД / STORAGE",
+	"stairwell_up": "ЛЕСТНИЦА ВВЕРХ / STAIRS UP",
+	"stairwell_down": "ЛЕСТНИЦА ВНИЗ / STAIRS DOWN",
 }
 
 const SIDES: Array[String] = ["N", "S", "E", "W"]
@@ -72,6 +82,14 @@ const TRACK_CANONICAL_SIDES: Array[String] = ["E", "S"]
 
 static func cell_to_world(cell: Vector2i) -> Vector3:
 	return Vector3(float(cell.x) * TILE, 0.0, float(cell.y) * TILE)
+
+
+static func floor_origin(floor: int) -> Vector2i:
+	return Vector2i(0, floor * FLOOR_STRIDE)
+
+
+static func is_stair_type(type_name: String) -> bool:
+	return type_name == LevelRules.TYPE_STAIR_UP or type_name == LevelRules.TYPE_STAIR_DOWN
 
 
 static func room_track_id(cell: Vector2i) -> String:
@@ -139,9 +157,16 @@ static func _distance_to_segment(point: Vector3, a: Vector3, b: Vector3) -> floa
 ## used to place the player, monsters, objectives and exit.
 ##
 ## `level` drives locked wings and the enemy roster. Level 1 is a single
-## open floorplan (`room_count` rooms). Higher levels grow extra wings
-## behind chained locked doors; the mission item sits in the last wing.
-func generate(container: Node3D, level_seed: int, room_count: int, level: int = 1) -> Dictionary:
+## open floorplan (`room_count` rooms). Higher levels pack at most two wings
+## per floor; stairwell rooms sit behind the next key and only the active
+## floor is instantiated so later levels stay cheap to load.
+func generate(
+	container: Node3D,
+	level_seed: int,
+	room_count: int,
+	level: int = 1,
+	active_floor: int = 0
+) -> Dictionary:
 	var rng := RandomNumberGenerator.new()
 	rng.seed = level_seed
 
@@ -151,39 +176,59 @@ func generate(container: Node3D, level_seed: int, room_count: int, level: int = 
 		zone_counts = [maxi(room_count, 1)]
 
 	progress.emit(0.04, "РАЗМЕТКА СЕКТОРА / SURVEYING SECTOR")
-	var planned := _plan_zoned_cells(rng, zone_counts)
+	var planned := _plan_floored_level(rng, zone_counts)
 	var cells: Array[Vector2i] = planned["cells"]
+	var floor_of: Dictionary = planned["floor_of"]
 	var types := _assign_types(rng, cells.size())
+	var type_of := {}
+	for index in cells.size():
+		type_of[cells[index]] = types[index]
+	_apply_stair_types(type_of, planned["stairs"])
 
 	var occupied := {}
 	for index in cells.size():
 		occupied[cells[index]] = index
 
+	var wanted_floor := clampi(active_floor, 0, maxi(LevelRules.floor_count(play_level) - 1, 0))
+	var to_spawn := 0
+	for cell in cells:
+		if int(floor_of.get(cell, 0)) == wanted_floor:
+			to_spawn += 1
+
 	var rooms: Array[Dictionary] = []
+	var spawned := 0
 	for index in cells.size():
 		var cell: Vector2i = cells[index]
-		var type_name: String = types[index]
-		var room := _spawn_room(container, cell, type_name, occupied)
-		if room == null:
-			push_error("MapGenerator: could not instantiate room type '%s'" % type_name)
-			continue
+		var type_name: String = String(type_of.get(cell, ROOM_TYPES[0]))
+		var room_floor := int(floor_of.get(cell, 0))
+		var room: Node3D = null
+		if room_floor == wanted_floor:
+			room = _spawn_room(container, cell, type_name, occupied, floor_of)
+			if room == null:
+				push_error("MapGenerator: could not instantiate room type '%s'" % type_name)
+			spawned += 1
+			var done := float(spawned) / float(maxi(to_spawn, 1))
+			progress.emit(0.08 + 0.78 * done, "МОНТАЖ: %s" % ROOM_LABELS.get(type_name, type_name))
+			await get_tree().process_frame
 		rooms.append({
 			"index": index,
 			"cell": cell,
+			"local_cell": _local_cell(cell, floor_of),
+			"floor": room_floor,
 			"type": type_name,
-			"center": cell_to_world(cell),
+			"center": _world_of(cell, floor_of),
 			"node": room,
 		})
-		var done := float(index + 1) / float(cells.size())
-		progress.emit(0.08 + 0.78 * done, "МОНТАЖ: %s" % ROOM_LABELS.get(type_name, type_name))
-		await get_tree().process_frame
 
 	progress.emit(0.9, "ПРОБИВКА ВЫХОДА / CUTTING THE EXIT")
 	var start_cell: Vector2i = cells[0]
-	var exit_info := _open_exterior_exit(rooms, start_cell, occupied, rng)
+	var exit_info := {}
+	if wanted_floor == 0:
+		exit_info = _open_exterior_exit(rooms, start_cell, occupied, rng, floor_of)
 	await get_tree().process_frame
 
 	progress.emit(0.96, "РАССТАНОВКА / PLACING ASSETS")
+	planned["active_floor"] = wanted_floor
 	var layout := _describe_layout(
 		rooms,
 		cells,
@@ -191,9 +236,11 @@ func generate(container: Node3D, level_seed: int, room_count: int, level: int = 
 		exit_info,
 		level_seed,
 		play_level,
-		planned
+		planned,
+		rng
 	)
-	_add_locked_doors(container, layout)
+	_add_locked_doors(container, layout, wanted_floor)
+	_add_stairwells(container, layout, wanted_floor)
 	_add_ground(container, layout["bounds"])
 	_add_monster_track(container, layout["monster_track"])
 	progress.emit(1.0, "ГОТОВО / READY")
@@ -243,6 +290,147 @@ func _plan_cells(rng: RandomNumberGenerator, count: int) -> Array[Vector2i]:
 		scan += 1
 
 	return cells
+
+
+func _local_cell(cell: Vector2i, floor_of: Dictionary) -> Vector2i:
+	return cell - floor_origin(int(floor_of.get(cell, 0)))
+
+
+func _world_of(cell: Vector2i, floor_of: Dictionary) -> Vector3:
+	return cell_to_world(_local_cell(cell, floor_of))
+
+
+func _floor_occupied(occupied: Dictionary, floor_of: Dictionary, floor: int) -> Dictionary:
+	var out := {}
+	for cell in occupied:
+		if int(floor_of.get(cell, 0)) == floor:
+			out[cell] = occupied[cell]
+	return out
+
+
+## Packs zones onto floors (max two wings each) and links storeys with stairs.
+func _plan_floored_level(rng: RandomNumberGenerator, zone_counts: Array[int]) -> Dictionary:
+	var cells: Array[Vector2i] = []
+	var zone_of := {}
+	var floor_of := {}
+	var locks: Array[Dictionary] = []
+	var stairs: Array[Dictionary] = []
+	if zone_counts.is_empty():
+		return {
+			"cells": cells,
+			"zone_of": zone_of,
+			"floor_of": floor_of,
+			"locks": locks,
+			"stairs": stairs,
+		}
+
+	var groups: Array[Dictionary] = []
+	var zone_index := 0
+	var floor_idx := 0
+	while zone_index < zone_counts.size():
+		var group_zones: Array[int] = []
+		var group_counts: Array[int] = []
+		for _i in LevelRules.MAX_WINGS_PER_FLOOR:
+			if zone_index >= zone_counts.size():
+				break
+			group_zones.append(zone_index)
+			group_counts.append(maxi(zone_counts[zone_index], 1))
+			zone_index += 1
+		groups.append({"floor": floor_idx, "zones": group_zones, "counts": group_counts})
+		floor_idx += 1
+
+	var cells_by_floor := {}
+	for spec in groups:
+		var fl: int = spec["floor"]
+		var origin := floor_origin(fl)
+		var local: Dictionary = _plan_zoned_cells(rng, spec["counts"])
+		var remap := {}
+		var spec_zones: Array = spec["zones"]
+		for i in spec_zones.size():
+			remap[i] = spec_zones[i]
+		var these: Array[Vector2i] = []
+		for local_cell in local["cells"]:
+			var cell: Vector2i = local_cell + origin
+			cells.append(cell)
+			these.append(cell)
+			var local_zone := int(local["zone_of"][local_cell])
+			zone_of[cell] = remap[local_zone]
+			floor_of[cell] = fl
+		cells_by_floor[fl] = these
+		for lock in local["locks"]:
+			var dest_local := int(lock.get("stage", 1))
+			locks.append({
+				"stage": int(remap.get(dest_local, dest_local)),
+				"from_cell": lock["from_cell"] + origin,
+				"to_cell": lock["to_cell"] + origin,
+				"side": lock["side"],
+				"kind": LOCK_KIND_WING,
+			})
+
+	for spec in groups:
+		var fl: int = spec["floor"]
+		if fl >= groups.size() - 1:
+			continue
+		var spec_zones: Array = spec["zones"]
+		var next_zones: Array = groups[fl + 1]["zones"]
+		var last_zone: int = spec_zones[spec_zones.size() - 1]
+		var next_zone: int = next_zones[0]
+		var up_pool := _cells_in_zone(cells, zone_of, last_zone)
+		var reserved := {}
+		if not cells.is_empty():
+			reserved[cells[0]] = true
+		var next_cells: Array = cells_by_floor.get(fl + 1, [])
+		var down_cell: Vector2i = next_cells[0] if not next_cells.is_empty() else Vector2i.ZERO
+		reserved[down_cell] = true
+		var up_cell := _pick_stair_cell(up_pool, reserved)
+		locks.append({
+			"stage": next_zone,
+			"from_cell": up_cell,
+			"to_cell": down_cell,
+			"side": SIDE_STAIR,
+			"kind": LOCK_KIND_STAIR,
+		})
+		stairs.append({
+			"direction": Stairwell.DIR_UP,
+			"cell": up_cell,
+			"floor": fl,
+			"dest_floor": fl + 1,
+			"dest_cell": down_cell,
+			"required_stage": next_zone,
+		})
+		stairs.append({
+			"direction": Stairwell.DIR_DOWN,
+			"cell": down_cell,
+			"floor": fl + 1,
+			"dest_floor": fl,
+			"dest_cell": up_cell,
+			"required_stage": 0,
+		})
+
+	return {
+		"cells": cells,
+		"zone_of": zone_of,
+		"floor_of": floor_of,
+		"locks": locks,
+		"stairs": stairs,
+	}
+
+
+func _pick_stair_cell(pool: Array, reserved: Dictionary) -> Vector2i:
+	for i in range(pool.size() - 1, -1, -1):
+		var cell: Vector2i = pool[i]
+		if not reserved.has(cell):
+			return cell
+	return pool[0] if not pool.is_empty() else Vector2i.ZERO
+
+
+func _apply_stair_types(type_of: Dictionary, stairs: Array) -> void:
+	for spec in stairs:
+		var cell: Vector2i = spec["cell"]
+		if String(spec.get("direction", "")) == Stairwell.DIR_UP:
+			type_of[cell] = LevelRules.TYPE_STAIR_UP
+		else:
+			type_of[cell] = LevelRules.TYPE_STAIR_DOWN
 
 
 ## Grows one connected zone per entry in `zone_counts`. Neighbouring zones
@@ -549,7 +737,8 @@ func _spawn_room(
 	container: Node3D,
 	cell: Vector2i,
 	type_name: String,
-	occupied: Dictionary
+	occupied: Dictionary,
+	floor_of: Dictionary = {}
 ) -> Node3D:
 	var path: String = ROOM_SCENES.get(type_name, "")
 	if path.is_empty() or not ResourceLoader.exists(path):
@@ -562,11 +751,13 @@ func _spawn_room(
 	if room == null:
 		return null
 	room.name = "Room_%d_%d_%s" % [cell.x, cell.y, type_name]
-	room.position = cell_to_world(cell)
+	room.position = _world_of(cell, floor_of)
 	container.add_child(room)
 
+	var room_floor := int(floor_of.get(cell, 0))
+	var floor_cells := _floor_occupied(occupied, floor_of, room_floor)
 	for side in SIDES:
-		if occupied.has(cell + SIDE_STEPS[side]):
+		if floor_cells.has(cell + SIDE_STEPS[side]):
 			open_doorway(room, side)
 
 	_build_room_collision(room)
@@ -700,7 +891,12 @@ static func find_child_by_name(root: Node, node_name: String) -> Node:
 ## Each node stores cardinal exits (`left` / `right` / `up` / `down`) so the
 ## monster can roll a turn at intersections. Locked edges are omitted until
 ## `add_unlocked_door_to_track` stitches them in.
-func build_monster_track(rooms: Array, occupied: Dictionary, locked_edges: Dictionary = {}) -> Dictionary:
+func build_monster_track(
+	rooms: Array,
+	occupied: Dictionary,
+	locked_edges: Dictionary = {},
+	floor_of: Dictionary = {}
+) -> Dictionary:
 	var nodes := {}
 	for room in rooms:
 		var cell: Vector2i = room["cell"]
@@ -709,7 +905,7 @@ func build_monster_track(rooms: Array, occupied: Dictionary, locked_edges: Dicti
 			"id": id,
 			"kind": "room",
 			"cell": cell,
-			"position": cell_to_world(cell) + Vector3(0.0, TRACK_Y, 0.0),
+			"position": _world_of(cell, floor_of) + Vector3(0.0, TRACK_Y, 0.0),
 			"exits": {},
 		}
 
@@ -727,7 +923,7 @@ func build_monster_track(rooms: Array, occupied: Dictionary, locked_edges: Dicti
 				"kind": "door",
 				"cell": cell,
 				"side": side,
-				"position": door_track_position(cell, side),
+				"position": door_track_position(_local_cell(cell, floor_of), side),
 				"exits": {},
 			}
 			_link_track_nodes(nodes, room_track_id(cell), door_id)
@@ -743,7 +939,15 @@ static func edge_key(a: Vector2i, b: Vector2i) -> String:
 
 
 ## Opens a previously locked doorway on an existing track so patrols can cross.
-static func add_unlocked_door_to_track(track: Dictionary, from_cell: Vector2i, side: String, to_cell: Vector2i) -> String:
+static func add_unlocked_door_to_track(
+	track: Dictionary,
+	from_cell: Vector2i,
+	side: String,
+	to_cell: Vector2i,
+	floor: int = 0
+) -> String:
+	if side == SIDE_STAIR:
+		return ""
 	var nodes: Dictionary = track.get("nodes", {})
 	var cell := from_cell
 	var canon_side := side
@@ -751,13 +955,14 @@ static func add_unlocked_door_to_track(track: Dictionary, from_cell: Vector2i, s
 		cell = to_cell
 		canon_side = String(OPPOSITE_SIDE.get(side, "E"))
 	var door_id := door_track_id(cell, canon_side)
+	var local_cell := cell - floor_origin(floor)
 	if not nodes.has(door_id):
 		nodes[door_id] = {
 			"id": door_id,
 			"kind": "door",
 			"cell": cell,
 			"side": canon_side,
-			"position": door_track_position(cell, canon_side),
+			"position": door_track_position(local_cell, canon_side),
 			"exits": {},
 		}
 	_link_track_nodes(nodes, room_track_id(from_cell), door_id)
@@ -805,18 +1010,24 @@ func _open_exterior_exit(
 	rooms: Array[Dictionary],
 	start_cell: Vector2i,
 	occupied: Dictionary,
-	rng: RandomNumberGenerator
+	rng: RandomNumberGenerator,
+	floor_of: Dictionary = {}
 ) -> Dictionary:
 	var best: Dictionary = {}
 	var best_distance := 1 << 30
+	var floor_cells := _floor_occupied(occupied, floor_of, 0)
 	for room in rooms:
+		if room.get("node") == null:
+			continue
 		var cell: Vector2i = room["cell"]
+		if int(floor_of.get(cell, 0)) != 0:
+			continue
 		var distance := absi(cell.x - start_cell.x) + absi(cell.y - start_cell.y)
 		if distance >= best_distance:
 			continue
 		var free_sides: Array[String] = []
 		for side in SIDES:
-			if not occupied.has(cell + SIDE_STEPS[side]):
+			if not floor_cells.has(cell + SIDE_STEPS[side]):
 				free_sides.append(side)
 		if free_sides.is_empty():
 			continue
@@ -835,28 +1046,65 @@ func _open_exterior_exit(
 	return {"cell": best["cell"], "side": best["side"]}
 
 
-func _add_locked_doors(container: Node3D, layout: Dictionary) -> void:
+func _add_locked_doors(container: Node3D, layout: Dictionary, active_floor: int = 0) -> void:
 	var locks: Array = layout.get("locks", [])
-	if locks.is_empty():
-		return
+	var floor_of: Dictionary = layout.get("floors", {})
 	var root := Node3D.new()
 	root.name = "LockedDoors"
 	container.add_child(root)
 	for spec in locks:
-		var door := LockedDoor.new()
 		var from_cell: Vector2i = spec["from_cell"]
+		if int(floor_of.get(from_cell, 0)) != active_floor:
+			continue
+		var door := LockedDoor.new()
 		var to_cell: Vector2i = spec["to_cell"]
 		door.name = "LockedDoor_%d_%d_%d" % [int(spec.get("stage", 1)), from_cell.x, from_cell.y]
 		var side: String = spec["side"]
 		var size := _door_size_for_side(side)
-		door.position = (cell_to_world(from_cell) + cell_to_world(to_cell)) * 0.5
+		if String(spec.get("kind", LOCK_KIND_WING)) == LOCK_KIND_STAIR:
+			door.position = _stair_door_position(layout, spec)
+		else:
+			door.position = (_world_of(from_cell, floor_of) + _world_of(to_cell, floor_of)) * 0.5
 		root.add_child(door)
 		door.configure(int(spec.get("stage", 1)), from_cell, to_cell, side, size)
 		spec["position"] = door.global_position if door.is_inside_tree() else door.position
 		spec["node_name"] = door.name
 
 
+func _add_stairwells(container: Node3D, layout: Dictionary, active_floor: int) -> void:
+	var stairs: Array = layout.get("stairs", [])
+	if stairs.is_empty():
+		return
+	var root := Node3D.new()
+	root.name = "Stairwells"
+	container.add_child(root)
+	for spec in stairs:
+		if int(spec.get("floor", 0)) != active_floor:
+			continue
+		var stair := Stairwell.new()
+		stair.configure(spec)
+		stair.position = spec.get("position", Vector3.ZERO)
+		root.add_child(stair)
+		spec["node_name"] = stair.name
+
+
+func _stair_door_position(layout: Dictionary, spec: Dictionary) -> Vector3:
+	var from_cell: Vector2i = spec["from_cell"]
+	for room in layout.get("rooms", []):
+		if room.get("cell") != from_cell:
+			continue
+		var node: Node3D = room.get("node") as Node3D
+		if node:
+			var marker := find_child_by_name(node, "StairUse")
+			if marker is Node3D:
+				return (marker as Node3D).global_position
+		return room.get("center", _world_of(from_cell, layout.get("floors", {})))
+	return _world_of(from_cell, layout.get("floors", {}))
+
+
 func _door_size_for_side(side: String) -> Vector3:
+	if side == SIDE_STAIR:
+		return Vector3(1.9, 2.2, 0.28)
 	if side == "E" or side == "W":
 		return Vector3(0.42, 2.3, 3.5)
 	return Vector3(3.5, 2.3, 0.42)
@@ -869,23 +1117,22 @@ func _describe_layout(
 	exit_info: Dictionary,
 	level_seed: int,
 	level: int = 1,
-	planned: Dictionary = {}
+	planned: Dictionary = {},
+	rng: RandomNumberGenerator = null
 ) -> Dictionary:
-	var min_cell := start_cell
-	var max_cell := start_cell
-	for cell in cells:
-		min_cell.x = mini(min_cell.x, cell.x)
-		min_cell.y = mini(min_cell.y, cell.y)
-		max_cell.x = maxi(max_cell.x, cell.x)
-		max_cell.y = maxi(max_cell.y, cell.y)
-
 	var exit_cell: Vector2i = exit_info.get("cell", start_cell)
 	var exit_side: String = exit_info.get("side", "")
 	var zone_of: Dictionary = planned.get("zone_of", {})
+	var floor_of: Dictionary = planned.get("floor_of", {})
 	if zone_of.is_empty():
 		for cell in cells:
 			zone_of[cell] = 0
+	if floor_of.is_empty():
+		for cell in cells:
+			floor_of[cell] = 0
 	var locks: Array = planned.get("locks", []).duplicate(true)
+	var stairs: Array = planned.get("stairs", []).duplicate(true)
+	var active_floor := int(planned.get("active_floor", 0))
 	var last_zone := 0
 	for cell in zone_of:
 		last_zone = maxi(last_zone, int(zone_of[cell]))
@@ -893,10 +1140,15 @@ func _describe_layout(
 	# Mission item lives in the deepest wing. On level 1 that is simply the
 	# room furthest from the exit; on later levels it is the last locked zone.
 	var last_zone_cells := _cells_in_zone(cells, zone_of, last_zone)
-	var objective_cell := _pick_item_cell(last_zone_cells, start_cell, exit_cell, {})
+	var reserved := {start_cell: true}
+	if exit_cell != Vector2i.ZERO or not exit_side.is_empty():
+		reserved[exit_cell] = true
+	for spec in stairs:
+		reserved[spec["cell"]] = true
+	var objective_cell := _pick_item_cell(last_zone_cells, start_cell, exit_cell, reserved)
+	reserved[objective_cell] = true
 
 	var key_specs: Array[Dictionary] = []
-	var reserved := {start_cell: true, exit_cell: true, objective_cell: true}
 	for lock in locks:
 		var stage := int(lock.get("stage", 1))
 		var key_zone := stage - 1
@@ -910,17 +1162,20 @@ func _describe_layout(
 		key_specs.append({
 			"stage": stage,
 			"cell": key_cell,
-			"position": cell_to_world(key_cell) + Vector3(0.0, 0.05, 0.0),
+			"position": _world_of(key_cell, floor_of) + Vector3(0.0, 0.05, 0.0),
 			"zone": key_zone,
+			"floor": int(floor_of.get(key_cell, 0)),
 		})
 
-	var enemies := _place_enemy_roster(cells, start_cell, objective_cell, zone_of, level)
+	var enemies := _place_enemy_roster(
+		cells, start_cell, objective_cell, zone_of, floor_of, level, reserved, rng
+	)
 	var slime_cell := _first_enemy_cell(enemies, LevelRules.KIND_SLIME, start_cell)
 	var monster_cell := _first_enemy_cell(enemies, LevelRules.KIND_HARE, objective_cell)
 	var tank_cell := _first_enemy_cell(enemies, LevelRules.KIND_TANK, objective_cell)
 
-	var start_center := cell_to_world(start_cell)
-	var exit_position := cell_to_world(exit_cell)
+	var start_center := _world_of(start_cell, floor_of)
+	var exit_position := _world_of(exit_cell, floor_of)
 	if not exit_side.is_empty():
 		# Sit in the doorway itself rather than the wall's centre line.
 		exit_position += Vector3(SIDE_STEPS[exit_side].x, 0.0, SIDE_STEPS[exit_side].y) * (TILE * 0.5 - 0.4)
@@ -931,50 +1186,101 @@ func _describe_layout(
 		room_summaries.append({
 			"index": room["index"],
 			"cell": cell,
+			"local_cell": room.get("local_cell", _local_cell(cell, floor_of)),
 			"type": room["type"],
 			"center": room["center"],
 			"zone": int(zone_of.get(cell, 0)),
+			"floor": int(floor_of.get(cell, room.get("floor", 0))),
+			"node": room.get("node"),
 		})
 
+	var stair_specs: Array[Dictionary] = []
+	for spec in stairs:
+		var stair_cell: Vector2i = spec["cell"]
+		var marker := _stair_use_position(rooms, stair_cell, floor_of)
+		var filled: Dictionary = spec.duplicate(true)
+		filled["position"] = marker
+		filled["zone"] = int(zone_of.get(stair_cell, 0))
+		stair_specs.append(filled)
+
 	var occupied := {}
-	for cell in cells:
+	var active_rooms: Array[Dictionary] = []
+	var local_min := Vector2i(1 << 20, 1 << 20)
+	var local_max := Vector2i(-(1 << 20), -(1 << 20))
+	var have_active := false
+	for room in rooms:
+		var cell: Vector2i = room["cell"]
+		if int(floor_of.get(cell, 0)) != active_floor:
+			continue
 		occupied[cell] = true
+		active_rooms.append(room)
+		var local: Vector2i = room.get("local_cell", _local_cell(cell, floor_of))
+		local_min.x = mini(local_min.x, local.x)
+		local_min.y = mini(local_min.y, local.y)
+		local_max.x = maxi(local_max.x, local.x)
+		local_max.y = maxi(local_max.y, local.y)
+		have_active = true
+	if not have_active:
+		local_min = Vector2i.ZERO
+		local_max = Vector2i.ZERO
 	var locked_edges := {}
 	for lock in locks:
+		if String(lock.get("kind", LOCK_KIND_WING)) == LOCK_KIND_STAIR:
+			continue
+		if int(floor_of.get(lock["from_cell"], 0)) != active_floor:
+			continue
 		locked_edges[edge_key(lock["from_cell"], lock["to_cell"])] = true
 
 	return {
 		"seed": level_seed,
 		"level": level,
+		"active_floor": active_floor,
+		"floor_count": LevelRules.floor_count(level),
 		"rooms": room_summaries,
 		"start_cell": start_cell,
 		"start": start_center + Vector3(0.0, 0.05, 0.0),
 		"exit_side": exit_side,
 		"exit_cell": exit_cell,
 		"exit": exit_position,
-		"objective": cell_to_world(objective_cell) + Vector3(0.0, 0.05, 0.0),
+		"objective": _world_of(objective_cell, floor_of) + Vector3(0.0, 0.05, 0.0),
 		"objective_cell": objective_cell,
-		"monster": cell_to_world(monster_cell) + Vector3(0.0, 0.05, 0.0),
+		"objective_floor": int(floor_of.get(objective_cell, 0)),
+		"monster": _world_of(monster_cell, floor_of) + Vector3(0.0, 0.05, 0.0),
 		"monster_cell": monster_cell,
-		"slime": cell_to_world(slime_cell) + Vector3(0.0, 0.05, 0.0),
+		"slime": _world_of(slime_cell, floor_of) + Vector3(0.0, 0.05, 0.0),
 		"slime_cell": slime_cell,
-		"tank": cell_to_world(tank_cell) + Vector3(0.0, 0.05, 0.0),
+		"tank": _world_of(tank_cell, floor_of) + Vector3(0.0, 0.05, 0.0),
 		"tank_cell": tank_cell,
 		"enemies": enemies,
 		"keys": key_specs,
 		"locks": locks,
+		"stairs": stair_specs,
 		"zones": zone_of,
+		"floors": floor_of,
 		"objectives": LevelRules.objectives(level),
-		"monster_track": build_monster_track(rooms, occupied, locked_edges),
+		"monster_track": build_monster_track(active_rooms, occupied, locked_edges, floor_of),
 		"bounds": AABB(
-			Vector3(float(min_cell.x) * TILE - TILE * 0.5, 0.0, float(min_cell.y) * TILE - TILE * 0.5),
+			Vector3(float(local_min.x) * TILE - TILE * 0.5, 0.0, float(local_min.y) * TILE - TILE * 0.5),
 			Vector3(
-				float(max_cell.x - min_cell.x + 1) * TILE,
+				float(local_max.x - local_min.x + 1) * TILE,
 				ROOM_HEIGHT,
-				float(max_cell.y - min_cell.y + 1) * TILE
+				float(local_max.y - local_min.y + 1) * TILE
 			)
 		),
 	}
+
+
+func _stair_use_position(rooms: Array, cell: Vector2i, floor_of: Dictionary) -> Vector3:
+	for room in rooms:
+		if room.get("cell") != cell:
+			continue
+		var node: Node3D = room.get("node") as Node3D
+		if node:
+			var marker := find_child_by_name(node, "StairUse")
+			if marker is Node3D:
+				return (marker as Node3D).global_position
+		return room.get("center", _world_of(cell, floor_of)) + Vector3(0.0, 0.9, 0.0)
+	return _world_of(cell, floor_of) + Vector3(0.0, 0.9, 0.0)
 
 
 func _cells_in_zone(cells: Array[Vector2i], zone_of: Dictionary, zone: int) -> Array[Vector2i]:
@@ -1019,14 +1325,19 @@ func _place_enemy_roster(
 	start_cell: Vector2i,
 	objective_cell: Vector2i,
 	zone_of: Dictionary,
-	level: int
+	floor_of: Dictionary,
+	level: int,
+	reserved: Dictionary = {},
+	rng: RandomNumberGenerator = null
 ) -> Array[Dictionary]:
 	var kinds := LevelRules.monster_kinds(level)
 	var last_zone := 0
 	for cell in zone_of:
 		last_zone = maxi(last_zone, int(zone_of[cell]))
-	var forbidden := {start_cell: true}
+	var forbidden := reserved.duplicate()
+	forbidden[start_cell] = true
 	var enemies: Array[Dictionary] = []
+	var randomize := LevelRules.randomize_monster_spawns(level) and rng != null
 	for kind in kinds:
 		var pool: Array[Vector2i] = cells
 		var near := true
@@ -1047,17 +1358,41 @@ func _place_enemy_roster(
 				anchor = objective_cell
 			_:
 				push_error("MapGenerator: unknown monster kind '%s'" % kind)
-		var cell := _pick_spawn_cell(pool, forbidden, anchor, near)
+		var cell := (
+			_pick_random_spawn_cell(pool, forbidden, rng)
+			if randomize
+			else _pick_spawn_cell(pool, forbidden, anchor, near)
+		)
 		if forbidden.has(cell) or cell == start_cell:
-			cell = _pick_spawn_cell(cells, forbidden, objective_cell, true)
+			cell = (
+				_pick_random_spawn_cell(cells, forbidden, rng)
+				if randomize
+				else _pick_spawn_cell(cells, forbidden, objective_cell, true)
+			)
 		forbidden[cell] = true
 		enemies.append({
 			"kind": kind,
 			"cell": cell,
-			"position": cell_to_world(cell) + Vector3(0.0, 0.05, 0.0),
+			"position": _world_of(cell, floor_of) + Vector3(0.0, 0.05, 0.0),
 			"zone": int(zone_of.get(cell, 0)),
+			"floor": int(floor_of.get(cell, 0)),
 		})
 	return enemies
+
+
+func _pick_random_spawn_cell(
+	cells: Array,
+	forbidden: Dictionary,
+	rng: RandomNumberGenerator
+) -> Vector2i:
+	var options: Array[Vector2i] = []
+	for cell in cells:
+		if forbidden.has(cell):
+			continue
+		options.append(cell)
+	if options.is_empty():
+		return _pick_spawn_cell(cells, forbidden, Vector2i.ZERO, true)
+	return options[rng.randi_range(0, options.size() - 1)]
 
 
 func _first_enemy_cell(enemies: Array, kind: String, fallback: Vector2i) -> Vector2i:

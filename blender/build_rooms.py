@@ -1,6 +1,6 @@
 """
-Build four tileable room modules for Nuclear Winter's procedural maps:
-bedroom, living room, office, storage.
+Build tileable room modules for Nuclear Winter's procedural maps:
+bedroom, living room, office, storage, and up/down stairwells.
 
 Every room shares one square footprint with a doorway centred on each of the
 four walls, so the Godot map generator can butt any two rooms together on a
@@ -186,6 +186,15 @@ def add_floor_debris(root, debris_mat, spots) -> None:
     props so every doorway is reachable, so it gets dressed rather than filled."""
     for index, (x, y, width, depth) in enumerate(spots):
         cube(f"NoCol_Debris_{index}", (x, y, 0.012), (width, depth, 0.02), debris_mat, root)
+
+
+def add_empty(name: str, loc, parent) -> None:
+    bpy.ops.object.empty_add(type="PLAIN_AXES", location=loc)
+    obj = bpy.context.active_object
+    obj.name = name
+    obj.empty_display_size = 0.35
+    if parent is not None:
+        obj.parent = parent
 
 
 def add_ceiling_lamp(root, shade_mat, bulb_mat, loc=(0.0, 0.0)) -> None:
@@ -539,6 +548,156 @@ def build_storage():
 
 
 # --------------------------------------------------------------------------- #
+# Stairwells
+# --------------------------------------------------------------------------- #
+
+
+def _stair_materials():
+    return {
+        "floor": mat("StairFloor", (0.28, 0.28, 0.26), 0.9),
+        "wall": mat("StairWall", (0.30, 0.34, 0.31), 0.85),
+        "grime": mat("StairGrime", (0.20, 0.22, 0.19), 0.95),
+        "steel": mat("StairSteel", (0.34, 0.35, 0.37), 0.4),
+        "rust": mat("StairRust", (0.42, 0.24, 0.14), 0.85),
+        "wood": mat("StairWood", (0.34, 0.24, 0.15), 0.75),
+        "olive": mat("StairOlive", (0.29, 0.32, 0.24), 0.7),
+        "hazard": mat("StairHazard", (0.58, 0.49, 0.13), 0.7),
+        "rail": mat("StairRail", (0.22, 0.23, 0.24), 0.35),
+        "sign": mat("StairSign", (0.47, 0.14, 0.13), 0.7),
+        "bulb": emissive("StairBulb", (0.96, 0.90, 0.70), 1.6),
+        "glow": emissive("StairGlow", (0.55, 0.82, 0.45), 2.2),
+        "debris": mat("StairDebris", (0.21, 0.20, 0.18), 0.95),
+    }
+
+
+def _add_stair_flight(root, mats, start_z: float, rise: float, run: float, steps: int, x: float, y0: float) -> None:
+    """Axis-aligned stair run along +Y, kept off the doorway cross."""
+    for index in range(steps):
+        z = start_z + rise * (index + 0.5)
+        y = y0 + run * (index + 0.5)
+        cube(
+            f"StairTread_{index}",
+            (x, y, z),
+            (1.7, run - 0.02, rise),
+            mats["wood"] if index % 2 == 0 else mats["olive"],
+            root,
+        )
+        cube(
+            f"NoCol_StairNose_{index}",
+            (x, y + run * 0.42, z + rise * 0.42),
+            (1.66, 0.04, 0.04),
+            mats["steel"],
+            root,
+        )
+    rail_top = start_z + rise * steps + 0.9
+    rail_len = run * steps
+    rail_y = y0 + rail_len * 0.5
+    for side, dx in (("L", -0.92), ("R", 0.92)):
+        cube(f"StairRail_{side}", (x + dx, rail_y, rail_top), (0.06, rail_len, 0.06), mats["rail"], root)
+        for post in range(0, steps + 1, 2):
+            pz = start_z + rise * post + 0.55
+            py = y0 + run * post
+            cube(f"StairPost_{side}_{post}", (x + dx, py, pz), (0.06, 0.06, 1.1), mats["steel"], root)
+
+
+def build_stairwell_up():
+    mats = _stair_materials()
+    root = build_shell("StairwellUp", mats["floor"], mats["wall"], mats["wall"])
+    add_wall_grime(
+        root,
+        mats["grime"],
+        [
+            ("N", -3.8, 1.6, 1.6, 1.0),
+            ("S", 3.0, 1.1, 1.8, 1.4),
+            ("E", -2.4, 1.8, 1.6, 0.8),
+        ],
+    )
+
+    # Northwest corner, north of the west doorway so the tile cross stays clear.
+    _add_stair_flight(root, mats, start_z=0.0, rise=0.22, run=0.32, steps=8, x=-4.35, y0=1.7)
+    cube("Landing", (-4.35, 4.66, 1.87), (1.9, 1.2, 0.12), mats["olive"], root)
+    cube("LandingBack", (-4.35, 5.22, 2.15), (1.9, 0.12, 0.7), mats["steel"], root)
+    cube("NoCol_HatchFrame", (-4.35, 4.66, 2.34), (1.5, 0.9, 0.08), mats["steel"], root)
+    cube("NoCol_HatchGlow", (-4.35, 4.66, 2.28), (1.2, 0.7, 0.04), mats["glow"], root)
+    cube("NoCol_UpSign", (-5.52, 3.4, 1.7), (0.04, 0.7, 0.5), mats["sign"], root)
+    cube("NoCol_UpArrow", (-5.48, 3.4, 1.78), (0.03, 0.18, 0.28), mats["hazard"], root)
+
+    cube("StairNewel", (-5.2, 1.7, 0.55), (0.16, 0.16, 1.1), mats["rail"], root)
+    cube("CoatHookRail", (5.2, -3.4, 1.3), (0.08, 1.8, 0.08), mats["steel"], root)
+    for index, y in enumerate((-4.1, -3.4, -2.7)):
+        cube(f"NoCol_CoatHook_{index}", (5.05, y, 1.3), (0.16, 0.04, 0.04), mats["rust"], root)
+
+    cube("Bench", (3.8, -4.6, 0.28), (1.8, 0.55, 0.5), mats["wood"], root)
+    cube("FireBucket", (4.8, -3.6, 0.28), (0.36, 0.36, 0.5), mats["sign"], root)
+    cube("Extinguisher", (5.2, 4.6, 0.7), (0.18, 0.18, 0.7), mats["sign"], root)
+    cube("NoCol_ExtinguisherCap", (5.2, 4.6, 1.1), (0.14, 0.14, 0.12), mats["steel"], root)
+
+    for index, z in enumerate((1.9, 2.12)):
+        cube(f"NoCol_StairPipe_{index}", (1.4, 5.55, z), (6.8, 0.14, 0.14), mats["rust"] if index else mats["steel"], root)
+
+    add_floor_debris(
+        root,
+        mats["debris"],
+        [(1.2, 0.2, 1.8, 1.1), (0.4, -2.2, 1.2, 0.8), (2.4, 2.0, 1.0, 0.7)],
+    )
+    add_ceiling_lamp(root, mats["steel"], mats["bulb"], loc=(1.6, -1.2))
+    add_empty("StairUse", (-4.35, 4.55, 2.1), root)
+    return root
+
+
+def build_stairwell_down():
+    mats = _stair_materials()
+    root = make_root("StairwellDown")
+    # Ring floor with a northwest well. Named Floor keeps the module contract.
+    cube("Floor", (1.15, -0.7, -0.05), (9.7, 10.6, 0.1), mats["floor"], root)
+    cube("Floor_NW", (-4.35, -2.15, -0.05), (3.3, 7.7, 0.1), mats["floor"], root)
+    cube("Floor_NStrip", (-4.35, 5.45, -0.05), (3.3, 1.1, 0.1), mats["floor"], root)
+    for side in SIDES:
+        build_wall(root, side, mats["wall"], mats["wall"])
+
+    add_wall_grime(
+        root,
+        mats["grime"],
+        [
+            ("W", 3.6, 1.5, 1.6, 1.2),
+            ("E", 2.2, 1.2, 1.8, 1.1),
+            ("S", -3.0, 1.8, 1.4, 0.8),
+        ],
+    )
+
+    # Well occupies x=-5.2..-2.0, y=1.75..4.85, north of the west doorway.
+    cube("WellWall_N", (-3.6, 4.93, -0.9), (3.2, 0.16, 1.8), mats["steel"], root)
+    cube("WellWall_S", (-3.6, 1.67, -0.9), (3.2, 0.16, 1.8), mats["steel"], root)
+    cube("WellWall_W", (-5.12, 3.3, -0.9), (0.16, 3.1, 1.8), mats["steel"], root)
+    cube("WellWall_E", (-2.08, 3.3, -0.9), (0.16, 3.1, 1.8), mats["steel"], root)
+    cube("WellFloor", (-3.6, 3.3, -1.76), (3.0, 3.0, 0.1), mats["olive"], root)
+    _add_stair_flight(root, mats, start_z=-1.76, rise=0.22, run=0.32, steps=8, x=-3.6, y0=1.75)
+    cube("WellLip", (-3.6, 1.75, 0.04), (3.3, 0.16, 0.12), mats["hazard"], root)
+    for side, dx in (("L", -5.05), ("R", -2.15)):
+        cube(f"WellRail_{side}", (dx, 3.2, 0.95), (0.06, 2.4, 0.06), mats["rail"], root)
+        for post, y in enumerate((2.1, 3.2, 4.3)):
+            cube(f"WellPost_{side}_{post}", (dx, y, 0.5), (0.06, 0.06, 1.0), mats["steel"], root)
+
+    cube("NoCol_DownSign", (5.52, 0.4, 1.7), (0.04, 0.7, 0.5), mats["sign"], root)
+    cube("NoCol_DownArrow", (5.48, 0.4, 1.55), (0.03, 0.18, 0.28), mats["hazard"], root)
+    cube("ToolCrate", (4.4, -4.4, 0.4), (0.9, 0.9, 0.8), mats["wood"], root)
+    cube("NoCol_CrateStrap", (4.4, -4.4, 0.62), (0.94, 0.94, 0.06), mats["steel"], root)
+    cube("CableSpool", (3.6, 4.7, 0.42), (0.9, 0.9, 0.84), mats["olive"], root)
+    cube("NoCol_SpoolHub", (3.6, 4.7, 0.42), (0.2, 0.95, 0.2), mats["steel"], root)
+    cube("Locker", (5.15, -2.6, 0.95), (0.5, 1.1, 1.9), mats["steel"], root)
+    cube("NoCol_LockerHandle", (4.88, -2.6, 0.95), (0.06, 0.16, 0.08), mats["hazard"], root)
+
+    add_floor_debris(
+        root,
+        mats["debris"],
+        [(1.6, 1.4, 1.6, 1.0), (2.2, -1.8, 1.3, 0.9), (0.6, -0.8, 1.1, 0.7)],
+    )
+    add_ceiling_lamp(root, mats["steel"], mats["bulb"], loc=(2.2, -1.4))
+    add_empty("StairUse", (-3.6, 1.9, 0.9), root)
+    return root
+
+
+# --------------------------------------------------------------------------- #
 # Export + preview
 # --------------------------------------------------------------------------- #
 
@@ -547,6 +706,11 @@ ROOM_BUILDERS = (
     ("living_room", build_living_room),
     ("office", build_office),
     ("storage", build_storage),
+)
+
+STAIR_BUILDERS = (
+    ("stairwell_up", build_stairwell_up),
+    ("stairwell_down", build_stairwell_down),
 )
 
 
@@ -566,17 +730,25 @@ def export_room(root, glb_path: Path) -> None:
 
 
 def build_preview() -> None:
-    """Lay the four modules out 2x2 with their shared doorways lined up."""
+    """Lay the livable modules 2x2 and the stairwells in a third row."""
     clear_scene()
     spacing = TILE
-    offsets = ((-spacing * 0.5, spacing * 0.5), (spacing * 0.5, spacing * 0.5),
-               (-spacing * 0.5, -spacing * 0.5), (spacing * 0.5, -spacing * 0.5))
-    for (_, builder), (x, y) in zip(ROOM_BUILDERS, offsets):
+    livable = (
+        (-spacing * 0.5, spacing * 0.5),
+        (spacing * 0.5, spacing * 0.5),
+        (-spacing * 0.5, -spacing * 0.5),
+        (spacing * 0.5, -spacing * 0.5),
+    )
+    for (_, builder), (x, y) in zip(ROOM_BUILDERS, livable):
+        root = builder()
+        root.location = (x, y, 0.0)
+    stair_offsets = ((-spacing * 0.5, -spacing * 1.5), (spacing * 0.5, -spacing * 1.5))
+    for (_, builder), (x, y) in zip(STAIR_BUILDERS, stair_offsets):
         root = builder()
         root.location = (x, y, 0.0)
 
     ground = mat("PreviewGround", (0.15, 0.15, 0.14), 0.95)
-    cube("PreviewGround", (0, 0, -0.14), (64, 64, 0.12), ground)
+    cube("PreviewGround", (0, -6, -0.14), (64, 80, 0.12), ground)
 
     bpy.ops.object.light_add(type="AREA", location=(0, -8, 24))
     key = bpy.context.active_object
@@ -591,10 +763,10 @@ def build_preview() -> None:
     sun.data.energy = 1.9
     sun.rotation_euler = (math.radians(48), math.radians(12), math.radians(24))
 
-    bpy.ops.object.camera_add(location=(26, -30, 30))
+    bpy.ops.object.camera_add(location=(28, -36, 34))
     cam = bpy.context.active_object
     cam.name = "PreviewCam"
-    cam.rotation_euler = (math.radians(52), 0, math.radians(41))
+    cam.rotation_euler = (math.radians(54), 0, math.radians(40))
     cam.data.lens = 46
     bpy.context.scene.camera = cam
 
@@ -630,7 +802,7 @@ def main() -> None:
 
     # One room per scene: Blender would otherwise suffix duplicate object names
     # (Plug_N.001) and break the generator's node lookups.
-    for name, builder in ROOM_BUILDERS:
+    for name, builder in ROOM_BUILDERS + STAIR_BUILDERS:
         clear_scene()
         root = builder()
         glb_path = OUT_DIR / f"room_{name}.glb"

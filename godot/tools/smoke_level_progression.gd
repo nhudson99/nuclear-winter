@@ -67,8 +67,25 @@ func _run() -> void:
 		" key_l2_open_ok=", reach2_key
 	)
 
+	var floors_ok := (
+		_check_floor_rules(level1["layout"], 1, level1["container"])
+		and _check_floor_rules(level2["layout"], 2, level2["container"])
+		and _check_floor_rules(level3["layout"], 3, level3["container"])
+		and _check_floor_rules(level4["layout"], 4, level4["container"])
+	)
+	print("floors_ok=", floors_ok)
+
+	var stairs_ok := _check_stairs(level3["layout"], 3) and _check_stairs(level4["layout"], 4)
+	print("stairs_ok=", stairs_ok)
+
+	var spawn_rand_ok := await _check_spawn_randomization()
+	print("spawn_random_ok=", spawn_rand_ok)
+
 	var live_ok := await _check_live_level_2()
 	print("live_unlock_ok=", live_ok)
+
+	var live_floor_ok := await _check_live_floor_change()
+	print("live_floor_ok=", live_floor_ok)
 
 	var advance_ok := _check_level_advance(gp)
 	print("advance_ok=", advance_ok)
@@ -90,7 +107,11 @@ func _run() -> void:
 		and reach1_ok
 		and reach2_blocked
 		and reach2_key
+		and floors_ok
+		and stairs_ok
+		and spawn_rand_ok
 		and live_ok
+		and live_floor_ok
 		and advance_ok
 	)
 	print("level_progression_smoke_ok=", all_ok)
@@ -123,8 +144,19 @@ func _check_formulas() -> bool:
 			and LevelRules.key_count(level) == maxi(level - 1, 0)
 			and LevelRules.objectives(level).size() == level
 		)
-		print("formula n=", level, " monsters=", got, " match=", match_ok, " objectives=", obj_ok)
-		if not match_ok or not obj_ok:
+		var floors_ok: bool = (
+			LevelRules.floor_count(level) == int(ceili(float(level) / 2.0))
+			and LevelRules.zones_on_floor(level, 0).size() <= LevelRules.MAX_WINGS_PER_FLOOR
+		)
+		print(
+			"formula n=", level,
+			" monsters=", got,
+			" match=", match_ok,
+			" objectives=", obj_ok,
+			" floors=", LevelRules.floor_count(level),
+			" floors_ok=", floors_ok
+		)
+		if not match_ok or not obj_ok or not floors_ok:
 			ok = false
 	return ok
 
@@ -359,6 +391,170 @@ func _count_active_kinds(main: Node) -> Dictionary:
 	for spec in main.get_layout().get("enemies", []):
 		counts[String(spec.get("kind", ""))] = int(counts.get(String(spec.get("kind", "")), 0)) + 1
 	return counts
+
+
+func _check_floor_rules(layout: Dictionary, level: int, container: Node3D) -> bool:
+	var wanted_floors := LevelRules.floor_count(level)
+	var floor_of: Dictionary = layout.get("floors", {})
+	var seen := {}
+	var wings := {}
+	for cell in floor_of:
+		var fl := int(floor_of[cell])
+		seen[fl] = true
+		var zone := int((layout.get("zones", {}) as Dictionary).get(cell, 0))
+		if not wings.has(fl):
+			wings[fl] = {}
+		wings[fl][zone] = true
+	if seen.size() != wanted_floors:
+		print("floor_count_wrong level=", level, " got=", seen.size(), " want=", wanted_floors)
+		return false
+	for fl in wings:
+		if (wings[fl] as Dictionary).size() > LevelRules.MAX_WINGS_PER_FLOOR:
+			print("too_many_wings level=", level, " floor=", fl)
+			return false
+	var instantiated := 0
+	for child in container.get_children():
+		if String(child.name).begins_with("Room_"):
+			instantiated += 1
+	var active_rooms := 0
+	for room in layout.get("rooms", []):
+		if int(room.get("floor", 0)) == 0:
+			active_rooms += 1
+	if instantiated != active_rooms:
+		print(
+			"floor_scope_wrong level=", level,
+			" instantiated=", instantiated,
+			" active=", active_rooms
+		)
+		return false
+	print("floor_rules level=", level, " floors=", wanted_floors, " scoped=", instantiated)
+	return true
+
+
+func _check_stairs(layout: Dictionary, level: int) -> bool:
+	var stairs: Array = layout.get("stairs", [])
+	if stairs.size() != 2 * (LevelRules.floor_count(level) - 1):
+		print("stair_count_wrong level=", level, " stairs=", stairs.size())
+		return false
+	var has_up := false
+	var has_down := false
+	for spec in stairs:
+		if String(spec.get("direction", "")) == Stairwell.DIR_UP:
+			has_up = true
+			if int(spec.get("required_stage", 0)) <= 0:
+				print("up_stair_unlocked level=", level)
+				return false
+		elif String(spec.get("direction", "")) == Stairwell.DIR_DOWN:
+			has_down = true
+	var stair_locks := 0
+	for lock in layout.get("locks", []):
+		if String(lock.get("kind", "")) == MapGenerator.LOCK_KIND_STAIR:
+			stair_locks += 1
+	if not has_up or not has_down or stair_locks != LevelRules.floor_count(level) - 1:
+		print("stair_pair_wrong level=", level, " up=", has_up, " down=", has_down, " locks=", stair_locks)
+		return false
+	var types := {}
+	for room in layout.get("rooms", []):
+		types[String(room.get("type", ""))] = true
+	if not types.has(LevelRules.TYPE_STAIR_UP) or not types.has(LevelRules.TYPE_STAIR_DOWN):
+		print("stair_rooms_missing level=", level, " types=", types)
+		return false
+	return true
+
+
+func _check_spawn_randomization() -> bool:
+	if not LevelRules.randomize_monster_spawns(3):
+		print("spawn_flag_wrong")
+		return false
+	if LevelRules.randomize_monster_spawns(1):
+		print("spawn_flag_level1_wrong")
+		return false
+	var fingerprints: Dictionary = {}
+	for level_seed in [33, 133, 233, 333, 433]:
+		var result := await _generate_level(3, level_seed)
+		var parts: Array[String] = []
+		for spec in result["layout"].get("enemies", []):
+			var cell: Vector2i = spec["cell"]
+			parts.append("%s:%d:%d" % [String(spec.get("kind", "")), cell.x, cell.y])
+		fingerprints["|".join(parts)] = true
+		(result["container"] as Node3D).queue_free()
+	var varied := fingerprints.size() > 1
+	print("spawn_fingerprints=", fingerprints.size(), " varied=", varied)
+	return varied
+
+
+func _check_live_floor_change() -> bool:
+	OS.set_environment("NW_LEVEL", "3")
+	OS.set_environment("NW_LEVEL_SEED", "91")
+	var packed: PackedScene = load("res://scenes/Main.tscn")
+	if packed == null:
+		OS.set_environment("NW_LEVEL", "")
+		return false
+	var main: Node3D = packed.instantiate()
+	root.add_child(main)
+	if not main.is_level_ready():
+		await main.level_ready
+
+	var layout: Dictionary = main.get_layout()
+	var start_floor_ok: bool = main.get_active_floor() == 0
+	var rooms_floor0 := 0
+	for child in main.get_node("GeneratedMap").get_children():
+		if String(child.name).begins_with("Room_"):
+			rooms_floor0 += 1
+	var expected0 := 0
+	for room in layout.get("rooms", []):
+		if int(room.get("floor", 0)) == 0:
+			expected0 += 1
+	var scoped_ok := rooms_floor0 == expected0 and expected0 > 0
+	print("live_floor0 scoped=", scoped_ok, " rooms=", rooms_floor0)
+
+	if main.has_method("park_monsters"):
+		main.park_monsters()
+
+	var stairs: Array = main.stairwells()
+	var up: Stairwell = null
+	for stair in stairs:
+		if (stair as Stairwell).is_up():
+			up = stair
+	if up == null:
+		print("live_up_stair_missing")
+		main.queue_free()
+		OS.set_environment("NW_LEVEL", "")
+		return false
+
+	var blocked := not up.can_use()
+	for stage in range(1, LevelRules.key_count(3) + 1):
+		main.unlock_stage(stage)
+	var unlocked := up.can_use()
+	print("live_stair_lock blocked=", blocked, " unlocked=", unlocked)
+
+	await main.change_floor(up.dest_floor, up.dest_cell)
+	var moved: bool = main.get_active_floor() == 1
+	var rooms_floor1 := 0
+	for child in main.get_node("GeneratedMap").get_children():
+		if String(child.name).begins_with("Room_"):
+			rooms_floor1 += 1
+	var expected1 := 0
+	for room in main.get_layout().get("rooms", []):
+		if int(room.get("floor", 0)) == 1:
+			expected1 += 1
+	var scoped1_ok := rooms_floor1 == expected1 and expected1 > 0
+	print("live_floor1 moved=", moved, " scoped=", scoped1_ok, " rooms=", rooms_floor1)
+
+	var downs: Array = main.stairwells()
+	var back_ok := false
+	for stair in downs:
+		if (stair as Stairwell).is_down():
+			await main.change_floor((stair as Stairwell).dest_floor, (stair as Stairwell).dest_cell)
+			back_ok = main.get_active_floor() == 0
+			break
+	print("live_floor_return_ok=", back_ok)
+
+	main.queue_free()
+	await create_timer(0.05).timeout
+	OS.set_environment("NW_LEVEL", "")
+	OS.set_environment("NW_LEVEL_SEED", "")
+	return start_floor_ok and scoped_ok and blocked and unlocked and moved and scoped1_ok and back_ok
 
 
 func _check_level_advance(gp: Node) -> bool:

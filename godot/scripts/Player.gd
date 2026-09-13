@@ -3,6 +3,7 @@ extends CharacterBody3D
 signal died
 signal item_collected
 signal key_collected(stage: int)
+signal stair_used(stair: Node)
 
 @export var move_speed: float = 2.4
 @export var run_speed: float = 5.5
@@ -294,16 +295,41 @@ func _try_interact() -> void:
 		if dist <= best_dist:
 			best_dist = dist
 			best = node
-	if best == null or not best.has_method("try_pickup"):
+	if best != null and best.has_method("try_pickup"):
+		if not best.try_pickup():
+			return
+		if best.has_method("is_key") and best.is_key():
+			var stage := int(best.get("key_stage"))
+			key_collected.emit(stage)
+			return
+		_has_item = true
+		item_collected.emit()
 		return
-	if not best.try_pickup():
+
+	var stair := _nearest_stairwell()
+	if stair == null or not stair.has_method("try_use"):
 		return
-	if best.has_method("is_key") and best.is_key():
-		var stage := int(best.get("key_stage"))
-		key_collected.emit(stage)
+	if stair.has_method("can_use") and not stair.can_use():
 		return
-	_has_item = true
-	item_collected.emit()
+	if stair.try_use():
+		stair_used.emit(stair)
+
+
+func _nearest_stairwell() -> Node:
+	var best: Node = null
+	var best_dist := interact_range
+	for node in get_tree().get_nodes_in_group("stairwell"):
+		if node == null or not is_instance_valid(node):
+			continue
+		if not node.has_method("can_interact") or not node.can_interact(global_position):
+			continue
+		var to_stair: Vector3 = (node as Node3D).global_position - global_position
+		to_stair.y = 0.0
+		var dist := to_stair.length()
+		if dist <= best_dist:
+			best_dist = dist
+			best = node
+	return best
 
 func _apply_gravity(delta: float) -> void:
 	if not is_on_floor():
