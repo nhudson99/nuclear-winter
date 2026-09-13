@@ -11,6 +11,8 @@ func _initialize() -> void:
 
 func _run() -> void:
 	var modules_ok := _check_room_modules()
+	var stairs_ok := _check_stair_modules()
+	print("stair_modules_ok=", stairs_ok)
 
 	var first := await _generate(101, ROOM_COUNT)
 	var replay := await _generate(101, ROOM_COUNT)
@@ -60,6 +62,7 @@ func _run() -> void:
 
 	var all_ok: bool = (
 		modules_ok
+		and stairs_ok
 		and exits_ok
 		and count_ok
 		and deterministic
@@ -97,6 +100,32 @@ func _check_room_modules() -> bool:
 			if MapGenerator.find_child_by_name(room, node_name) == null:
 				missing.append(node_name)
 		print("module_ok=", missing.is_empty(), " type=", type_name, " missing=", missing)
+		if not missing.is_empty():
+			ok = false
+		room.free()
+	return ok
+
+
+func _check_stair_modules() -> bool:
+	var ok := true
+	for type_name in MapGenerator.STAIR_TYPES:
+		var path: String = MapGenerator.ROOM_SCENES[type_name]
+		if not ResourceLoader.exists(path):
+			print("stair_module_missing=", path)
+			ok = false
+			continue
+		var room: Node3D = (load(path) as PackedScene).instantiate()
+		var required: Array[String] = ["Floor", "StairUse"]
+		for side in MapGenerator.SIDES:
+			required.append("Wall_%s_A" % side)
+			required.append("Wall_%s_B" % side)
+			required.append("Wall_%s_L" % side)
+			required.append("Plug_%s" % side)
+		var missing: Array[String] = []
+		for node_name in required:
+			if MapGenerator.find_child_by_name(room, node_name) == null:
+				missing.append(node_name)
+		print("stair_module_ok=", missing.is_empty(), " type=", type_name, " missing=", missing)
 		if not missing.is_empty():
 			ok = false
 		room.free()

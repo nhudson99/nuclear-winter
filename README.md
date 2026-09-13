@@ -9,13 +9,13 @@ Post-fallout USSR game. The **full Godot flow** is title → fat aristocrat brie
 godot --path godot
 ```
 
-- Room modules authored in Blender (`blender/build_rooms.py`) → `godot/assets/rooms/room_{bedroom,living_room,office,storage}.glb`
+- Room modules authored in Blender (`blender/build_rooms.py`) → `godot/assets/rooms/room_{bedroom,living_room,office,storage,stairwell_up,stairwell_down}.glb`
 - Player authored in Blender (`blender/build_prisoner.py`) → `godot/assets/characters/player_prisoner.glb`
 - Original monster authored in Blender (`blender/build_monster.py`) → `godot/assets/characters/enemy_monster.glb`
 - Slime enemy from [Poly Pizza](https://poly.pizza/m/6O6XUMssAW) (Charlie, CC-BY) is scaled and reoriented by `blender/prepare_slime.py` → `godot/assets/characters/enemy_slime.glb`
 - Tank authored in Blender (`blender/build_tank.py`) → `godot/assets/characters/enemy_tank.glb`
 - Flow: `TitleScreen.tscn` → `AristocratScreen.tscn` → `GameMap.tscn` (click **LEVEL n** or **SHOP**) → `Main.tscn`
-- Levels scale from `GameProgress.current_level`. Level 1 is the current open nine-room layout with one slime and a free mission item. Higher levels add monsters in an easy → moderate → dangerous cycle (slime, hare, tank), extra locked wings, and one key per locked door. The mission item is always in the last locked wing.
+- Levels scale from `GameProgress.current_level`. Level 1 is the current open nine-room layout with one slime and a free mission item. Higher levels add monsters in an easy → moderate → dangerous cycle (slime, hare, tank), extra locked wings, and one key per locked door. The mission item is always in the last locked wing. From level 3 the wings are stacked as **floors** (max two wings per floor); stairwell rooms sit behind the next locked door and only the current floor is instantiated.
 - Level 1: `godot/scenes/Main.tscn` (10% ambient so rooms are faintly readable, hold RMB to aim the flashlight, isometric camera zoomed 50% onto the player, wall/prop collision, WASD walk, E to pick up objectives, escape through the outer doorway, enemies on the monster track, health bars)
 - The earlier hand-authored mansion (`blender/build_mansion_map.py` → `godot/assets/maps/ussr_mansion_map.glb`) is kept for reference but no longer loaded.
 
@@ -23,9 +23,10 @@ godot --path godot
 
 `godot/scripts/MapGenerator.gd` builds the floorplan at load time, so no two runs share a layout.
 
-- **Room modules**: four Blender tiles — bedroom, living room, office, storage — all sharing one 12 m square footprint with a doorway centred on each wall, so any two rooms can butt together on a grid.
+- **Room modules**: six Blender tiles — bedroom, living room, office, storage, stairwell up, stairwell down — all sharing one 12 m square footprint with a doorway centred on each wall, so any two rooms can butt together on a grid.
 - **Layout**: the generator grows the map one neighbour at a time from the start cell, which keeps every room reachable without a separate connectivity pass. The footprint is capped to roughly square so the level does not sprawl into a corridor.
-- **Room types**: one of each type is dealt first so every level shows all four; the remainder is random, then the whole bag is shuffled with the seeded RNG.
+- **Floors**: each storey has at most two wings. One wing is gated by a locked door; when another storey exists the stairs are behind the next key. Only the active floor is spawned, so later levels do not keep the whole building in memory. Press **E** at a stair landing to change floors.
+- **Room types**: one of each livable type is dealt first so every level shows all four; the remainder is random, then the whole bag is shuffled with the seeded RNG. Stairwell rooms replace one cell in each connecting wing.
 - **Doorways**: each module ships a removable `Plug_<side>` block filling its doorway. The generator deletes the plug where two rooms meet and keeps it where a room faces the outside, which seals the map edge without needing per-room wall variants. One outward wall of the start room is opened as the escape route.
 - **Monster track**: the generator also builds a graph whose nodes sit on every room centre and every interior doorway centre, then instances it as `MonsterTrack` under the map. The monster patrols that graph so it never cuts through walls or furniture.
 - **Collision**: one `StaticBody3D` per room with a box per mesh, taken from mesh bounds. The modules are built from axis-aligned boxes and cylinders, so bounds are a close fit and far cheaper to cook than trimesh collision over a few hundred props. Blender names decoration `NoCol_*` to opt it out.
@@ -56,7 +57,7 @@ for t in smoke_procgen smoke_monster_doors smoke_monster_track smoke_game_loop s
 done
 ```
 
-`smoke_procgen.gd` covers the room-module contract, seed replay, layout variety, full connectivity, doorway carving, collision cooking and the monster track graph.
+`smoke_procgen.gd` covers the room-module contract (including both stairwells), seed replay, layout variety, full connectivity, doorway carving, collision cooking and the monster track graph. `smoke_level_progression.gd` also checks two-wing floors, locked stairs, floor-scoped instantiation, and high-level spawn scatter.
 
 ### Gameplay notes
 
@@ -71,6 +72,7 @@ done
   - **Monster**: the original hunched stalker. 100 HP, lethal touch (100).
   - **Slime**: Charlie's Poly Pizza slime, scaled to about a metre. Fast, 45 HP, 35 touch damage, plays `idle` / `moving` / `hit` / `attack` / `death`. Over 30 seconds it doubles in size and health, then splits into two original-sized slimes; each child repeats the cycle (capped at 16 living slimes).
   - **Tank**: Left 4 Dead-style brute in jeans. Slow, 320 HP, lethal touch, hulking knuckle-dragger silhouette.
+  - From level 2 the roster is scattered through the allowed wings instead of parking on the closest/furthest leftover cell.
 - **Health**: player starts at 100 HP with a billboard bar. Enemy bars stay hidden until the flashlight cone hits them (or they take damage).
 
 ## Player character
@@ -108,7 +110,7 @@ godot/                     Godot 4.4 game (menus + Level 1)
   assets/characters/{player_prisoner,enemy_monster,enemy_slime,enemy_tank}.glb
   assets/props/{crate,wardrobe,couch}.glb
   scenes/{TitleScreen,AristocratScreen,GameMap,Main}.tscn
-  scripts/{SceneFlow,GameProgress,TitleScreen,AristocratScreen,GameMap,ShopMenu,Main,Player,Monster,PickupItem,ExitZone,Bullet}.gd
+  scripts/{SceneFlow,GameProgress,LevelRules,MapGenerator,LockedDoor,Stairwell,TitleScreen,AristocratScreen,GameMap,ShopMenu,Main,Player,Monster,PickupItem,ExitZone,Bullet}.gd
   tools/smoke_flow_screens.gd
   tools/smoke_game_loop.gd
   tools/smoke_shop.gd
