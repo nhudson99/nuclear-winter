@@ -844,9 +844,9 @@ func _add_locked_doors(container: Node3D, layout: Dictionary) -> void:
 	container.add_child(root)
 	for spec in locks:
 		var door := LockedDoor.new()
-		door.name = "LockedDoor_%d_%d_%d" % [int(spec.get("stage", 1)), from_cell.x, from_cell.y]
 		var from_cell: Vector2i = spec["from_cell"]
 		var to_cell: Vector2i = spec["to_cell"]
+		door.name = "LockedDoor_%d_%d_%d" % [int(spec.get("stage", 1)), from_cell.x, from_cell.y]
 		var side: String = spec["side"]
 		var size := _door_size_for_side(side)
 		door.position = (cell_to_world(from_cell) + cell_to_world(to_cell)) * 0.5
