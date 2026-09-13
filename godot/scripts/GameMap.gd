@@ -53,7 +53,7 @@ func _ready() -> void:
 
 	var hint := Label.new()
 	hint.name = "Hint"
-	hint.text = "Click LEVEL 1 to deploy"
+	hint.text = "Click LEVEL %d to deploy" % GameProgress.current_level
 	hint.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	hint.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	UiStyle.apply_label(hint, 18, UiStyle.PIP_GREEN, Color(0.0, 0.08, 0.0), 4)
@@ -93,7 +93,7 @@ func _ready() -> void:
 
 	_level_button = Button.new()
 	_level_button.name = "Level1Button"
-	_level_button.text = "LEVEL 1"
+	_level_button.text = "LEVEL %d" % GameProgress.current_level
 	_level_button.focus_mode = Control.FOCUS_ALL
 	_level_button.mouse_default_cursor_shape = Control.CURSOR_POINTING_HAND
 	UiStyle.apply_button_font(_level_button, 22, UiStyle.PIP_GREEN, Color(0.0, 0.08, 0.0), 3)

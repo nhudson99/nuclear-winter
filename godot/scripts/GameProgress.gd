@@ -22,6 +22,7 @@ var has_pistol: bool = false
 var speed_ranks: int = 0
 var has_sneak: bool = false
 var aristocrat_mode: AristocratMode = AristocratMode.BRIEFING
+var current_level: int = 1
 
 
 func speed_bonus() -> float:
@@ -86,6 +87,10 @@ func award_escape() -> void:
 	rations_changed.emit(rations)
 
 
+func advance_level() -> void:
+	current_level = LevelRules.clamp_level(current_level + 1)
+
+
 func dialogue_line() -> String:
 	if aristocrat_mode == AristocratMode.VICTORY:
 		return VICTORY_LINE
@@ -98,5 +103,6 @@ func reset_for_tests() -> void:
 	speed_ranks = 0
 	has_sneak = false
 	aristocrat_mode = AristocratMode.BRIEFING
+	current_level = 1
 	rations_changed.emit(rations)
 	upgrades_changed.emit()

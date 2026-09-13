@@ -1,9 +1,9 @@
 extends Node3D
 
-## Level 1. The floorplan is not authored: on load, MapGenerator stitches the
-## four Blender room modules into a pseudorandom layout while the loading screen
-## reports progress, then the player, monster, objective and exit are placed
-## from the layout it returns.
+## Playable level. The floorplan is not authored: on load, MapGenerator stitches
+## the four Blender room modules into a pseudorandom layout while the loading
+## screen reports progress, then the player, monsters, objectives and exit are
+## placed from the layout it returns. Difficulty comes from GameProgress.current_level.
 
 signal level_ready(layout: Dictionary)
 
@@ -29,7 +29,9 @@ const SLIME_SPLIT_SPREAD := 0.6
 @export var camera_distance: float = 22.0
 @export var camera_height: float = 22.0
 @export var follow_lerp: float = 10.0
-@export var room_count: int = 9
+@export var room_count: int = 0
+## Zero reads GameProgress.current_level (or NW_LEVEL). Any other value forces that level.
+@export var play_level: int = 0
 ## Zero draws a fresh layout every run; any other value replays that exact map.
 @export var level_seed: int = 0
 ## Floor on how long the overlay stays up, so generation is readable when the
@@ -38,9 +40,14 @@ const SLIME_SPLIT_SPREAD := 0.6
 
 var _state: GameState = GameState.LOADING
 var _status_label: Label
+var _objective_label: Label
 var _layout: Dictionary = {}
 var _loading: CanvasLayer
 var _slime_serial: int = 1
+var _hare_serial: int = 1
+var _tank_serial: int = 1
+var _resolved_level: int = 1
+var _collected_keys: Dictionary = {}
 
 func _ready() -> void:
 	camera.projection = Camera3D.PROJECTION_ORTHOGONAL
@@ -74,6 +81,42 @@ func get_layout() -> Dictionary:
 func is_level_ready() -> bool:
 	return _state != GameState.LOADING
 
+
+func get_play_level() -> int:
+	return _resolved_level
+
+
+func unlock_stage(stage: int) -> void:
+	_on_key_collected(stage)
+
+
+func locked_doors() -> Array[LockedDoor]:
+	var out: Array[LockedDoor] = []
+	var root := map_root.get_node_or_null("LockedDoors") if map_root else null
+	if root == null:
+		return out
+	for child in root.get_children():
+		if child is LockedDoor:
+			out.append(child)
+	return out
+
+
+func collected_key_stages() -> Array[int]:
+	var stages: Array[int] = []
+	for stage in _collected_keys:
+		stages.append(int(stage))
+	stages.sort()
+	return stages
+
+
+func resolve_play_level() -> int:
+	var env := OS.get_environment("NW_LEVEL")
+	if env.is_valid_int():
+		return LevelRules.clamp_level(int(env))
+	if play_level > 0:
+		return LevelRules.clamp_level(play_level)
+	return LevelRules.clamp_level(GameProgress.current_level)
+
 func _build_level() -> void:
 	var started := Time.get_ticks_msec()
 	_loading = LOADING_SCREEN.instantiate()
@@ -88,7 +131,9 @@ func _build_level() -> void:
 	var seed_override := OS.get_environment("NW_LEVEL_SEED")
 	if seed_override.is_valid_int():
 		used_seed = int(seed_override)
-	_layout = await generator.generate(map_root, used_seed, room_count)
+	_resolved_level = resolve_play_level()
+	var used_rooms := room_count if room_count > 0 else LevelRules.room_count(_resolved_level)
+	_layout = await generator.generate(map_root, used_seed, used_rooms, _resolved_level)
 	generator.queue_free()
 	_apply_layout(_layout)
 	_apply_preview_overrides()
@@ -111,18 +156,100 @@ func _apply_layout(layout: Dictionary) -> void:
 	player.global_position = layout.get("start", Vector3.ZERO)
 	player.velocity = Vector3.ZERO
 
-	_place_enemy(monster, layout.get("monster", Vector3.ZERO), layout)
-	_place_enemy(slime, layout.get("slime", Vector3.ZERO), layout)
-	_place_enemy(tank, layout.get("tank", Vector3.ZERO), layout)
+	_place_enemy_roster(layout)
+	_place_objectives(layout)
 
-	var pickup := get_node_or_null("PickupItem") as Node3D
-	if pickup:
-		pickup.global_position = layout.get("objective", Vector3.ZERO)
 	var exit_zone := get_node_or_null("ExitZone") as Node3D
 	if exit_zone:
 		exit_zone.global_position = layout.get("exit", Vector3.ZERO)
 
+	_refresh_objective_hud()
 	_snap_camera()
+
+
+func _place_enemy_roster(layout: Dictionary) -> void:
+	var roster: Array = layout.get("enemies", [])
+	var templates := {
+		LevelRules.KIND_SLIME: slime,
+		LevelRules.KIND_HARE: monster,
+		LevelRules.KIND_TANK: tank,
+	}
+	var used := {
+		LevelRules.KIND_SLIME: false,
+		LevelRules.KIND_HARE: false,
+		LevelRules.KIND_TANK: false,
+	}
+	if roster.is_empty():
+		_place_enemy(monster, layout.get("monster", Vector3.ZERO), layout)
+		_place_enemy(slime, layout.get("slime", Vector3.ZERO), layout)
+		_place_enemy(tank, layout.get("tank", Vector3.ZERO), layout)
+		return
+
+	for spec in roster:
+		var kind := String(spec.get("kind", LevelRules.KIND_SLIME))
+		var template: CharacterBody3D = templates.get(kind, slime)
+		if template == null:
+			continue
+		var body: CharacterBody3D
+		if not used[kind]:
+			body = template
+			used[kind] = true
+		else:
+			body = template.duplicate() as CharacterBody3D
+			body.name = _next_enemy_name(kind)
+			add_child(body)
+		_place_enemy(body, spec.get("position", Vector3.ZERO), layout)
+
+	for kind in used:
+		if used[kind]:
+			continue
+		var leftover: CharacterBody3D = templates.get(kind, null)
+		if leftover == null:
+			continue
+		_place_enemy(leftover, layout.get("start", Vector3.ZERO), layout)
+		leftover.set_physics_process(false)
+		leftover.visible = false
+		leftover.global_position += Vector3(200.0, 0.0, 200.0)
+
+
+func _next_enemy_name(kind: String) -> String:
+	match kind:
+		LevelRules.KIND_SLIME:
+			_slime_serial += 1
+			return "Slime_%d" % _slime_serial
+		LevelRules.KIND_HARE:
+			_hare_serial += 1
+			return "Hare_%d" % _hare_serial
+		LevelRules.KIND_TANK:
+			_tank_serial += 1
+			return "Tank_%d" % _tank_serial
+		_:
+			return "Enemy_%d" % (_slime_serial + _hare_serial + _tank_serial)
+
+
+func _place_objectives(layout: Dictionary) -> void:
+	var mission := get_node_or_null("PickupItem") as Area3D
+	if mission:
+		if mission.has_method("configure"):
+			mission.configure(PickupItem.Kind.MISSION)
+		mission.global_position = layout.get("objective", Vector3.ZERO)
+
+	for spec in layout.get("keys", []):
+		var key := _make_key_pickup(mission)
+		key.name = "Key_%d" % int(spec.get("stage", 1))
+		if key.has_method("configure"):
+			key.configure(PickupItem.Kind.KEY, int(spec.get("stage", 1)))
+		add_child(key)
+		key.global_position = spec.get("position", Vector3.ZERO)
+
+
+func _make_key_pickup(template: Area3D) -> Area3D:
+	if template:
+		var copy := template.duplicate() as Area3D
+		return copy
+	var item := Area3D.new()
+	item.set_script(load("res://scripts/PickupItem.gd"))
+	return item
 
 
 func _place_enemy(body: CharacterBody3D, where: Vector3, layout: Dictionary) -> void:
@@ -148,6 +275,9 @@ func monsters() -> Array[CharacterBody3D]:
 
 func set_monsters_processing(enabled: bool) -> void:
 	for body in monsters():
+		if not body.visible:
+			body.set_physics_process(false)
+			continue
 		body.set_physics_process(enabled)
 
 
@@ -261,6 +391,8 @@ func _wire_game_loop() -> void:
 		player.died.connect(_on_player_died)
 	if player.has_signal("item_collected") and not player.item_collected.is_connected(_on_item_collected):
 		player.item_collected.connect(_on_item_collected)
+	if player.has_signal("key_collected") and not player.key_collected.is_connected(_on_key_collected):
+		player.key_collected.connect(_on_key_collected)
 	var exit_zone := get_node_or_null("ExitZone")
 	if exit_zone and exit_zone.has_signal("player_escaped"):
 		if not exit_zone.player_escaped.is_connected(_on_player_escaped):
@@ -283,6 +415,22 @@ func _setup_hud() -> void:
 	_status_label.add_theme_constant_override("outline_size", 10)
 	layer.add_child(_status_label)
 
+	_objective_label = Label.new()
+	_objective_label.name = "ObjectiveLabel"
+	_objective_label.visible = true
+	_objective_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_LEFT
+	_objective_label.vertical_alignment = VERTICAL_ALIGNMENT_TOP
+	_objective_label.set_anchors_preset(Control.PRESET_TOP_LEFT)
+	_objective_label.offset_left = 18
+	_objective_label.offset_top = 16
+	_objective_label.offset_right = 520
+	_objective_label.offset_bottom = 220
+	_objective_label.add_theme_font_size_override("font_size", 18)
+	_objective_label.add_theme_color_override("font_color", Color(0.75, 1.0, 0.72, 1.0))
+	_objective_label.add_theme_color_override("font_outline_color", Color(0, 0, 0, 1))
+	_objective_label.add_theme_constant_override("outline_size", 6)
+	layer.add_child(_objective_label)
+
 func _on_item_collected() -> void:
 	if _state != GameState.PLAYING:
 		return
@@ -292,6 +440,55 @@ func _on_item_collected() -> void:
 	var exit_zone := get_node_or_null("ExitZone")
 	if exit_zone and exit_zone.has_method("set_glow_visible"):
 		exit_zone.set_glow_visible(true)
+	_refresh_objective_hud()
+
+
+func _on_key_collected(stage: int) -> void:
+	if _state != GameState.PLAYING:
+		return
+	_collected_keys[stage] = true
+	_unlock_door(stage)
+	_refresh_objective_hud()
+
+
+func _unlock_door(stage: int) -> void:
+	var doors_root := map_root.get_node_or_null("LockedDoors")
+	if doors_root:
+		for child in doors_root.get_children():
+			if child is LockedDoor and (child as LockedDoor).stage == stage:
+				(child as LockedDoor).unlock()
+	var track: Dictionary = _layout.get("monster_track", {})
+	for spec in _layout.get("locks", []):
+		if int(spec.get("stage", 0)) != stage:
+			continue
+		MapGenerator.add_unlocked_door_to_track(
+			track,
+			spec["from_cell"],
+			String(spec.get("side", "E")),
+			spec["to_cell"]
+		)
+		_layout["monster_track"] = track
+		break
+	for body in monsters():
+		if body.has_method("apply_monster_track"):
+			body.apply_monster_track(track)
+
+
+func _refresh_objective_hud() -> void:
+	if _objective_label == null:
+		return
+	var lines: PackedStringArray = []
+	lines.append("LEVEL %d" % _resolved_level)
+	for spec in _layout.get("objectives", LevelRules.objectives(_resolved_level)):
+		var kind := String(spec.get("kind", ""))
+		var done := false
+		if kind == LevelRules.KIND_KEY:
+			done = _collected_keys.has(int(spec.get("stage", 0)))
+		elif kind == LevelRules.KIND_MISSION:
+			done = player != null and player.has_collected_item()
+		var mark := "x" if done else " "
+		lines.append("[%s] %s" % [mark, String(spec.get("label", kind))])
+	_objective_label.text = "\n".join(lines)
 
 func _on_player_died() -> void:
 	if _state != GameState.PLAYING:
@@ -312,6 +509,7 @@ func _begin_victory() -> void:
 		player.lock_input()
 	set_monsters_processing(false)
 	GameProgress.award_escape()
+	GameProgress.advance_level()
 	GameProgress.aristocrat_mode = GameProgress.AristocratMode.VICTORY
 	_show_victory_aristocrat()
 

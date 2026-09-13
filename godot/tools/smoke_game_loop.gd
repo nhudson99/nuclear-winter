@@ -113,7 +113,9 @@ func _run() -> void:
 		" rations=", gp.rations
 	)
 
-	# Fresh scene for GAME OVER path.
+	# Fresh scene for GAME OVER path. Victory advanced the campaign level;
+	# pin this probe back to level 1 so it stays a single open floorplan.
+	gp.current_level = 1
 	main.queue_free()
 	await create_timer(0.1).timeout
 	main = packed.instantiate()

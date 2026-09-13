@@ -2,6 +2,7 @@ extends CharacterBody3D
 
 signal died
 signal item_collected
+signal key_collected(stage: int)
 
 @export var move_speed: float = 2.4
 @export var run_speed: float = 5.5
@@ -280,8 +281,6 @@ func clear_aim_world_override() -> void:
 	_aim_override_enabled = false
 
 func _try_interact() -> void:
-	if _has_item:
-		return
 	var best: Node = null
 	var best_dist := interact_range
 	for node in get_tree().get_nodes_in_group("pickup"):
@@ -297,9 +296,14 @@ func _try_interact() -> void:
 			best = node
 	if best == null or not best.has_method("try_pickup"):
 		return
-	if best.try_pickup():
-		_has_item = true
-		item_collected.emit()
+	if not best.try_pickup():
+		return
+	if best.has_method("is_key") and best.is_key():
+		var stage := int(best.get("key_stage"))
+		key_collected.emit(stage)
+		return
+	_has_item = true
+	item_collected.emit()
 
 func _apply_gravity(delta: float) -> void:
 	if not is_on_floor():

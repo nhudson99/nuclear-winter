@@ -547,6 +547,14 @@ func configure_level(rooms: Array, bounds: AABB, track: Dictionary = {}) -> void
 	_choose_patrol_target()
 
 
+func apply_monster_track(track: Dictionary) -> void:
+	_track_nodes = track.get("nodes", {}).duplicate(true)
+	if _current_node_id == "" or not _track_nodes.has(_current_node_id):
+		_current_node_id = _nearest_node_id(global_position)
+	if _target_node_id != "" and not _track_nodes.has(_target_node_id):
+		_choose_patrol_target()
+
+
 func copy_split_level_state(child: CharacterBody3D) -> void:
 	if child.has_method("configure_level"):
 		child.configure_level(_level_rooms, _level_bounds, {"nodes": _track_nodes})
