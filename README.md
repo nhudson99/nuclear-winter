@@ -14,8 +14,9 @@ godot --path godot
 - Original monster authored in Blender (`blender/build_monster.py`) → `godot/assets/characters/enemy_monster.glb`
 - Slime enemy from [Poly Pizza](https://poly.pizza/m/6O6XUMssAW) (Charlie, CC-BY) is scaled and reoriented by `blender/prepare_slime.py` → `godot/assets/characters/enemy_slime.glb`
 - Tank authored in Blender (`blender/build_tank.py`) → `godot/assets/characters/enemy_tank.glb`
-- Flow: `TitleScreen.tscn` → `AristocratScreen.tscn` → `GameMap.tscn` (click **LEVEL 1** or **SHOP**) → `Main.tscn`
-- Level 1: `godot/scenes/Main.tscn` (10% ambient so rooms are faintly readable, hold RMB to aim the flashlight, isometric camera zoomed 50% onto the player, wall/prop collision, WASD walk, E to pick up the objective, escape through the outer doorway, three enemies on the monster track, health bars)
+- Flow: `TitleScreen.tscn` → `AristocratScreen.tscn` → `GameMap.tscn` (click **LEVEL n** or **SHOP**) → `Main.tscn`
+- Levels scale from `GameProgress.current_level`. Level 1 is the current open nine-room layout with one slime and a free mission item. Higher levels add monsters in an easy → moderate → dangerous cycle (slime, hare, tank), extra locked wings, and one key per locked door. The mission item is always in the last locked wing.
+- Level 1: `godot/scenes/Main.tscn` (10% ambient so rooms are faintly readable, hold RMB to aim the flashlight, isometric camera zoomed 50% onto the player, wall/prop collision, WASD walk, E to pick up objectives, escape through the outer doorway, enemies on the monster track, health bars)
 - The earlier hand-authored mansion (`blender/build_mansion_map.py` → `godot/assets/maps/ussr_mansion_map.glb`) is kept for reference but no longer loaded.
 
 ## Procedural maps
@@ -50,7 +51,7 @@ godot --headless -s res://tools/build_main_scene.gd
 
 ```bash
 cd godot
-for t in smoke_procgen smoke_monster_doors smoke_monster_track smoke_game_loop smoke_flow_screens smoke_player_anims smoke_flashlight smoke_shop smoke_loadout smoke_enemies; do
+for t in smoke_procgen smoke_monster_doors smoke_monster_track smoke_game_loop smoke_flow_screens smoke_player_anims smoke_flashlight smoke_shop smoke_loadout smoke_enemies smoke_level_progression; do
   godot --headless -s res://tools/$t.gd
 done
 ```
@@ -61,12 +62,12 @@ done
 
 - **Lighting**: Level 1 has no sun. Ambient is 10% so you can pick a path with the flashlight off. Hold **RMB** to turn on the flashlight and aim the prisoner (and the cone) at the cursor; WASD still strafes independently. Release to go dark again. The glowing objective is the other light; collecting it lights a green exit beacon.
 - **Camera**: the isometric view is zoomed 50% onto the player (ortho size 20 → 13.3).
-- **Objective**: a glowing pickup sits in the room furthest from where you start. Press **E** nearby to collect it, then reach the exit doorway of the start room without dying.
+- **Objectives**: a level has `n` objectives. Level 1 is just the glowing mission item. Level `n>1` adds `n-1` keys; each key unlocks the next locked-door wing. The mission item is behind the last lock. Press **E** nearby to collect a key or the mission item, then reach the exit doorway of the start room without dying.
 - **Alarm**: collecting the item halves every enemy's dwell timer and doubles its proximity detection radius, and turns on the green exit glow.
 - **Win / lose**: escaping with the item awards **5 rations** and brings up the fat aristocrat ("Well, you survived. Good for you. Here is your ration reward"); dying shows **GAME OVER**.
 - **Shop**: the Pip-Boy map has **SHOP** in the top right. Cards are **pistol** (5 rations, LMB fires 10 damage along the flashlight), **speed upgrade** (1 ration, +5% speed, stackable), and **sneak** (3 rations, hold **Ctrl** with the flashlight off to avoid sight detection).
 - **Doorways**: every adjacent room is linked by an open wall gap; player and enemies can walk through. Outward-facing walls are sealed.
-- **Enemies**: three creatures share the generated monster track (room centres through doorway centres). At a track intersection each rolls 0–99 and turns left (0–24), right (25–49), up (50–74) or down (75–99). When one detects the player (proximity, or FOV + line of sight) it path-follows the track toward them; 5 seconds after losing detection it returns to the main track. Sneak owned + Ctrl with the light off skips sight detection.
+- **Enemies**: the roster grows with the level (`n` monsters, cycling slime → hare → tank). They share the generated monster track (room centres through doorway centres). Locked doors omit their track edge until the matching key is collected. At a track intersection each rolls 0–99 and turns left (0–24), right (25–49), up (50–74) or down (75–99). When one detects the player (proximity, or FOV + line of sight) it path-follows the track toward them; 5 seconds after losing detection it returns to the main track. Sneak owned + Ctrl with the light off skips sight detection.
   - **Monster**: the original hunched stalker. 100 HP, lethal touch (100).
   - **Slime**: Charlie's Poly Pizza slime, scaled to about a metre. Fast, 45 HP, 35 touch damage, plays `idle` / `moving` / `hit` / `attack` / `death`. Over 30 seconds it doubles in size and health, then splits into two original-sized slimes; each child repeats the cycle (capped at 16 living slimes).
   - **Tank**: Left 4 Dead-style brute in jeans. Slow, 320 HP, lethal touch, hulking knuckle-dragger silhouette.
@@ -113,6 +114,7 @@ godot/                     Godot 4.4 game (menus + Level 1)
   tools/smoke_shop.gd
   tools/smoke_loadout.gd
   tools/smoke_enemies.gd
+  tools/smoke_level_progression.gd
 blender/
   build_mansion_map.py
   build_prisoner.py

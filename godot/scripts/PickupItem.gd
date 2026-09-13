@@ -1,12 +1,18 @@
+class_name PickupItem
 extends Area3D
 
 ## Interactable objective. Player presses interact (E) while nearby to collect it.
+## Mission items trigger the escape alarm; keys unlock the matching locked door.
 
 signal picked_up(item: Node3D)
+
+enum Kind { MISSION, KEY }
 
 @export var interact_range: float = 2.2
 @export var bob_height: float = 0.12
 @export var bob_speed: float = 2.4
+@export var kind: Kind = Kind.MISSION
+@export var key_stage: int = 0
 
 var _taken: bool = false
 var _visual: Node3D
@@ -19,7 +25,23 @@ func _ready() -> void:
 	monitoring = false
 	monitorable = false
 	_ensure_visual()
+	_apply_kind_visual()
 	_base_y = _visual.position.y if _visual else 0.55
+
+
+func configure(p_kind: Kind, stage: int = 0) -> void:
+	kind = p_kind
+	key_stage = stage
+	if _visual:
+		_apply_kind_visual()
+
+
+func is_mission_item() -> bool:
+	return kind == Kind.MISSION
+
+
+func is_key() -> bool:
+	return kind == Kind.KEY
 
 func _process(delta: float) -> void:
 	if _taken or _visual == null:
@@ -83,3 +105,31 @@ func _ensure_visual() -> void:
 	marker_mat.emission_energy_multiplier = 1.2
 	marker.material_override = marker_mat
 	_visual.add_child(marker)
+	_apply_kind_visual()
+
+
+func _apply_kind_visual() -> void:
+	if _visual == null:
+		return
+	var mesh := _visual.get_node_or_null("Mesh") as MeshInstance3D
+	var marker := _visual.get_node_or_null("Marker") as MeshInstance3D
+	if kind == Kind.KEY:
+		if mesh and mesh.material_override is StandardMaterial3D:
+			var mat := mesh.material_override as StandardMaterial3D
+			mat.albedo_color = Color(0.72, 0.78, 0.88, 1.0)
+			mat.emission = Color(0.35, 0.55, 0.95, 1.0)
+			mat.emission_energy_multiplier = 1.5
+		if marker and marker.material_override is StandardMaterial3D:
+			var marker_mat := marker.material_override as StandardMaterial3D
+			marker_mat.albedo_color = Color(0.85, 0.9, 1.0, 1.0)
+			marker_mat.emission = Color(0.4, 0.65, 1.0, 1.0)
+		return
+	if mesh and mesh.material_override is StandardMaterial3D:
+		var mission := mesh.material_override as StandardMaterial3D
+		mission.albedo_color = Color(0.95, 0.78, 0.22, 1.0)
+		mission.emission = Color(0.85, 0.55, 0.08, 1.0)
+		mission.emission_energy_multiplier = 1.4
+	if marker and marker.material_override is StandardMaterial3D:
+		var mission_marker := marker.material_override as StandardMaterial3D
+		mission_marker.albedo_color = Color(0.2, 0.85, 0.95, 1.0)
+		mission_marker.emission = Color(0.15, 0.7, 0.9, 1.0)

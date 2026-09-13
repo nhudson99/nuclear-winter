@@ -136,14 +136,23 @@ static func _distance_to_segment(point: Vector3, a: Vector3, b: Vector3) -> floa
 
 
 ## Assembles the level under `container` and returns the layout description
-## used to place the player, monster, objective and exit.
-func generate(container: Node3D, level_seed: int, room_count: int) -> Dictionary:
+## used to place the player, monsters, objectives and exit.
+##
+## `level` drives locked wings and the enemy roster. Level 1 is a single
+## open floorplan (`room_count` rooms). Higher levels grow extra wings
+## behind chained locked doors; the mission item sits in the last wing.
+func generate(container: Node3D, level_seed: int, room_count: int, level: int = 1) -> Dictionary:
 	var rng := RandomNumberGenerator.new()
 	rng.seed = level_seed
 
-	var wanted := maxi(room_count, 1)
+	var play_level := LevelRules.clamp_level(level)
+	var zone_counts: Array[int] = LevelRules.zone_room_counts(play_level)
+	if play_level <= 1:
+		zone_counts = [maxi(room_count, 1)]
+
 	progress.emit(0.04, "РАЗМЕТКА СЕКТОРА / SURVEYING SECTOR")
-	var cells := _plan_cells(rng, wanted)
+	var planned := _plan_zoned_cells(rng, zone_counts)
+	var cells: Array[Vector2i] = planned["cells"]
 	var types := _assign_types(rng, cells.size())
 
 	var occupied := {}
@@ -175,7 +184,16 @@ func generate(container: Node3D, level_seed: int, room_count: int) -> Dictionary
 	await get_tree().process_frame
 
 	progress.emit(0.96, "РАССТАНОВКА / PLACING ASSETS")
-	var layout := _describe_layout(rooms, cells, start_cell, exit_info, level_seed)
+	var layout := _describe_layout(
+		rooms,
+		cells,
+		start_cell,
+		exit_info,
+		level_seed,
+		play_level,
+		planned
+	)
+	_add_locked_doors(container, layout)
 	_add_ground(container, layout["bounds"])
 	_add_monster_track(container, layout["monster_track"])
 	progress.emit(1.0, "ГОТОВО / READY")
@@ -225,6 +243,263 @@ func _plan_cells(rng: RandomNumberGenerator, count: int) -> Array[Vector2i]:
 		scan += 1
 
 	return cells
+
+
+## Grows one connected zone per entry in `zone_counts`. Neighbouring zones
+## share exactly one doorway, which the caller turns into a locked door.
+func _plan_zoned_cells(rng: RandomNumberGenerator, zone_counts: Array[int]) -> Dictionary:
+	var cells: Array[Vector2i] = []
+	var zone_of := {}
+	var locks: Array[Dictionary] = []
+	if zone_counts.is_empty():
+		return {"cells": cells, "zone_of": zone_of, "locks": locks}
+
+	if zone_counts.size() == 1:
+		var single: Array[Vector2i] = _plan_cells(rng, maxi(zone_counts[0], 1))
+		for cell in single:
+			cells.append(cell)
+			zone_of[cell] = 0
+		return {"cells": cells, "zone_of": zone_of, "locks": locks}
+
+	var total := 0
+	for count in zone_counts:
+		total += maxi(count, 1)
+	var max_span := int(ceil(sqrt(float(total)))) + 2 + zone_counts.size()
+
+	var first_zone: Array[Vector2i] = _plan_cells_limited(rng, maxi(zone_counts[0], 1), max_span)
+	for cell in first_zone:
+		cells.append(cell)
+		zone_of[cell] = 0
+
+	for zone_index in range(1, zone_counts.size()):
+		var wanted := maxi(zone_counts[zone_index], 1)
+		var prev_cells: Array[Vector2i] = []
+		for cell in cells:
+			if int(zone_of[cell]) == zone_index - 1:
+				prev_cells.append(cell)
+		var attach := _pick_zone_attachment(rng, cells, prev_cells, max_span)
+		if attach.is_empty():
+			max_span += 4
+			attach = _pick_zone_attachment(rng, cells, prev_cells, max_span)
+		if attach.is_empty():
+			attach = _force_zone_attachment(cells, prev_cells)
+		if attach.is_empty():
+			push_error("MapGenerator: could not attach locked zone %d" % zone_index)
+			break
+
+		var occupied := {}
+		for cell in cells:
+			occupied[cell] = true
+		var grown: Array[Vector2i] = _grow_isolated_zone(
+			rng,
+			attach["to"],
+			wanted,
+			occupied,
+			max_span
+		)
+		for cell in grown:
+			cells.append(cell)
+			zone_of[cell] = zone_index
+
+	# Recompute locks from the final neighbourhood so an extra accidental
+	# abutment cannot bypass a key.
+	locks = _locks_from_zones(cells, zone_of)
+	return {"cells": cells, "zone_of": zone_of, "locks": locks}
+
+
+func _locks_from_zones(cells: Array[Vector2i], zone_of: Dictionary) -> Array[Dictionary]:
+	var locks: Array[Dictionary] = []
+	var seen := {}
+	for cell in cells:
+		var zone := int(zone_of.get(cell, 0))
+		for side in SIDES:
+			var neighbor: Vector2i = cell + SIDE_STEPS[side]
+			if not zone_of.has(neighbor):
+				continue
+			var other := int(zone_of[neighbor])
+			if other <= zone:
+				continue
+			var key := edge_key(cell, neighbor)
+			if seen.has(key):
+				continue
+			seen[key] = true
+			locks.append({
+				"stage": other,
+				"from_cell": cell,
+				"to_cell": neighbor,
+				"side": side,
+			})
+	return locks
+
+
+func _plan_cells_limited(rng: RandomNumberGenerator, count: int, max_span: int) -> Array[Vector2i]:
+	var cells: Array[Vector2i] = [Vector2i.ZERO]
+	var occupied := {Vector2i.ZERO: true}
+	var attempts := count * 40
+	while cells.size() < count and attempts > 0:
+		attempts -= 1
+		var from: Vector2i = cells[rng.randi_range(0, cells.size() - 1)]
+		var side: String = SIDES[rng.randi_range(0, SIDES.size() - 1)]
+		var candidate: Vector2i = from + SIDE_STEPS[side]
+		if occupied.has(candidate):
+			continue
+		if not _fits_span(cells, candidate, max_span):
+			continue
+		occupied[candidate] = true
+		cells.append(candidate)
+
+	var scan := 0
+	while cells.size() < count and scan < cells.size():
+		var from: Vector2i = cells[scan]
+		for side in SIDES:
+			if cells.size() >= count:
+				break
+			var candidate: Vector2i = from + SIDE_STEPS[side]
+			if occupied.has(candidate):
+				continue
+			occupied[candidate] = true
+			cells.append(candidate)
+		scan += 1
+	return cells
+
+
+## New wings may only touch the previous wing at the locked doorway, otherwise
+## the player could walk around the lock.
+func _pick_zone_attachment(
+	rng: RandomNumberGenerator,
+	cells: Array[Vector2i],
+	prev_cells: Array[Vector2i],
+	max_span: int
+) -> Dictionary:
+	var occupied := {}
+	for cell in cells:
+		occupied[cell] = true
+	var candidates: Array[Dictionary] = []
+	var pool: Array[Vector2i] = prev_cells if not prev_cells.is_empty() else cells
+	for from in pool:
+		for side in SIDES:
+			var candidate: Vector2i = from + SIDE_STEPS[side]
+			if occupied.has(candidate):
+				continue
+			if not _fits_span(cells, candidate, max_span):
+				continue
+			if _occupied_neighbor_count(candidate, occupied) != 1:
+				continue
+			candidates.append({"from": from, "to": candidate, "side": side})
+	if candidates.is_empty():
+		return {}
+	return candidates[rng.randi_range(0, candidates.size() - 1)]
+
+
+func _force_zone_attachment(cells: Array[Vector2i], prev_cells: Array[Vector2i]) -> Dictionary:
+	var occupied := {}
+	for cell in cells:
+		occupied[cell] = true
+	var pool: Array[Vector2i] = prev_cells if not prev_cells.is_empty() else cells
+	for from in pool:
+		for side in SIDES:
+			var candidate: Vector2i = from + SIDE_STEPS[side]
+			if occupied.has(candidate):
+				continue
+			if _occupied_neighbor_count(candidate, occupied) != 1:
+				continue
+			return {"from": from, "to": candidate, "side": side}
+	for from in pool:
+		for side in SIDES:
+			var candidate: Vector2i = from + SIDE_STEPS[side]
+			if occupied.has(candidate):
+				continue
+			return {"from": from, "to": candidate, "side": side}
+	return {}
+
+
+func _grow_isolated_zone(
+	rng: RandomNumberGenerator,
+	seed_cell: Vector2i,
+	count: int,
+	foreign: Dictionary,
+	max_span: int
+) -> Array[Vector2i]:
+	var cells: Array[Vector2i] = [seed_cell]
+	var occupied := foreign.duplicate()
+	occupied[seed_cell] = true
+	var all_cells: Array[Vector2i] = []
+	for cell in foreign:
+		all_cells.append(cell)
+	all_cells.append(seed_cell)
+
+	var attempts := count * 60
+	while cells.size() < count and attempts > 0:
+		attempts -= 1
+		var from: Vector2i = cells[rng.randi_range(0, cells.size() - 1)]
+		var side: String = SIDES[rng.randi_range(0, SIDES.size() - 1)]
+		var candidate: Vector2i = from + SIDE_STEPS[side]
+		if occupied.has(candidate):
+			continue
+		if not _fits_span(all_cells, candidate, max_span):
+			continue
+		if _touches_foreign(candidate, foreign, cells):
+			continue
+		occupied[candidate] = true
+		cells.append(candidate)
+		all_cells.append(candidate)
+
+	var scan := 0
+	while cells.size() < count and scan < cells.size():
+		var from: Vector2i = cells[scan]
+		for side in SIDES:
+			if cells.size() >= count:
+				break
+			var candidate: Vector2i = from + SIDE_STEPS[side]
+			if occupied.has(candidate):
+				continue
+			if _touches_foreign(candidate, foreign, cells):
+				continue
+			occupied[candidate] = true
+			cells.append(candidate)
+			all_cells.append(candidate)
+		scan += 1
+
+	# Last resort: walk a corridor away from the existing map so the wing
+	# still reaches the requested room count.
+	var walker := cells[cells.size() - 1]
+	var guard := 0
+	while cells.size() < count and guard < count * 8:
+		guard += 1
+		var placed := false
+		for side in SIDES:
+			var candidate: Vector2i = walker + SIDE_STEPS[side]
+			if occupied.has(candidate):
+				continue
+			if _touches_foreign(candidate, foreign, cells):
+				continue
+			occupied[candidate] = true
+			cells.append(candidate)
+			walker = candidate
+			placed = true
+			break
+		if not placed:
+			walker += Vector2i(0, 1)
+	return cells
+
+
+func _occupied_neighbor_count(cell: Vector2i, occupied: Dictionary) -> int:
+	var n := 0
+	for side in SIDES:
+		if occupied.has(cell + SIDE_STEPS[side]):
+			n += 1
+	return n
+
+
+func _touches_foreign(candidate: Vector2i, foreign: Dictionary, zone_cells: Array[Vector2i]) -> bool:
+	var zone := {}
+	for cell in zone_cells:
+		zone[cell] = true
+	for side in SIDES:
+		var neighbor: Vector2i = candidate + SIDE_STEPS[side]
+		if foreign.has(neighbor) and not zone.has(neighbor):
+			return true
+	return false
 
 
 func _fits_span(cells: Array[Vector2i], candidate: Vector2i, max_span: int) -> bool:
@@ -423,8 +698,9 @@ static func find_child_by_name(root: Node, node_name: String) -> Node:
 
 ## Graph of room centres linked through the centre of every interior doorway.
 ## Each node stores cardinal exits (`left` / `right` / `up` / `down`) so the
-## monster can roll a turn at intersections.
-func build_monster_track(rooms: Array, occupied: Dictionary) -> Dictionary:
+## monster can roll a turn at intersections. Locked edges are omitted until
+## `add_unlocked_door_to_track` stitches them in.
+func build_monster_track(rooms: Array, occupied: Dictionary, locked_edges: Dictionary = {}) -> Dictionary:
 	var nodes := {}
 	for room in rooms:
 		var cell: Vector2i = room["cell"]
@@ -443,6 +719,8 @@ func build_monster_track(rooms: Array, occupied: Dictionary) -> Dictionary:
 			var neighbor: Vector2i = cell + SIDE_STEPS[side]
 			if not occupied.has(neighbor):
 				continue
+			if locked_edges.has(edge_key(cell, neighbor)):
+				continue
 			var door_id := door_track_id(cell, side)
 			nodes[door_id] = {
 				"id": door_id,
@@ -458,7 +736,37 @@ func build_monster_track(rooms: Array, occupied: Dictionary) -> Dictionary:
 	return {"nodes": nodes}
 
 
-func _link_track_nodes(nodes: Dictionary, a_id: String, b_id: String) -> void:
+static func edge_key(a: Vector2i, b: Vector2i) -> String:
+	if a.x < b.x or (a.x == b.x and a.y <= b.y):
+		return "%d:%d|%d:%d" % [a.x, a.y, b.x, b.y]
+	return "%d:%d|%d:%d" % [b.x, b.y, a.x, a.y]
+
+
+## Opens a previously locked doorway on an existing track so patrols can cross.
+static func add_unlocked_door_to_track(track: Dictionary, from_cell: Vector2i, side: String, to_cell: Vector2i) -> String:
+	var nodes: Dictionary = track.get("nodes", {})
+	var cell := from_cell
+	var canon_side := side
+	if not TRACK_CANONICAL_SIDES.has(side):
+		cell = to_cell
+		canon_side = String(OPPOSITE_SIDE.get(side, "E"))
+	var door_id := door_track_id(cell, canon_side)
+	if not nodes.has(door_id):
+		nodes[door_id] = {
+			"id": door_id,
+			"kind": "door",
+			"cell": cell,
+			"side": canon_side,
+			"position": door_track_position(cell, canon_side),
+			"exits": {},
+		}
+	_link_track_nodes(nodes, room_track_id(from_cell), door_id)
+	_link_track_nodes(nodes, door_id, room_track_id(to_cell))
+	track["nodes"] = nodes
+	return door_id
+
+
+static func _link_track_nodes(nodes: Dictionary, a_id: String, b_id: String) -> void:
 	if not nodes.has(a_id) or not nodes.has(b_id):
 		return
 	var from_pos: Vector3 = nodes[a_id]["position"]
@@ -527,12 +835,41 @@ func _open_exterior_exit(
 	return {"cell": best["cell"], "side": best["side"]}
 
 
+func _add_locked_doors(container: Node3D, layout: Dictionary) -> void:
+	var locks: Array = layout.get("locks", [])
+	if locks.is_empty():
+		return
+	var root := Node3D.new()
+	root.name = "LockedDoors"
+	container.add_child(root)
+	for spec in locks:
+		var door := LockedDoor.new()
+		door.name = "LockedDoor_%d_%d_%d" % [int(spec.get("stage", 1)), from_cell.x, from_cell.y]
+		var from_cell: Vector2i = spec["from_cell"]
+		var to_cell: Vector2i = spec["to_cell"]
+		var side: String = spec["side"]
+		var size := _door_size_for_side(side)
+		door.position = (cell_to_world(from_cell) + cell_to_world(to_cell)) * 0.5
+		root.add_child(door)
+		door.configure(int(spec.get("stage", 1)), from_cell, to_cell, side, size)
+		spec["position"] = door.global_position if door.is_inside_tree() else door.position
+		spec["node_name"] = door.name
+
+
+func _door_size_for_side(side: String) -> Vector3:
+	if side == "E" or side == "W":
+		return Vector3(0.42, 2.3, 3.5)
+	return Vector3(3.5, 2.3, 0.42)
+
+
 func _describe_layout(
 	rooms: Array[Dictionary],
 	cells: Array[Vector2i],
 	start_cell: Vector2i,
 	exit_info: Dictionary,
-	level_seed: int
+	level_seed: int,
+	level: int = 1,
+	planned: Dictionary = {}
 ) -> Dictionary:
 	var min_cell := start_cell
 	var max_cell := start_cell
@@ -544,42 +881,43 @@ func _describe_layout(
 
 	var exit_cell: Vector2i = exit_info.get("cell", start_cell)
 	var exit_side: String = exit_info.get("side", "")
+	var zone_of: Dictionary = planned.get("zone_of", {})
+	if zone_of.is_empty():
+		for cell in cells:
+			zone_of[cell] = 0
+	var locks: Array = planned.get("locks", []).duplicate(true)
+	var last_zone := 0
+	for cell in zone_of:
+		last_zone = maxi(last_zone, int(zone_of[cell]))
 
-	# The objective goes as far from the exit as the layout allows, so grabbing it
-	# always means a trek back. Distance from the spawn breaks ties.
-	var objective_cell := start_cell
-	var best_score := -1
-	for cell in cells:
-		if cells.size() > 2 and (cell == start_cell or cell == exit_cell):
-			continue
-		var from_exit := absi(cell.x - exit_cell.x) + absi(cell.y - exit_cell.y)
-		var from_start := absi(cell.x - start_cell.x) + absi(cell.y - start_cell.y)
-		var score := from_exit * 100 + from_start
-		if score > best_score:
-			best_score = score
-			objective_cell = cell
+	# Mission item lives in the deepest wing. On level 1 that is simply the
+	# room furthest from the exit; on later levels it is the last locked zone.
+	var last_zone_cells := _cells_in_zone(cells, zone_of, last_zone)
+	var objective_cell := _pick_item_cell(last_zone_cells, start_cell, exit_cell, {})
 
-	# The original monster starts between the two so it has ground to cover either way.
-	var objective_span := (
-		absi(objective_cell.x - start_cell.x) + absi(objective_cell.y - start_cell.y)
-	)
-	var monster_cell := objective_cell
-	var target_distance := maxi(objective_span / 2, 1)
-	var closest := 1 << 30
-	for cell in cells:
-		if cell == start_cell:
-			continue
-		var distance := absi(cell.x - start_cell.x) + absi(cell.y - start_cell.y)
-		var delta := absi(distance - target_distance)
-		if delta < closest:
-			closest = delta
-			monster_cell = cell
+	var key_specs: Array[Dictionary] = []
+	var reserved := {start_cell: true, exit_cell: true, objective_cell: true}
+	for lock in locks:
+		var stage := int(lock.get("stage", 1))
+		var key_zone := stage - 1
+		var key_cells := _cells_in_zone(cells, zone_of, key_zone)
+		var avoid := reserved.duplicate()
+		avoid[lock["from_cell"]] = true
+		avoid[lock["to_cell"]] = true
+		var key_cell := _pick_item_cell(key_cells, start_cell, lock["from_cell"], avoid)
+		reserved[key_cell] = true
+		lock["key_cell"] = key_cell
+		key_specs.append({
+			"stage": stage,
+			"cell": key_cell,
+			"position": cell_to_world(key_cell) + Vector3(0.0, 0.05, 0.0),
+			"zone": key_zone,
+		})
 
-	var slime_cell := _pick_spawn_cell(cells, {start_cell: true, monster_cell: true}, start_cell, true)
-	var tank_forbidden := {start_cell: true, monster_cell: true, slime_cell: true}
-	var tank_cell := _pick_spawn_cell(cells, tank_forbidden, objective_cell, true)
-	if tank_cell == start_cell:
-		tank_cell = objective_cell
+	var enemies := _place_enemy_roster(cells, start_cell, objective_cell, zone_of, level)
+	var slime_cell := _first_enemy_cell(enemies, LevelRules.KIND_SLIME, start_cell)
+	var monster_cell := _first_enemy_cell(enemies, LevelRules.KIND_HARE, objective_cell)
+	var tank_cell := _first_enemy_cell(enemies, LevelRules.KIND_TANK, objective_cell)
 
 	var start_center := cell_to_world(start_cell)
 	var exit_position := cell_to_world(exit_cell)
@@ -589,19 +927,25 @@ func _describe_layout(
 
 	var room_summaries: Array[Dictionary] = []
 	for room in rooms:
+		var cell: Vector2i = room["cell"]
 		room_summaries.append({
 			"index": room["index"],
-			"cell": room["cell"],
+			"cell": cell,
 			"type": room["type"],
 			"center": room["center"],
+			"zone": int(zone_of.get(cell, 0)),
 		})
 
 	var occupied := {}
 	for cell in cells:
 		occupied[cell] = true
+	var locked_edges := {}
+	for lock in locks:
+		locked_edges[edge_key(lock["from_cell"], lock["to_cell"])] = true
 
 	return {
 		"seed": level_seed,
+		"level": level,
 		"rooms": room_summaries,
 		"start_cell": start_cell,
 		"start": start_center + Vector3(0.0, 0.05, 0.0),
@@ -616,7 +960,12 @@ func _describe_layout(
 		"slime_cell": slime_cell,
 		"tank": cell_to_world(tank_cell) + Vector3(0.0, 0.05, 0.0),
 		"tank_cell": tank_cell,
-		"monster_track": build_monster_track(rooms, occupied),
+		"enemies": enemies,
+		"keys": key_specs,
+		"locks": locks,
+		"zones": zone_of,
+		"objectives": LevelRules.objectives(level),
+		"monster_track": build_monster_track(rooms, occupied, locked_edges),
 		"bounds": AABB(
 			Vector3(float(min_cell.x) * TILE - TILE * 0.5, 0.0, float(min_cell.y) * TILE - TILE * 0.5),
 			Vector3(
@@ -626,6 +975,96 @@ func _describe_layout(
 			)
 		),
 	}
+
+
+func _cells_in_zone(cells: Array[Vector2i], zone_of: Dictionary, zone: int) -> Array[Vector2i]:
+	var out: Array[Vector2i] = []
+	for cell in cells:
+		if int(zone_of.get(cell, 0)) == zone:
+			out.append(cell)
+	return out if not out.is_empty() else cells
+
+
+func _pick_item_cell(
+	candidates: Array,
+	start_cell: Vector2i,
+	away_from: Vector2i,
+	forbidden: Dictionary
+) -> Vector2i:
+	var best: Vector2i = start_cell
+	var found := false
+	var best_score := -1
+	for cell in candidates:
+		if forbidden.has(cell):
+			continue
+		if cell == start_cell and candidates.size() > 1:
+			continue
+		var from_away := absi(cell.x - away_from.x) + absi(cell.y - away_from.y)
+		var from_start := absi(cell.x - start_cell.x) + absi(cell.y - start_cell.y)
+		var score := from_away * 100 + from_start
+		if not found or score > best_score:
+			best = cell
+			best_score = score
+			found = true
+	if found:
+		return best
+	for cell in candidates:
+		if cell != start_cell:
+			return cell
+	return candidates[0] if not candidates.is_empty() else start_cell
+
+
+func _place_enemy_roster(
+	cells: Array[Vector2i],
+	start_cell: Vector2i,
+	objective_cell: Vector2i,
+	zone_of: Dictionary,
+	level: int
+) -> Array[Dictionary]:
+	var kinds := LevelRules.monster_kinds(level)
+	var last_zone := 0
+	for cell in zone_of:
+		last_zone = maxi(last_zone, int(zone_of[cell]))
+	var forbidden := {start_cell: true}
+	var enemies: Array[Dictionary] = []
+	for kind in kinds:
+		var pool: Array[Vector2i] = cells
+		var near := true
+		var anchor := start_cell
+		match kind:
+			LevelRules.KIND_SLIME:
+				pool = _cells_in_zone(cells, zone_of, 0)
+				near = true
+				anchor = start_cell
+			LevelRules.KIND_HARE:
+				var mid_zone := last_zone / 2
+				pool = _cells_in_zone(cells, zone_of, mid_zone)
+				near = false
+				anchor = start_cell
+			LevelRules.KIND_TANK:
+				pool = _cells_in_zone(cells, zone_of, last_zone)
+				near = true
+				anchor = objective_cell
+			_:
+				push_error("MapGenerator: unknown monster kind '%s'" % kind)
+		var cell := _pick_spawn_cell(pool, forbidden, anchor, near)
+		if forbidden.has(cell) or cell == start_cell:
+			cell = _pick_spawn_cell(cells, forbidden, objective_cell, true)
+		forbidden[cell] = true
+		enemies.append({
+			"kind": kind,
+			"cell": cell,
+			"position": cell_to_world(cell) + Vector3(0.0, 0.05, 0.0),
+			"zone": int(zone_of.get(cell, 0)),
+		})
+	return enemies
+
+
+func _first_enemy_cell(enemies: Array, kind: String, fallback: Vector2i) -> Vector2i:
+	for spec in enemies:
+		if String(spec.get("kind", "")) == kind:
+			return spec["cell"]
+	return fallback
 
 
 ## Picks a leftover room. `near_anchor` prefers the closest unused cell to
