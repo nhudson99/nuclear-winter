@@ -293,7 +293,6 @@ func _check_live_level_2() -> bool:
 	var player: CharacterBody3D = main.get_node("Player")
 	if main.has_method("park_monsters"):
 		main.park_monsters()
-	player.set_physics_process(false)
 
 	var lock: Dictionary = (layout.get("locks", []) as Array)[0]
 	var from_cell: Vector2i = lock["from_cell"]
@@ -301,6 +300,7 @@ func _check_live_level_2() -> bool:
 	var from_center := MapGenerator.cell_to_world(from_cell)
 	var to_center := MapGenerator.cell_to_world(to_cell)
 	var walk_dir := (to_center - from_center).normalized()
+	player.set_physics_process(false)
 	await _walk_from(player, from_center, walk_dir, WALK_STEPS)
 	var blocked := _planar(player.global_position, to_center) > MapGenerator.TILE * 0.5
 	print("live_blocked_ok=", blocked, " dist=", _planar(player.global_position, to_center))
@@ -311,7 +311,9 @@ func _check_live_level_2() -> bool:
 		main.queue_free()
 		OS.set_environment("NW_LEVEL", "")
 		return false
-	player.global_position = key.global_position + Vector3(0.8, 0.0, 0.0)
+	player.set_physics_process(true)
+	player.global_position = key.global_position + Vector3(0.8, 0.05, 0.0)
+	player.velocity = Vector3.ZERO
 	await create_timer(0.05).timeout
 	Input.action_press("interact")
 	await create_timer(0.05).timeout
@@ -326,13 +328,16 @@ func _check_live_level_2() -> bool:
 			unlocked = false
 	print("live_key_taken=", key_taken, " unlocked=", unlocked)
 
+	player.set_physics_process(false)
 	await _walk_from(player, from_center, walk_dir, WALK_STEPS)
 	var opened := _planar(player.global_position, to_center) < MapGenerator.TILE * 0.5
 	print("live_opened_ok=", opened, " dist=", _planar(player.global_position, to_center))
 
 	var mission: Area3D = main.get_node_or_null("PickupItem")
 	if mission:
-		player.global_position = mission.global_position + Vector3(0.8, 0.0, 0.0)
+		player.set_physics_process(true)
+		player.global_position = mission.global_position + Vector3(0.8, 0.05, 0.0)
+		player.velocity = Vector3.ZERO
 		await create_timer(0.05).timeout
 		Input.action_press("interact")
 		await create_timer(0.05).timeout

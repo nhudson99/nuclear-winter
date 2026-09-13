@@ -208,7 +208,6 @@ func _place_enemy_roster(layout: Dictionary) -> void:
 			continue
 		_place_enemy(leftover, layout.get("start", Vector3.ZERO), layout)
 		leftover.set_physics_process(false)
-		leftover.touch_damage = 0.0
 		leftover.visible = false
 		leftover.global_position += Vector3(200.0, 0.0, 200.0)
 
