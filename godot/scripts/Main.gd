@@ -48,6 +48,9 @@ var _hare_serial: int = 1
 var _tank_serial: int = 1
 var _resolved_level: int = 1
 var _collected_keys: Dictionary = {}
+var _used_seed: int = 0
+var _used_rooms: int = 9
+var _active_floor: int = 0
 
 func _ready() -> void:
 	camera.projection = Camera3D.PROJECTION_ORTHOGONAL
@@ -86,8 +89,23 @@ func get_play_level() -> int:
 	return _resolved_level
 
 
+func get_active_floor() -> int:
+	return _active_floor
+
+
 func unlock_stage(stage: int) -> void:
 	_on_key_collected(stage)
+
+
+func stairwells() -> Array[Stairwell]:
+	var out: Array[Stairwell] = []
+	var root := map_root.get_node_or_null("Stairwells") if map_root else null
+	if root == null:
+		return out
+	for child in root.get_children():
+		if child is Stairwell:
+			out.append(child)
+	return out
 
 
 func locked_doors() -> Array[LockedDoor]:
@@ -127,13 +145,14 @@ func _build_level() -> void:
 	add_child(generator)
 	generator.progress.connect(_loading.set_progress)
 
-	var used_seed := level_seed if level_seed != 0 else randi()
+	_used_seed = level_seed if level_seed != 0 else randi()
 	var seed_override := OS.get_environment("NW_LEVEL_SEED")
 	if seed_override.is_valid_int():
-		used_seed = int(seed_override)
+		_used_seed = int(seed_override)
 	_resolved_level = resolve_play_level()
-	var used_rooms := room_count if room_count > 0 else LevelRules.room_count(_resolved_level)
-	_layout = await generator.generate(map_root, used_seed, used_rooms, _resolved_level)
+	_used_rooms = room_count if room_count > 0 else LevelRules.room_count(_resolved_level)
+	_active_floor = 0
+	_layout = await generator.generate(map_root, _used_seed, _used_rooms, _resolved_level, _active_floor)
 	generator.queue_free()
 	_apply_layout(_layout)
 	_apply_preview_overrides()
@@ -152,8 +171,13 @@ func _build_level() -> void:
 		set_monsters_processing(true)
 	level_ready.emit(_layout)
 
-func _apply_layout(layout: Dictionary) -> void:
-	player.global_position = layout.get("start", Vector3.ZERO)
+func _apply_layout(layout: Dictionary, arrival_cell = null) -> void:
+	if arrival_cell != null:
+		player.global_position = _arrival_position(layout, arrival_cell)
+	elif int(layout.get("active_floor", 0)) == 0:
+		player.global_position = layout.get("start", Vector3.ZERO)
+	else:
+		player.global_position = _arrival_position(layout, null)
 	player.velocity = Vector3.ZERO
 
 	_place_enemy_roster(layout)
@@ -161,10 +185,26 @@ func _apply_layout(layout: Dictionary) -> void:
 
 	var exit_zone := get_node_or_null("ExitZone") as Node3D
 	if exit_zone:
-		exit_zone.global_position = layout.get("exit", Vector3.ZERO)
+		if int(layout.get("active_floor", 0)) == 0:
+			exit_zone.global_position = layout.get("exit", Vector3.ZERO)
+			exit_zone.visible = true
+		else:
+			exit_zone.global_position = Vector3(200.0, 0.0, 200.0)
+			exit_zone.visible = false
 
+	_apply_collected_keys()
 	_refresh_objective_hud()
 	_snap_camera()
+
+
+func _arrival_position(layout: Dictionary, arrival_cell) -> Vector3:
+	for spec in layout.get("stairs", []):
+		if arrival_cell != null and spec.get("cell") != arrival_cell:
+			continue
+		if int(spec.get("floor", -1)) != int(layout.get("active_floor", 0)):
+			continue
+		return spec.get("position", layout.get("start", Vector3.ZERO))
+	return layout.get("start", Vector3.ZERO)
 
 
 func _place_enemy_roster(layout: Dictionary) -> void:
@@ -185,7 +225,10 @@ func _place_enemy_roster(layout: Dictionary) -> void:
 		_place_enemy(tank, layout.get("tank", Vector3.ZERO), layout)
 		return
 
+	var active := int(layout.get("active_floor", _active_floor))
 	for spec in roster:
+		if spec.has("floor") and int(spec.get("floor", 0)) != active:
+			continue
 		var kind := String(spec.get("kind", LevelRules.KIND_SLIME))
 		var template: CharacterBody3D = templates.get(kind, slime)
 		if template == null:
@@ -229,16 +272,31 @@ func _next_enemy_name(kind: String) -> String:
 
 func _place_objectives(layout: Dictionary) -> void:
 	var mission := get_node_or_null("PickupItem") as Area3D
+	var active := int(layout.get("active_floor", _active_floor))
 	if mission:
 		if mission.has_method("configure"):
 			mission.configure(PickupItem.Kind.MISSION)
-		mission.global_position = layout.get("objective", Vector3.ZERO)
+		var mission_here := (
+			int(layout.get("objective_floor", 0)) == active
+			and (player == null or not player.has_collected_item())
+		)
+		if mission_here:
+			mission.visible = true
+			mission.global_position = layout.get("objective", Vector3.ZERO)
+		else:
+			mission.visible = false
+			mission.global_position = Vector3(200.0, 0.0, 200.0)
 
 	for spec in layout.get("keys", []):
+		var stage := int(spec.get("stage", 1))
+		if _collected_keys.has(stage):
+			continue
+		if int(spec.get("floor", 0)) != active:
+			continue
 		var key := _make_key_pickup(mission)
-		key.name = "Key_%d" % int(spec.get("stage", 1))
+		key.name = "Key_%d" % stage
 		if key.has_method("configure"):
-			key.configure(PickupItem.Kind.KEY, int(spec.get("stage", 1)))
+			key.configure(PickupItem.Kind.KEY, stage)
 		add_child(key)
 		key.global_position = spec.get("position", Vector3.ZERO)
 
@@ -255,6 +313,7 @@ func _make_key_pickup(template: Area3D) -> Area3D:
 func _place_enemy(body: CharacterBody3D, where: Vector3, layout: Dictionary) -> void:
 	if body == null:
 		return
+	body.visible = true
 	body.global_position = where
 	body.velocity = Vector3.ZERO
 	if body.has_method("configure_level"):
@@ -393,6 +452,8 @@ func _wire_game_loop() -> void:
 		player.item_collected.connect(_on_item_collected)
 	if player.has_signal("key_collected") and not player.key_collected.is_connected(_on_key_collected):
 		player.key_collected.connect(_on_key_collected)
+	if player.has_signal("stair_used") and not player.stair_used.is_connected(_on_stair_used):
+		player.stair_used.connect(_on_stair_used)
 	var exit_zone := get_node_or_null("ExitZone")
 	if exit_zone and exit_zone.has_signal("player_escaped"):
 		if not exit_zone.player_escaped.is_connected(_on_player_escaped):
@@ -457,15 +518,25 @@ func _unlock_door(stage: int) -> void:
 		for child in doors_root.get_children():
 			if child is LockedDoor and (child as LockedDoor).stage == stage:
 				(child as LockedDoor).unlock()
+	var stairs_root := map_root.get_node_or_null("Stairwells")
+	if stairs_root:
+		for child in stairs_root.get_children():
+			if child is Stairwell and (child as Stairwell).required_stage == stage:
+				(child as Stairwell).unlock()
 	var track: Dictionary = _layout.get("monster_track", {})
+	var floor_of: Dictionary = _layout.get("floors", {})
 	for spec in _layout.get("locks", []):
 		if int(spec.get("stage", 0)) != stage:
 			continue
+		if String(spec.get("kind", MapGenerator.LOCK_KIND_WING)) == MapGenerator.LOCK_KIND_STAIR:
+			continue
+		var door_floor := int(floor_of.get(spec["from_cell"], _active_floor))
 		MapGenerator.add_unlocked_door_to_track(
 			track,
 			spec["from_cell"],
 			String(spec.get("side", "E")),
-			spec["to_cell"]
+			spec["to_cell"],
+			door_floor
 		)
 		_layout["monster_track"] = track
 		break
@@ -474,11 +545,80 @@ func _unlock_door(stage: int) -> void:
 			body.apply_monster_track(track)
 
 
+func _apply_collected_keys() -> void:
+	for stage in _collected_keys:
+		_unlock_door(int(stage))
+
+
+func _on_stair_used(stair: Node) -> void:
+	if _state != GameState.PLAYING:
+		return
+	if stair == null or not (stair is Stairwell):
+		return
+	await change_floor((stair as Stairwell).dest_floor, (stair as Stairwell).dest_cell)
+
+
+func change_floor(dest_floor: int, dest_cell: Vector2i) -> void:
+	if dest_floor == _active_floor and dest_cell == Vector2i.ZERO:
+		return
+	var playing := _state == GameState.PLAYING
+	if playing:
+		if player and player.has_method("lock_input"):
+			player.lock_input()
+		set_monsters_processing(false)
+	await _instantiate_floor(dest_floor, dest_cell)
+	if playing:
+		if player and player.has_method("unlock_input"):
+			player.unlock_input()
+		if OS.get_environment("NW_PREVIEW_PLAYER") != "1":
+			set_monsters_processing(true)
+
+
+func _instantiate_floor(dest_floor: int, dest_cell: Vector2i) -> void:
+	_clear_generated_map()
+	_clear_dynamic_combatants()
+	await get_tree().process_frame
+	var generator := MapGenerator.new()
+	generator.name = "MapGenerator"
+	add_child(generator)
+	_layout = await generator.generate(
+		map_root, _used_seed, _used_rooms, _resolved_level, dest_floor
+	)
+	generator.queue_free()
+	_active_floor = dest_floor
+	_apply_layout(_layout, dest_cell)
+
+
+func _clear_generated_map() -> void:
+	if map_root == null:
+		return
+	for child in map_root.get_children():
+		child.queue_free()
+
+
+func _clear_dynamic_combatants() -> void:
+	for body in monsters():
+		if body == monster or body == slime or body == tank:
+			continue
+		if is_instance_valid(body):
+			body.queue_free()
+	for node in get_tree().get_nodes_in_group("pickup"):
+		if node == null or not is_instance_valid(node):
+			continue
+		if String(node.name) == "PickupItem":
+			continue
+		node.queue_free()
+
+
 func _refresh_objective_hud() -> void:
 	if _objective_label == null:
 		return
 	var lines: PackedStringArray = []
-	lines.append("LEVEL %d" % _resolved_level)
+	var floors := int(_layout.get("floor_count", 1))
+	if floors > 1:
+		lines.append("LEVEL %d  FLOOR %d/%d" % [_resolved_level, _active_floor + 1, floors])
+	else:
+		lines.append("LEVEL %d" % _resolved_level)
 	for spec in _layout.get("objectives", LevelRules.objectives(_resolved_level)):
 		var kind := String(spec.get("kind", ""))
 		var done := false

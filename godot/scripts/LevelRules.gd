@@ -23,6 +23,10 @@ const LEVEL_1_ROOMS := 9
 const START_ZONE_ROOMS := 6
 ## Each extra objective is one more locked wing.
 const LOCKED_ZONE_ROOMS := 5
+## Higher levels stack wings onto separate floors so only one storey is live.
+const MAX_WINGS_PER_FLOOR := 2
+const TYPE_STAIR_UP := "stairwell_up"
+const TYPE_STAIR_DOWN := "stairwell_down"
 
 
 static func clamp_level(level: int) -> int:
@@ -98,6 +102,36 @@ static func zone_room_counts(level: int) -> Array[int]:
 	for _i in range(n - 1):
 		zones.append(LOCKED_ZONE_ROOMS)
 	return zones
+
+
+static func floor_count(level: int) -> int:
+	return int(ceili(float(zone_count(level)) / float(MAX_WINGS_PER_FLOOR)))
+
+
+static func floor_for_zone(zone: int) -> int:
+	return maxi(zone, 0) / MAX_WINGS_PER_FLOOR
+
+
+static func zones_on_floor(level: int, floor: int) -> Array[int]:
+	var out: Array[int] = []
+	var total := zone_count(level)
+	var start := floor * MAX_WINGS_PER_FLOOR
+	for zone in range(start, mini(start + MAX_WINGS_PER_FLOOR, total)):
+		out.append(zone)
+	return out
+
+
+static func floor_has_up_stair(level: int, floor: int) -> bool:
+	return floor >= 0 and floor < floor_count(level) - 1
+
+
+static func floor_has_down_stair(level: int, floor: int) -> bool:
+	return floor > 0 and floor < floor_count(level)
+
+
+## Higher levels scatter the roster instead of parking each kind on a fixed cell.
+static func randomize_monster_spawns(level: int) -> bool:
+	return clamp_level(level) >= 2
 
 
 ## n objectives: key 1..n-1 (if any), then the mission item.
