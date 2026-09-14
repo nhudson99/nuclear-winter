@@ -5,17 +5,21 @@ extends RefCounted
 ## check the formulas without booting a map.
 ##
 ## Monsters cycle easy → moderate → dangerous as the level index grows:
-##   n=1 slime, n=2 slime+hare, n=3 slime+hare+tank, n=4 two slimes + hare + tank…
+##   n=1 slime, n=2 slime+hare, n=3 slime+hare+tank, n=4 …+tarantula, n=5 …+widow…
 ## Objectives: one mission item, plus (n-1) keys that each open the next locked
 ## wing of rooms. The mission item sits in the last locked wing.
 
 const KIND_SLIME := "slime"
 const KIND_HARE := "hare"
 const KIND_TANK := "tank"
+const KIND_TARANTULA := "tarantula"
+const KIND_WIDOW := "widow"
 const KIND_MISSION := "mission"
 const KIND_KEY := "key"
 
-const MONSTER_CYCLE: Array[String] = [KIND_SLIME, KIND_HARE, KIND_TANK]
+const MONSTER_CYCLE: Array[String] = [
+	KIND_SLIME, KIND_HARE, KIND_TANK, KIND_TARANTULA, KIND_WIDOW
+]
 
 ## Level 1 keeps the current nine-room mansion.
 const LEVEL_1_ROOMS := 9
@@ -33,26 +37,37 @@ static func clamp_level(level: int) -> int:
 	return maxi(level, 1)
 
 
-static func slime_count(level: int) -> int:
+static func kind_count(kind: String, level: int) -> int:
 	var n := clamp_level(level)
-	return int(ceili(float(n) / 3.0))
+	var count := 0
+	var cycle_size := MONSTER_CYCLE.size()
+	for i in n:
+		if MONSTER_CYCLE[i % cycle_size] == kind:
+			count += 1
+	return count
+
+
+static func slime_count(level: int) -> int:
+	return kind_count(KIND_SLIME, level)
 
 
 static func hare_count(level: int) -> int:
-	var n := clamp_level(level)
-	if n < 2:
-		return 0
-	return int(ceili(float(n - 1) / 3.0))
+	return kind_count(KIND_HARE, level)
 
 
 static func tank_count(level: int) -> int:
-	var n := clamp_level(level)
-	if n < 3:
-		return 0
-	return int(ceili(float(n - 2) / 3.0))
+	return kind_count(KIND_TANK, level)
 
 
-## One kind per spawned monster, in cycle order: slime, hare, tank, slime…
+static func tarantula_count(level: int) -> int:
+	return kind_count(KIND_TARANTULA, level)
+
+
+static func widow_count(level: int) -> int:
+	return kind_count(KIND_WIDOW, level)
+
+
+## One kind per spawned monster, in cycle order: slime, hare, tank, tarantula, widow…
 static func monster_kinds(level: int) -> Array[String]:
 	var n := clamp_level(level)
 	var kinds: Array[String] = []
@@ -66,6 +81,8 @@ static func monster_counts(level: int) -> Dictionary:
 		KIND_SLIME: slime_count(level),
 		KIND_HARE: hare_count(level),
 		KIND_TANK: tank_count(level),
+		KIND_TARANTULA: tarantula_count(level),
+		KIND_WIDOW: widow_count(level),
 	}
 
 
@@ -160,22 +177,22 @@ static func _key_label(stage: int, total_keys: int) -> String:
 
 static func counts_match_cycle(level: int) -> bool:
 	var kinds := monster_kinds(level)
-	var slimes := 0
-	var hares := 0
-	var tanks := 0
+	var counted := {
+		KIND_SLIME: 0,
+		KIND_HARE: 0,
+		KIND_TANK: 0,
+		KIND_TARANTULA: 0,
+		KIND_WIDOW: 0,
+	}
 	for kind in kinds:
-		match kind:
-			KIND_SLIME:
-				slimes += 1
-			KIND_HARE:
-				hares += 1
-			KIND_TANK:
-				tanks += 1
-			_:
-				return false
+		if not counted.has(kind):
+			return false
+		counted[kind] += 1
 	return (
-		slimes == slime_count(level)
-		and hares == hare_count(level)
-		and tanks == tank_count(level)
+		int(counted[KIND_SLIME]) == slime_count(level)
+		and int(counted[KIND_HARE]) == hare_count(level)
+		and int(counted[KIND_TANK]) == tank_count(level)
+		and int(counted[KIND_TARANTULA]) == tarantula_count(level)
+		and int(counted[KIND_WIDOW]) == widow_count(level)
 		and kinds.size() == clamp_level(level)
 	)

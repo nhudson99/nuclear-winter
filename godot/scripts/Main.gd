@@ -25,6 +25,8 @@ const SLIME_SPLIT_SPREAD := 0.6
 @onready var monster: CharacterBody3D = $Monster
 @onready var slime: CharacterBody3D = get_node_or_null("Slime")
 @onready var tank: CharacterBody3D = get_node_or_null("Tank")
+@onready var tarantula: CharacterBody3D = get_node_or_null("Tarantula")
+@onready var widow: CharacterBody3D = get_node_or_null("Widow")
 
 @export var camera_distance: float = 22.0
 @export var camera_height: float = 22.0
@@ -46,6 +48,8 @@ var _loading: CanvasLayer
 var _slime_serial: int = 1
 var _hare_serial: int = 1
 var _tank_serial: int = 1
+var _tarantula_serial: int = 1
+var _widow_serial: int = 1
 var _resolved_level: int = 1
 var _collected_keys: Dictionary = {}
 var _used_seed: int = 0
@@ -213,16 +217,22 @@ func _place_enemy_roster(layout: Dictionary) -> void:
 		LevelRules.KIND_SLIME: slime,
 		LevelRules.KIND_HARE: monster,
 		LevelRules.KIND_TANK: tank,
+		LevelRules.KIND_TARANTULA: tarantula,
+		LevelRules.KIND_WIDOW: widow,
 	}
 	var used := {
 		LevelRules.KIND_SLIME: false,
 		LevelRules.KIND_HARE: false,
 		LevelRules.KIND_TANK: false,
+		LevelRules.KIND_TARANTULA: false,
+		LevelRules.KIND_WIDOW: false,
 	}
 	if roster.is_empty():
 		_place_enemy(monster, layout.get("monster", Vector3.ZERO), layout)
 		_place_enemy(slime, layout.get("slime", Vector3.ZERO), layout)
 		_place_enemy(tank, layout.get("tank", Vector3.ZERO), layout)
+		_place_enemy(tarantula, layout.get("tarantula", Vector3.ZERO), layout)
+		_place_enemy(widow, layout.get("widow", Vector3.ZERO), layout)
 		return
 
 	var active := int(layout.get("active_floor", _active_floor))
@@ -266,8 +276,16 @@ func _next_enemy_name(kind: String) -> String:
 		LevelRules.KIND_TANK:
 			_tank_serial += 1
 			return "Tank_%d" % _tank_serial
+		LevelRules.KIND_TARANTULA:
+			_tarantula_serial += 1
+			return "Tarantula_%d" % _tarantula_serial
+		LevelRules.KIND_WIDOW:
+			_widow_serial += 1
+			return "Widow_%d" % _widow_serial
 		_:
-			return "Enemy_%d" % (_slime_serial + _hare_serial + _tank_serial)
+			return "Enemy_%d" % (
+				_slime_serial + _hare_serial + _tank_serial + _tarantula_serial + _widow_serial
+			)
 
 
 func _place_objectives(layout: Dictionary) -> void:
@@ -598,7 +616,7 @@ func _clear_generated_map() -> void:
 
 func _clear_dynamic_combatants() -> void:
 	for body in monsters():
-		if body == monster or body == slime or body == tank:
+		if body == monster or body == slime or body == tank or body == tarantula or body == widow:
 			continue
 		if is_instance_valid(body):
 			body.queue_free()

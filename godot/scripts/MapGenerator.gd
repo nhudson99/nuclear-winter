@@ -1173,6 +1173,8 @@ func _describe_layout(
 	var slime_cell := _first_enemy_cell(enemies, LevelRules.KIND_SLIME, start_cell)
 	var monster_cell := _first_enemy_cell(enemies, LevelRules.KIND_HARE, objective_cell)
 	var tank_cell := _first_enemy_cell(enemies, LevelRules.KIND_TANK, objective_cell)
+	var tarantula_cell := _first_enemy_cell(enemies, LevelRules.KIND_TARANTULA, objective_cell)
+	var widow_cell := _first_enemy_cell(enemies, LevelRules.KIND_WIDOW, objective_cell)
 
 	var start_center := _world_of(start_cell, floor_of)
 	var exit_position := _world_of(exit_cell, floor_of)
@@ -1251,6 +1253,10 @@ func _describe_layout(
 		"slime_cell": slime_cell,
 		"tank": _world_of(tank_cell, floor_of) + Vector3(0.0, 0.05, 0.0),
 		"tank_cell": tank_cell,
+		"tarantula": _world_of(tarantula_cell, floor_of) + Vector3(0.0, 0.05, 0.0),
+		"tarantula_cell": tarantula_cell,
+		"widow": _world_of(widow_cell, floor_of) + Vector3(0.0, 0.05, 0.0),
+		"widow_cell": widow_cell,
 		"enemies": enemies,
 		"keys": key_specs,
 		"locks": locks,
@@ -1353,6 +1359,15 @@ func _place_enemy_roster(
 				near = false
 				anchor = start_cell
 			LevelRules.KIND_TANK:
+				pool = _cells_in_zone(cells, zone_of, last_zone)
+				near = true
+				anchor = objective_cell
+			LevelRules.KIND_TARANTULA:
+				var mid_web_zone := last_zone / 2
+				pool = _cells_in_zone(cells, zone_of, mid_web_zone)
+				near = false
+				anchor = start_cell
+			LevelRules.KIND_WIDOW:
 				pool = _cells_in_zone(cells, zone_of, last_zone)
 				near = true
 				anchor = objective_cell

@@ -112,6 +112,7 @@ func _physics_process(delta: float) -> void:
 
 	# Digital WASD is otherwise always full speed, which would skip Walk.
 	var gait := run_speed if Input.is_action_pressed("sprint") else move_speed
+	gait *= WebField.player_speed_scale(self)
 	velocity.x = direction.x * gait
 	velocity.z = direction.z * gait
 	_apply_gravity(delta)
@@ -247,6 +248,10 @@ func fire_weapon() -> Node3D:
 	bullet.global_position = origin
 	bullet.velocity = direction * pistol_speed
 	return bullet
+
+func movement_speed_scale() -> float:
+	return WebField.player_speed_scale(self)
+
 
 func _apply_loadout() -> void:
 	var multiplier := GameProgress.speed_multiplier()
