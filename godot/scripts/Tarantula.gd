@@ -56,6 +56,10 @@ func _on_level_configured() -> void:
 	_start_weave_at_current_room()
 
 
+func _on_started_chase() -> void:
+	_abandon_weave(false)
+
+
 func _begin_return_to_track() -> void:
 	_abandon_weave(false)
 	_ai_mode = AiMode.RETURN

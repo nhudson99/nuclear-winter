@@ -77,7 +77,12 @@ func _run() -> void:
 	tarantula.touch_damage = 0.0
 	var spawn_room: Dictionary = rooms[0]
 	var other_room: Dictionary = rooms[1] if rooms.size() > 1 else rooms[0]
+	player.global_position = Vector3(400.0, 0.05, 400.0)
+	player.velocity = Vector3.ZERO
 	tarantula.global_position = spawn_room.get("center", Vector3.ZERO) + Vector3(0.0, 0.05, 0.0)
+	tarantula.proximity_radius = 0.1
+	tarantula.detect_range = 0.1
+	tarantula.set_force_detect(false)
 	tarantula.configure_level(rooms, layout.get("bounds", AABB()), layout.get("monster_track", {}))
 	tarantula.weave_duration = 0.15
 	tarantula.set_physics_process(true)
@@ -98,6 +103,8 @@ func _run() -> void:
 			webbed_ok = true
 			break
 	print("tarantula_webbed_ok=", webbed_ok, " webs=", WebField.webs_in(self).size())
+	tarantula.proximity_radius = 3.2
+	tarantula.detect_range = 14.0
 
 	player.global_position = spawn_room.get("center", Vector3.ZERO) + Vector3(0.4, 0.05, 0.0)
 	await physics_frame

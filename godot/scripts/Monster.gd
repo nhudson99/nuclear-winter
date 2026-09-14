@@ -139,6 +139,8 @@ func _physics_process(delta: float) -> void:
 	if _seeing_player:
 		_time_since_seen = 0.0
 		_last_seen_pos = player.global_position
+		if _ai_mode != AiMode.CHASE:
+			_on_started_chase()
 		_ai_mode = AiMode.CHASE
 	else:
 		_time_since_seen += delta
@@ -460,6 +462,10 @@ func _effective_move_speed() -> float:
 
 
 func _on_level_configured() -> void:
+	pass
+
+
+func _on_started_chase() -> void:
 	pass
 
 
