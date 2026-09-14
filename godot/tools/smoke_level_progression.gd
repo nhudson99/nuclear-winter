@@ -120,15 +120,15 @@ func _run() -> void:
 
 func _check_formulas() -> bool:
 	var expected := {
-		1: [1, 0, 0],
-		2: [1, 1, 0],
-		3: [1, 1, 1],
-		4: [2, 1, 1],
-		5: [2, 2, 1],
-		6: [2, 2, 2],
-		7: [3, 2, 2],
-		8: [3, 3, 2],
-		9: [3, 3, 3],
+		1: [1, 0, 0, 0, 0, 0],
+		2: [1, 1, 0, 0, 0, 0],
+		3: [1, 1, 1, 0, 0, 0],
+		4: [1, 1, 1, 1, 0, 0],
+		5: [1, 1, 1, 1, 1, 0],
+		6: [1, 1, 1, 1, 1, 1],
+		7: [2, 1, 1, 1, 1, 1],
+		8: [2, 2, 1, 1, 1, 1],
+		9: [2, 2, 2, 1, 1, 1],
 	}
 	var ok := true
 	for level in expected:
@@ -136,6 +136,9 @@ func _check_formulas() -> bool:
 			LevelRules.slime_count(level),
 			LevelRules.hare_count(level),
 			LevelRules.tank_count(level),
+			LevelRules.tarantula_count(level),
+			LevelRules.widow_count(level),
+			LevelRules.toad_count(level),
 		]
 		var want: Array = expected[level]
 		var match_ok: bool = got == want and LevelRules.counts_match_cycle(level)
@@ -178,7 +181,14 @@ func _generate_level(level: int, level_seed: int) -> Dictionary:
 
 
 func _roster_matches(layout: Dictionary, level: int) -> bool:
-	var counts := {LevelRules.KIND_SLIME: 0, LevelRules.KIND_HARE: 0, LevelRules.KIND_TANK: 0}
+	var counts := {
+		LevelRules.KIND_SLIME: 0,
+		LevelRules.KIND_HARE: 0,
+		LevelRules.KIND_TANK: 0,
+		LevelRules.KIND_TARANTULA: 0,
+		LevelRules.KIND_WIDOW: 0,
+		LevelRules.KIND_TOAD: 0,
+	}
 	for spec in layout.get("enemies", []):
 		var kind := String(spec.get("kind", ""))
 		if not counts.has(kind):
@@ -192,6 +202,9 @@ func _roster_matches(layout: Dictionary, level: int) -> bool:
 		int(counts[LevelRules.KIND_SLIME]) == LevelRules.slime_count(level)
 		and int(counts[LevelRules.KIND_HARE]) == LevelRules.hare_count(level)
 		and int(counts[LevelRules.KIND_TANK]) == LevelRules.tank_count(level)
+		and int(counts[LevelRules.KIND_TARANTULA]) == LevelRules.tarantula_count(level)
+		and int(counts[LevelRules.KIND_WIDOW]) == LevelRules.widow_count(level)
+		and int(counts[LevelRules.KIND_TOAD]) == LevelRules.toad_count(level)
 	)
 	print("roster level=", level, " counts=", counts, " ok=", ok)
 	return ok
@@ -319,7 +332,14 @@ func _check_live_level_2() -> bool:
 	for door in doors:
 		if not (door as LockedDoor).is_locked():
 			door_ok = false
-	var roster_ok := _count_active_kinds(main) == {LevelRules.KIND_SLIME: 1, LevelRules.KIND_HARE: 1, LevelRules.KIND_TANK: 0}
+	var roster_ok := _count_active_kinds(main) == {
+		LevelRules.KIND_SLIME: 1,
+		LevelRules.KIND_HARE: 1,
+		LevelRules.KIND_TANK: 0,
+		LevelRules.KIND_TARANTULA: 0,
+		LevelRules.KIND_WIDOW: 0,
+		LevelRules.KIND_TOAD: 0,
+	}
 	print("live_nodes keys=", keys_ok, " door=", door_ok, " roster=", roster_ok, " play_level=", main.get_play_level())
 
 	var player: CharacterBody3D = main.get_node("Player")
@@ -387,7 +407,14 @@ func _check_live_level_2() -> bool:
 
 
 func _count_active_kinds(main: Node) -> Dictionary:
-	var counts := {LevelRules.KIND_SLIME: 0, LevelRules.KIND_HARE: 0, LevelRules.KIND_TANK: 0}
+	var counts := {
+		LevelRules.KIND_SLIME: 0,
+		LevelRules.KIND_HARE: 0,
+		LevelRules.KIND_TANK: 0,
+		LevelRules.KIND_TARANTULA: 0,
+		LevelRules.KIND_WIDOW: 0,
+		LevelRules.KIND_TOAD: 0,
+	}
 	for spec in main.get_layout().get("enemies", []):
 		counts[String(spec.get("kind", ""))] = int(counts.get(String(spec.get("kind", "")), 0)) + 1
 	return counts

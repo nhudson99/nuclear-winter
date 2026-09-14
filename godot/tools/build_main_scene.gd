@@ -15,8 +15,11 @@ func _build() -> void:
 	var monster_path := "res://assets/characters/enemy_monster.glb"
 	var slime_path := "res://assets/characters/enemy_slime.glb"
 	var tank_path := "res://assets/characters/enemy_tank.glb"
+	var tarantula_path := "res://assets/characters/enemy_tarantula.glb"
+	var widow_path := "res://assets/characters/enemy_widow.glb"
+	var toad_path := "res://assets/characters/enemy_toad.glb"
 
-	for path in [player_path, monster_path, slime_path, tank_path]:
+	for path in [player_path, monster_path, slime_path, tank_path, tarantula_path, widow_path, toad_path]:
 		if not ResourceLoader.exists(path):
 			push_error("Missing: " + path)
 			quit(1)
@@ -169,6 +172,83 @@ func _build() -> void:
 		1.45,
 		0.95
 	)
+	_add_enemy(
+		main,
+		"Tarantula",
+		tarantula_path,
+		{
+			"move_speed": 4.0,
+			"turn_speed": 7.2,
+			"max_health": 100.0,
+			"touch_damage": 50.0,
+			"proximity_radius": 3.2,
+			"detect_range": 14.0,
+			"health_bar_height": 1.15,
+			"touch_radius": 0.85,
+			"eye_height": 0.42,
+			"section_dwell_time": 30.0,
+			"idle_clip": "Idle",
+			"walk_clip": "Walk",
+			"death_clip": "Die",
+			"walk_cycle_metres": 1.2,
+			"weave_duration": 30.0,
+			"web_move_bonus": 0.25,
+		},
+		0.42,
+		0.55,
+		0.32,
+		"res://scripts/Tarantula.gd"
+	)
+	_add_enemy(
+		main,
+		"Widow",
+		widow_path,
+		{
+			"move_speed": 2.85,
+			"turn_speed": 6.4,
+			"max_health": 250.0,
+			"touch_damage": 100.0,
+			"proximity_radius": 3.6,
+			"detect_range": 15.0,
+			"health_bar_height": 2.2,
+			"touch_radius": 0.9,
+			"eye_height": 1.62,
+			"section_dwell_time": 36.0,
+			"idle_clip": "Idle",
+			"walk_clip": "Walk",
+			"death_clip": "Die",
+			"walk_cycle_metres": 1.5,
+		},
+		0.32,
+		1.55,
+		0.88
+	)
+	_add_enemy(
+		main,
+		"Toad",
+		toad_path,
+		{
+			"move_speed": 2.6,
+			"turn_speed": 5.4,
+			"max_health": 200.0,
+			"touch_damage": 0.0,
+			"proximity_radius": 0.1,
+			"detect_range": 0.1,
+			"health_bar_height": 1.05,
+			"touch_radius": 0.7,
+			"eye_height": 0.48,
+			"section_dwell_time": 10.0,
+			"idle_clip": "Idle",
+			"walk_clip": "Walk",
+			"death_clip": "Die",
+			"walk_cycle_metres": 1.0,
+			"search_duration": 10.0,
+		},
+		0.38,
+		0.55,
+		0.30,
+		"res://scripts/Toad.gd"
+	)
 
 	var camera := Camera3D.new()
 	camera.name = "IsoCamera"
@@ -228,11 +308,12 @@ func _add_enemy(
 	stats: Dictionary,
 	capsule_r: float,
 	capsule_h: float,
-	capsule_y: float
+	capsule_y: float,
+	script_path: String = "res://scripts/Monster.gd"
 ) -> void:
 	var body := CharacterBody3D.new()
 	body.name = node_name
-	body.set_script(load("res://scripts/Monster.gd"))
+	body.set_script(load(script_path))
 	body.collision_layer = 4
 	body.collision_mask = 1
 	body.position = Vector3(0.0, 0.05, -MapGenerator.TILE)

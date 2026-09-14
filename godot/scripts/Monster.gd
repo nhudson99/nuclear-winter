@@ -136,9 +136,11 @@ func _physics_process(delta: float) -> void:
 
 	_near_player = _is_player_in_proximity()
 	_seeing_player = _force_detect or _near_player or _can_see_player()
-	if _seeing_player:
+	if _seeing_player and _allows_chase():
 		_time_since_seen = 0.0
 		_last_seen_pos = player.global_position
+		if _ai_mode != AiMode.CHASE:
+			_on_started_chase()
 		_ai_mode = AiMode.CHASE
 	else:
 		_time_since_seen += delta
@@ -173,6 +175,7 @@ func take_damage(amount: float) -> void:
 		velocity = Vector3.ZERO
 		_anim_locked = true
 		_play_clip(death_clip, 1.0)
+		_on_died()
 	else:
 		_play_clip(hit_clip, 1.0)
 
@@ -419,7 +422,7 @@ func _return_to_track(delta: float) -> void:
 		_current_node_id = _return_node_id
 		_came_from_id = ""
 		_ai_mode = AiMode.PATROL
-		_choose_patrol_target()
+		_on_returned_to_track()
 		return
 	_move_toward_rejoin(dest, delta)
 
@@ -455,14 +458,39 @@ func _move_toward_rejoin(target: Vector3, delta: float) -> void:
 	_move_toward(target, delta)
 
 
+func _effective_move_speed() -> float:
+	return move_speed
+
+
+func _on_level_configured() -> void:
+	pass
+
+
+func _allows_chase() -> bool:
+	return true
+
+
+func _on_started_chase() -> void:
+	pass
+
+
+func _on_died() -> void:
+	pass
+
+
+func _on_returned_to_track() -> void:
+	_choose_patrol_target()
+
+
 func _move_toward(target: Vector3, delta: float) -> void:
 	var to_target := target - global_position
 	to_target.y = 0.0
 	var distance := to_target.length()
 	if distance > 0.45:
 		var direction := to_target / distance
-		velocity.x = direction.x * move_speed
-		velocity.z = direction.z * move_speed
+		var speed := _effective_move_speed()
+		velocity.x = direction.x * speed
+		velocity.z = direction.z * speed
 		# Mesh faces -Z at rest (Blender +Y); add PI so the creature looks toward travel.
 		var target_yaw := atan2(direction.x, direction.z) + facing_yaw_offset
 		visual.rotation.y = lerp_angle(visual.rotation.y, target_yaw, clampf(turn_speed * delta, 0.0, 1.0))
@@ -545,6 +573,7 @@ func configure_level(rooms: Array, bounds: AABB, track: Dictionary = {}) -> void
 	_came_from_id = ""
 	_current_node_id = _nearest_node_id(global_position)
 	_choose_patrol_target()
+	_on_level_configured()
 
 
 func apply_monster_track(track: Dictionary) -> void:

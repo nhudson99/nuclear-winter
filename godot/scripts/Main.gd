@@ -25,6 +25,9 @@ const SLIME_SPLIT_SPREAD := 0.6
 @onready var monster: CharacterBody3D = $Monster
 @onready var slime: CharacterBody3D = get_node_or_null("Slime")
 @onready var tank: CharacterBody3D = get_node_or_null("Tank")
+@onready var tarantula: CharacterBody3D = get_node_or_null("Tarantula")
+@onready var widow: CharacterBody3D = get_node_or_null("Widow")
+@onready var toad: CharacterBody3D = get_node_or_null("Toad")
 
 @export var camera_distance: float = 22.0
 @export var camera_height: float = 22.0
@@ -46,6 +49,9 @@ var _loading: CanvasLayer
 var _slime_serial: int = 1
 var _hare_serial: int = 1
 var _tank_serial: int = 1
+var _tarantula_serial: int = 1
+var _widow_serial: int = 1
+var _toad_serial: int = 1
 var _resolved_level: int = 1
 var _collected_keys: Dictionary = {}
 var _used_seed: int = 0
@@ -213,16 +219,25 @@ func _place_enemy_roster(layout: Dictionary) -> void:
 		LevelRules.KIND_SLIME: slime,
 		LevelRules.KIND_HARE: monster,
 		LevelRules.KIND_TANK: tank,
+		LevelRules.KIND_TARANTULA: tarantula,
+		LevelRules.KIND_WIDOW: widow,
+		LevelRules.KIND_TOAD: toad,
 	}
 	var used := {
 		LevelRules.KIND_SLIME: false,
 		LevelRules.KIND_HARE: false,
 		LevelRules.KIND_TANK: false,
+		LevelRules.KIND_TARANTULA: false,
+		LevelRules.KIND_WIDOW: false,
+		LevelRules.KIND_TOAD: false,
 	}
 	if roster.is_empty():
 		_place_enemy(monster, layout.get("monster", Vector3.ZERO), layout)
 		_place_enemy(slime, layout.get("slime", Vector3.ZERO), layout)
 		_place_enemy(tank, layout.get("tank", Vector3.ZERO), layout)
+		_place_enemy(tarantula, layout.get("tarantula", Vector3.ZERO), layout)
+		_place_enemy(widow, layout.get("widow", Vector3.ZERO), layout)
+		_place_enemy(toad, layout.get("toad", Vector3.ZERO), layout)
 		return
 
 	var active := int(layout.get("active_floor", _active_floor))
@@ -266,19 +281,32 @@ func _next_enemy_name(kind: String) -> String:
 		LevelRules.KIND_TANK:
 			_tank_serial += 1
 			return "Tank_%d" % _tank_serial
+		LevelRules.KIND_TARANTULA:
+			_tarantula_serial += 1
+			return "Tarantula_%d" % _tarantula_serial
+		LevelRules.KIND_WIDOW:
+			_widow_serial += 1
+			return "Widow_%d" % _widow_serial
+		LevelRules.KIND_TOAD:
+			_toad_serial += 1
+			return "Toad_%d" % _toad_serial
 		_:
-			return "Enemy_%d" % (_slime_serial + _hare_serial + _tank_serial)
+			return "Enemy_%d" % (
+				_slime_serial + _hare_serial + _tank_serial + _tarantula_serial + _widow_serial + _toad_serial
+			)
 
 
 func _place_objectives(layout: Dictionary) -> void:
 	var mission := get_node_or_null("PickupItem") as Area3D
 	var active := int(layout.get("active_floor", _active_floor))
+	var swallowed := _toad_holds_mission()
 	if mission:
 		if mission.has_method("configure"):
 			mission.configure(PickupItem.Kind.MISSION)
 		var mission_here: bool = (
 			int(layout.get("objective_floor", 0)) == active
 			and (player == null or not player.has_collected_item())
+			and not swallowed
 		)
 		if mission_here:
 			mission.visible = true
@@ -295,6 +323,8 @@ func _place_objectives(layout: Dictionary) -> void:
 			continue
 		var key := _make_key_pickup(mission)
 		key.name = "Key_%d" % stage
+		if key.has_method("reset_instance_state"):
+			key.reset_instance_state()
 		if key.has_method("configure"):
 			key.configure(PickupItem.Kind.KEY, stage)
 		add_child(key)
@@ -348,6 +378,16 @@ func park_monsters(keep: Node = null) -> void:
 		body.touch_damage = 0.0
 		body.visible = false
 		body.global_position += Vector3(200.0, 0.0, 200.0)
+
+
+func _toad_holds_mission() -> bool:
+	if not is_inside_tree():
+		return false
+	for node in get_tree().get_nodes_in_group("toad"):
+		if node != null and is_instance_valid(node) and node.has_method("has_mission_item"):
+			if node.has_mission_item():
+				return true
+	return false
 
 
 func living_slime_count() -> int:
@@ -598,9 +638,11 @@ func _clear_generated_map() -> void:
 
 func _clear_dynamic_combatants() -> void:
 	for body in monsters():
-		if body == monster or body == slime or body == tank:
+		if body == monster or body == slime or body == tank or body == tarantula or body == widow or body == toad:
 			continue
 		if is_instance_valid(body):
+			if body.has_method("release_swallowed_item"):
+				body.release_swallowed_item()
 			body.queue_free()
 	for node in get_tree().get_nodes_in_group("pickup"):
 		if node == null or not is_instance_valid(node):
@@ -627,7 +669,10 @@ func _refresh_objective_hud() -> void:
 		elif kind == LevelRules.KIND_MISSION:
 			done = player != null and player.has_collected_item()
 		var mark := "x" if done else " "
-		lines.append("[%s] %s" % [mark, String(spec.get("label", kind))])
+		var label := String(spec.get("label", kind))
+		if kind == LevelRules.KIND_MISSION and not done and _toad_holds_mission():
+			label += " (swallowed by a toad)"
+		lines.append("[%s] %s" % [mark, label])
 	_objective_label.text = "\n".join(lines)
 
 func _on_player_died() -> void:
