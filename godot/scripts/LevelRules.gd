@@ -5,7 +5,7 @@ extends RefCounted
 ## check the formulas without booting a map.
 ##
 ## Monsters cycle easy → moderate → dangerous as the level index grows:
-##   n=1 slime, n=2 slime+hare, n=3 slime+hare+tank, n=4 …+tarantula, n=5 …+widow…
+##   n=1 slime, n=2 slime+hare, n=3 slime+hare+tank, n=4 …+tarantula, n=5 …+widow, n=6 …+toad…
 ## Objectives: one mission item, plus (n-1) keys that each open the next locked
 ## wing of rooms. The mission item sits in the last locked wing.
 
@@ -14,11 +14,12 @@ const KIND_HARE := "hare"
 const KIND_TANK := "tank"
 const KIND_TARANTULA := "tarantula"
 const KIND_WIDOW := "widow"
+const KIND_TOAD := "toad"
 const KIND_MISSION := "mission"
 const KIND_KEY := "key"
 
 const MONSTER_CYCLE: Array[String] = [
-	KIND_SLIME, KIND_HARE, KIND_TANK, KIND_TARANTULA, KIND_WIDOW
+	KIND_SLIME, KIND_HARE, KIND_TANK, KIND_TARANTULA, KIND_WIDOW, KIND_TOAD
 ]
 
 ## Level 1 keeps the current nine-room mansion.
@@ -67,6 +68,10 @@ static func widow_count(level: int) -> int:
 	return kind_count(KIND_WIDOW, level)
 
 
+static func toad_count(level: int) -> int:
+	return kind_count(KIND_TOAD, level)
+
+
 ## One kind per spawned monster, in cycle order: slime, hare, tank, tarantula, widow…
 static func monster_kinds(level: int) -> Array[String]:
 	var n := clamp_level(level)
@@ -83,6 +88,7 @@ static func monster_counts(level: int) -> Dictionary:
 		KIND_TANK: tank_count(level),
 		KIND_TARANTULA: tarantula_count(level),
 		KIND_WIDOW: widow_count(level),
+		KIND_TOAD: toad_count(level),
 	}
 
 
@@ -183,6 +189,7 @@ static func counts_match_cycle(level: int) -> bool:
 		KIND_TANK: 0,
 		KIND_TARANTULA: 0,
 		KIND_WIDOW: 0,
+		KIND_TOAD: 0,
 	}
 	for kind in kinds:
 		if not counted.has(kind):
@@ -194,5 +201,6 @@ static func counts_match_cycle(level: int) -> bool:
 		and int(counted[KIND_TANK]) == tank_count(level)
 		and int(counted[KIND_TARANTULA]) == tarantula_count(level)
 		and int(counted[KIND_WIDOW]) == widow_count(level)
+		and int(counted[KIND_TOAD]) == toad_count(level)
 		and kinds.size() == clamp_level(level)
 	)

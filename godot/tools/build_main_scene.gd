@@ -17,8 +17,9 @@ func _build() -> void:
 	var tank_path := "res://assets/characters/enemy_tank.glb"
 	var tarantula_path := "res://assets/characters/enemy_tarantula.glb"
 	var widow_path := "res://assets/characters/enemy_widow.glb"
+	var toad_path := "res://assets/characters/enemy_toad.glb"
 
-	for path in [player_path, monster_path, slime_path, tank_path, tarantula_path, widow_path]:
+	for path in [player_path, monster_path, slime_path, tank_path, tarantula_path, widow_path, toad_path]:
 		if not ResourceLoader.exists(path):
 			push_error("Missing: " + path)
 			quit(1)
@@ -221,6 +222,32 @@ func _build() -> void:
 		0.32,
 		1.55,
 		0.88
+	)
+	_add_enemy(
+		main,
+		"Toad",
+		toad_path,
+		{
+			"move_speed": 2.6,
+			"turn_speed": 5.4,
+			"max_health": 200.0,
+			"touch_damage": 0.0,
+			"proximity_radius": 0.1,
+			"detect_range": 0.1,
+			"health_bar_height": 1.05,
+			"touch_radius": 0.7,
+			"eye_height": 0.48,
+			"section_dwell_time": 10.0,
+			"idle_clip": "Idle",
+			"walk_clip": "Walk",
+			"death_clip": "Die",
+			"walk_cycle_metres": 1.0,
+			"search_duration": 10.0,
+		},
+		0.38,
+		0.55,
+		0.30,
+		"res://scripts/Toad.gd"
 	)
 
 	var camera := Camera3D.new()

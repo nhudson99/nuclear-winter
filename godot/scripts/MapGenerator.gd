@@ -1175,6 +1175,7 @@ func _describe_layout(
 	var tank_cell := _first_enemy_cell(enemies, LevelRules.KIND_TANK, objective_cell)
 	var tarantula_cell := _first_enemy_cell(enemies, LevelRules.KIND_TARANTULA, objective_cell)
 	var widow_cell := _first_enemy_cell(enemies, LevelRules.KIND_WIDOW, objective_cell)
+	var toad_cell := _first_enemy_cell(enemies, LevelRules.KIND_TOAD, start_cell)
 
 	var start_center := _world_of(start_cell, floor_of)
 	var exit_position := _world_of(exit_cell, floor_of)
@@ -1257,6 +1258,8 @@ func _describe_layout(
 		"tarantula_cell": tarantula_cell,
 		"widow": _world_of(widow_cell, floor_of) + Vector3(0.0, 0.05, 0.0),
 		"widow_cell": widow_cell,
+		"toad": _world_of(toad_cell, floor_of) + Vector3(0.0, 0.05, 0.0),
+		"toad_cell": toad_cell,
 		"enemies": enemies,
 		"keys": key_specs,
 		"locks": locks,
@@ -1368,6 +1371,11 @@ func _place_enemy_roster(
 				near = false
 				anchor = start_cell
 			LevelRules.KIND_WIDOW:
+				pool = _cells_in_zone(cells, zone_of, last_zone)
+				near = true
+				anchor = objective_cell
+			LevelRules.KIND_TOAD:
+				# Search the mission wing so it can actually find the item.
 				pool = _cells_in_zone(cells, zone_of, last_zone)
 				near = true
 				anchor = objective_cell

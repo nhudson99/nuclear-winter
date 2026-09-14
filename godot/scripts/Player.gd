@@ -26,6 +26,10 @@ signal stair_used(stair: Node)
 @export var pistol_damage: float = 10.0
 @export var pistol_speed: float = 28.0
 @export var pistol_cooldown: float = 0.4
+@export var melee_damage: float = 10.0
+@export var melee_range: float = 1.8
+@export var melee_cooldown: float = 0.45
+@export var melee_dot: float = 0.25
 
 @onready var visual: Node3D = $Model
 
@@ -97,7 +101,7 @@ func _physics_process(delta: float) -> void:
 	if Input.is_action_just_pressed("interact"):
 		_try_interact()
 	if Input.is_action_just_pressed("fire"):
-		fire_weapon()
+		attack()
 
 	var input := Vector2.ZERO
 	input.x = Input.get_action_strength("move_right") - Input.get_action_strength("move_left")
@@ -179,6 +183,47 @@ func is_aiming() -> bool:
 func has_pistol() -> bool:
 	return GameProgress.has_pistol
 
+
+func has_weapon() -> bool:
+	return has_pistol()
+
+
+## LMB attack. A equipped weapon (pistol) fires; otherwise this is a melee swing.
+func attack() -> Node3D:
+	if has_weapon():
+		return fire_weapon()
+	return melee_attack()
+
+
+func melee_attack() -> Node3D:
+	if not _alive or _input_locked:
+		return null
+	if _fire_cooldown > 0.0:
+		return null
+	_fire_cooldown = melee_cooldown
+	var direction := get_aim_direction()
+	var hit: Node3D = null
+	if not is_inside_tree():
+		return self
+	for node in get_tree().get_nodes_in_group("monster"):
+		if not (node is CharacterBody3D):
+			continue
+		var body := node as CharacterBody3D
+		if body.has_method("is_alive") and not body.is_alive():
+			continue
+		var to_enemy := body.global_position - global_position
+		to_enemy.y = 0.0
+		var distance := to_enemy.length()
+		if distance > melee_range or distance < 0.01:
+			continue
+		if to_enemy.normalized().dot(direction) < melee_dot:
+			continue
+		if body.has_method("take_damage"):
+			body.take_damage(melee_damage)
+			if hit == null:
+				hit = body
+	return hit if hit else self
+
 func is_sneaking() -> bool:
 	if not GameProgress.has_sneak:
 		return false
@@ -187,6 +232,11 @@ func is_sneaking() -> bool:
 	return Input.is_action_pressed("sneak")
 
 func get_aim_direction() -> Vector3:
+	if _aim_override_enabled:
+		var to_point := _aim_override - global_position
+		to_point.y = 0.0
+		if to_point.length() > 0.05:
+			return to_point.normalized()
 	if _flashlight:
 		var beam := -_flashlight.global_transform.basis.z
 		beam.y = 0.0

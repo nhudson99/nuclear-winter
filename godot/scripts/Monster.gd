@@ -136,7 +136,7 @@ func _physics_process(delta: float) -> void:
 
 	_near_player = _is_player_in_proximity()
 	_seeing_player = _force_detect or _near_player or _can_see_player()
-	if _seeing_player:
+	if _seeing_player and _allows_chase():
 		_time_since_seen = 0.0
 		_last_seen_pos = player.global_position
 		if _ai_mode != AiMode.CHASE:
@@ -175,6 +175,7 @@ func take_damage(amount: float) -> void:
 		velocity = Vector3.ZERO
 		_anim_locked = true
 		_play_clip(death_clip, 1.0)
+		_on_died()
 	else:
 		_play_clip(hit_clip, 1.0)
 
@@ -465,7 +466,15 @@ func _on_level_configured() -> void:
 	pass
 
 
+func _allows_chase() -> bool:
+	return true
+
+
 func _on_started_chase() -> void:
+	pass
+
+
+func _on_died() -> void:
 	pass
 
 

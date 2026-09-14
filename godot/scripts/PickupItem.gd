@@ -15,6 +15,7 @@ enum Kind { MISSION, KEY }
 @export var key_stage: int = 0
 
 var _taken: bool = false
+var _held: bool = false
 var _visual: Node3D
 var _base_y: float = 0.55
 
@@ -44,20 +45,20 @@ func is_key() -> bool:
 	return kind == Kind.KEY
 
 func _process(delta: float) -> void:
-	if _taken or _visual == null:
+	if _taken or _held or _visual == null:
 		return
 	_visual.position.y = _base_y + bob_height * sin(Time.get_ticks_msec() * 0.001 * bob_speed * TAU)
 	_visual.rotation.y += delta * 1.4
 
 func can_interact(from_pos: Vector3) -> bool:
-	if _taken:
+	if _taken or _held:
 		return false
 	var to_item := global_position - from_pos
 	to_item.y = 0.0
 	return to_item.length() <= interact_range
 
 func try_pickup() -> bool:
-	if _taken:
+	if _taken or _held:
 		return false
 	_taken = true
 	set_process(false)
@@ -68,6 +69,38 @@ func try_pickup() -> bool:
 
 func is_taken() -> bool:
 	return _taken
+
+
+## Hide the mission item without awarding it to the player. Used by the toad.
+func swallow() -> bool:
+	if _taken or _held or not is_mission_item():
+		return false
+	_held = true
+	set_process(false)
+	visible = false
+	return true
+
+
+func is_swallowed() -> bool:
+	return _held
+
+
+func release_at(world_pos: Vector3) -> void:
+	_held = false
+	_taken = false
+	visible = true
+	set_process(true)
+	global_position = world_pos
+	if _visual:
+		_visual.position.y = _base_y
+
+
+## Clear swallowed / taken flags on a duplicated pickup (keys copy the mission).
+func reset_instance_state() -> void:
+	_taken = false
+	_held = false
+	visible = true
+	set_process(true)
 
 func _ensure_visual() -> void:
 	_visual = get_node_or_null("Visual") as Node3D

@@ -120,15 +120,15 @@ func _run() -> void:
 
 func _check_formulas() -> bool:
 	var expected := {
-		1: [1, 0, 0, 0, 0],
-		2: [1, 1, 0, 0, 0],
-		3: [1, 1, 1, 0, 0],
-		4: [1, 1, 1, 1, 0],
-		5: [1, 1, 1, 1, 1],
-		6: [2, 1, 1, 1, 1],
-		7: [2, 2, 1, 1, 1],
-		8: [2, 2, 2, 1, 1],
-		9: [2, 2, 2, 2, 1],
+		1: [1, 0, 0, 0, 0, 0],
+		2: [1, 1, 0, 0, 0, 0],
+		3: [1, 1, 1, 0, 0, 0],
+		4: [1, 1, 1, 1, 0, 0],
+		5: [1, 1, 1, 1, 1, 0],
+		6: [1, 1, 1, 1, 1, 1],
+		7: [2, 1, 1, 1, 1, 1],
+		8: [2, 2, 1, 1, 1, 1],
+		9: [2, 2, 2, 1, 1, 1],
 	}
 	var ok := true
 	for level in expected:
@@ -138,6 +138,7 @@ func _check_formulas() -> bool:
 			LevelRules.tank_count(level),
 			LevelRules.tarantula_count(level),
 			LevelRules.widow_count(level),
+			LevelRules.toad_count(level),
 		]
 		var want: Array = expected[level]
 		var match_ok: bool = got == want and LevelRules.counts_match_cycle(level)
@@ -186,6 +187,7 @@ func _roster_matches(layout: Dictionary, level: int) -> bool:
 		LevelRules.KIND_TANK: 0,
 		LevelRules.KIND_TARANTULA: 0,
 		LevelRules.KIND_WIDOW: 0,
+		LevelRules.KIND_TOAD: 0,
 	}
 	for spec in layout.get("enemies", []):
 		var kind := String(spec.get("kind", ""))
@@ -202,6 +204,7 @@ func _roster_matches(layout: Dictionary, level: int) -> bool:
 		and int(counts[LevelRules.KIND_TANK]) == LevelRules.tank_count(level)
 		and int(counts[LevelRules.KIND_TARANTULA]) == LevelRules.tarantula_count(level)
 		and int(counts[LevelRules.KIND_WIDOW]) == LevelRules.widow_count(level)
+		and int(counts[LevelRules.KIND_TOAD]) == LevelRules.toad_count(level)
 	)
 	print("roster level=", level, " counts=", counts, " ok=", ok)
 	return ok
@@ -335,6 +338,7 @@ func _check_live_level_2() -> bool:
 		LevelRules.KIND_TANK: 0,
 		LevelRules.KIND_TARANTULA: 0,
 		LevelRules.KIND_WIDOW: 0,
+		LevelRules.KIND_TOAD: 0,
 	}
 	print("live_nodes keys=", keys_ok, " door=", door_ok, " roster=", roster_ok, " play_level=", main.get_play_level())
 
@@ -409,6 +413,7 @@ func _count_active_kinds(main: Node) -> Dictionary:
 		LevelRules.KIND_TANK: 0,
 		LevelRules.KIND_TARANTULA: 0,
 		LevelRules.KIND_WIDOW: 0,
+		LevelRules.KIND_TOAD: 0,
 	}
 	for spec in main.get_layout().get("enemies", []):
 		counts[String(spec.get("kind", ""))] = int(counts.get(String(spec.get("kind", "")), 0)) + 1

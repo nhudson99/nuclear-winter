@@ -16,8 +16,9 @@ godot --path godot
 - Tank authored in Blender (`blender/build_tank.py`) → `godot/assets/characters/enemy_tank.glb`
 - Widow authored in Blender (`blender/build_widow.py`) → `godot/assets/characters/enemy_widow.glb`
 - Tarantula authored in Blender (`blender/build_tarantula.py`) → `godot/assets/characters/enemy_tarantula.glb`
+- Toad authored in Blender (`blender/build_toad.py`) → `godot/assets/characters/enemy_toad.glb`
 - Flow: `TitleScreen.tscn` → `AristocratScreen.tscn` → `GameMap.tscn` (click **LEVEL n** or **SHOP**) → `Main.tscn`
-- Levels scale from `GameProgress.current_level`. Level 1 is the current open nine-room layout with one slime and a free mission item. Higher levels add monsters in an easy → moderate → dangerous cycle (slime, hare, tank, tarantula, widow), extra locked wings, and one key per locked door. The mission item is always in the last locked wing. From level 3 the wings are stacked as **floors** (max two wings per floor); stairwell rooms sit behind the next locked door and only the current floor is instantiated.
+- Levels scale from `GameProgress.current_level`. Level 1 is the current open nine-room layout with one slime and a free mission item. Higher levels add monsters in an easy → moderate → dangerous cycle (slime, hare, tank, tarantula, widow, toad), extra locked wings, and one key per locked door. The mission item is always in the last locked wing. From level 3 the wings are stacked as **floors** (max two wings per floor); stairwell rooms sit behind the next locked door and only the current floor is instantiated.
 - Level 1: `godot/scenes/Main.tscn` (10% ambient so rooms are faintly readable, hold RMB to aim the flashlight, isometric camera zoomed 50% onto the player, wall/prop collision, WASD walk, E to pick up objectives, escape through the outer doorway, enemies on the monster track, health bars)
 - The earlier hand-authored mansion (`blender/build_mansion_map.py` → `godot/assets/maps/ussr_mansion_map.glb`) is kept for reference but no longer loaded.
 
@@ -44,6 +45,7 @@ blender --background --python blender/build_monster.py
 blender --background --python blender/build_tank.py
 blender --background --python blender/build_widow.py
 blender --background --python blender/build_tarantula.py
+blender --background --python blender/build_toad.py
 blender --background --python blender/prepare_slime.py
 blender --background --python blender/build_prisoner.py
 cd godot && godot --headless --import
@@ -56,7 +58,7 @@ godot --headless -s res://tools/build_main_scene.gd
 
 ```bash
 cd godot
-for t in smoke_procgen smoke_monster_doors smoke_monster_track smoke_game_loop smoke_flow_screens smoke_player_anims smoke_flashlight smoke_shop smoke_loadout smoke_enemies smoke_widow_tarantula smoke_level_progression; do
+for t in smoke_procgen smoke_monster_doors smoke_monster_track smoke_game_loop smoke_flow_screens smoke_player_anims smoke_flashlight smoke_shop smoke_loadout smoke_enemies smoke_widow_tarantula smoke_toad_attack smoke_level_progression; do
   godot --headless -s res://tools/$t.gd
 done
 ```
@@ -70,14 +72,15 @@ done
 - **Objectives**: a level has `n` objectives. Level 1 is just the glowing mission item. Level `n>1` adds `n-1` keys; each key unlocks the next locked-door wing. The mission item is behind the last lock. Press **E** nearby to collect a key or the mission item, then reach the exit doorway of the start room without dying.
 - **Alarm**: collecting the item halves every enemy's dwell timer and doubles its proximity detection radius, and turns on the green exit glow.
 - **Win / lose**: escaping with the item awards **5 rations** and brings up the fat aristocrat ("Well, you survived. Good for you. Here is your ration reward"); dying shows **GAME OVER**.
-- **Shop**: the Pip-Boy map has **SHOP** in the top right. Cards are **pistol** (5 rations, LMB fires 10 damage along the flashlight), **speed upgrade** (1 ration, +5% speed, stackable), and **sneak** (3 rations, hold **Ctrl** with the flashlight off to avoid sight detection).
+- **Shop**: the Pip-Boy map has **SHOP** in the top right. Cards are **pistol** (5 rations, LMB fires 10 damage along the flashlight), **speed upgrade** (1 ration, +5% speed, stackable), and **sneak** (3 rations, hold **Ctrl** with the flashlight off to avoid sight detection). **LMB** is always attack: unarmed it is a short melee swing (10 damage); with the pistol equipped it fires the weapon.
 - **Doorways**: every adjacent room is linked by an open wall gap; player and enemies can walk through. Outward-facing walls are sealed.
-- **Enemies**: the roster grows with the level (`n` monsters, cycling slime → hare → tank → tarantula → widow). They share the generated monster track (room centres through doorway centres). Locked doors omit their track edge until the matching key is collected. At a track intersection each rolls 0–99 and turns left (0–24), right (25–49), up (50–74) or down (75–99). When one detects the player (proximity, or FOV + line of sight) it path-follows the track toward them; 5 seconds after losing detection it returns to the main track. Sneak owned + Ctrl with the light off skips sight detection.
+- **Enemies**: the roster grows with the level (`n` monsters, cycling slime → hare → tank → tarantula → widow → toad). They share the generated monster track (room centres through doorway centres). Locked doors omit their track edge until the matching key is collected. At a track intersection each rolls 0–99 and turns left (0–24), right (25–49), up (50–74) or down (75–99). When one detects the player (proximity, or FOV + line of sight) it path-follows the track toward them; 5 seconds after losing detection it returns to the main track. Sneak owned + Ctrl with the light off skips sight detection.
   - **Monster**: the original hunched stalker. 100 HP, lethal touch (100).
   - **Slime**: Charlie's Poly Pizza slime, scaled to about a metre. Fast, 45 HP, 35 touch damage, plays `idle` / `moving` / `hit` / `attack` / `death`. Over 30 seconds it doubles in size and health, then splits into two original-sized slimes; each child repeats the cycle (capped at 16 living slimes).
   - **Tank**: Left 4 Dead-style brute in jeans. Slow, 320 HP, lethal touch, hulking knuckle-dragger silhouette.
   - **Tarantula**: medium spider. 100 HP, 50 touch damage. Spends 30 seconds webbing its current room, then moves to another unwebbed room. Finished silk cuts player speed by 75%; the tarantula itself is 25% faster on its web and will chase a seen player off it. Losing focus sends it to the nearest unwebbed room to spin a new one.
   - **Widow**: dangerous woman in a black mourning dress and veil, pale skin. 250 HP, lethal touch (100).
+  - **Toad**: easy, passive scavenger. 200 HP, no touch damage. Spends 10 seconds in each room looking for the mission item; if the item is there it swallows it and keeps it until it dies, then drops it.
   - From level 2 the roster is scattered through the allowed wings instead of parking on the closest/furthest leftover cell.
 - **Health**: player starts at 100 HP with a billboard bar. Enemy bars stay hidden until the flashlight cone hits them (or they take damage).
 
@@ -89,7 +92,7 @@ done
 - **Texture**: wear is authored as procedural noise shaders and then Cycles-baked to one 1024² colour atlas, because glTF cannot carry shader nodes. Grime is weighted by object-space height, so dirt collects on the boots and knees. Three materials (fabric, leather, skin) share the atlas.
 - **Rig**: 17 bones, skinned with inverse-distance weights restricted to a per-part bone whitelist. Bone-heat auto weights bleed across the overlapping lofted parts.
 - **Clips**: `Idle` (96 f loop), `Walk` (24 f loop), `Run` (16 f loop), `Die` (34 f one-shot), exported through muted NLA tracks. The gait is phased from foot contact, with knee flex, ankle counter-rotation to keep planted feet flat, toe-off and a pelvis bob.
-- **Playback**: `Player.gd` sets `LOOP_LINEAR` on the three cycles at load — the glTF importer leaves every clip one-shot — picks walk or run by ground speed, and scales the playback rate to the distance covered per cycle so the boots do not skate. WASD walks; hold **Shift** to run. Hold **RMB** to keep the flashlight on and face the cursor; movement and facing are independent while aiming. If the pistol is owned, **LMB** fires along that aim. Hold **Ctrl** with sneak owned and the light off to slip the monster's sight cone.
+- **Playback**: `Player.gd` sets `LOOP_LINEAR` on the three cycles at load — the glTF importer leaves every clip one-shot — picks walk or run by ground speed, and scales the playback rate to the distance covered per cycle so the boots do not skate. WASD walks; hold **Shift** to run. Hold **RMB** to keep the flashlight on and face the cursor; movement and facing are independent while aiming. **LMB** always attacks: unarmed this is a melee swing in the facing / aim direction; if the pistol is owned it fires along that aim. Hold **Ctrl** with sneak owned and the light off to slip the monster's sight cone.
 
 ```bash
 # Preview renders (views | head | turntable | anim <Clip> | poses <Clip> <angle> <frames...>)
@@ -113,16 +116,17 @@ Leftover web shell: title → boss CRT briefing → Pip-Boy map (returns to menu
 godot/                     Godot 4.4 game (menus + Level 1)
   assets/ui/               Title, aristocrat CRT, dialogue panel, Pip-Boy map
   assets/maps/ussr_mansion_map.glb
-  assets/characters/{player_prisoner,enemy_monster,enemy_slime,enemy_tank,enemy_widow,enemy_tarantula}.glb
+  assets/characters/{player_prisoner,enemy_monster,enemy_slime,enemy_tank,enemy_widow,enemy_tarantula,enemy_toad}.glb
   assets/props/{crate,wardrobe,couch}.glb
   scenes/{TitleScreen,AristocratScreen,GameMap,Main}.tscn
-  scripts/{SceneFlow,GameProgress,LevelRules,MapGenerator,LockedDoor,Stairwell,TitleScreen,AristocratScreen,GameMap,ShopMenu,Main,Player,Monster,Tarantula,RoomWeb,WebField,PickupItem,ExitZone,Bullet}.gd
+  scripts/{SceneFlow,GameProgress,LevelRules,MapGenerator,LockedDoor,Stairwell,TitleScreen,AristocratScreen,GameMap,ShopMenu,Main,Player,Monster,Tarantula,Toad,RoomWeb,WebField,PickupItem,ExitZone,Bullet}.gd
   tools/smoke_flow_screens.gd
   tools/smoke_game_loop.gd
   tools/smoke_shop.gd
   tools/smoke_loadout.gd
   tools/smoke_enemies.gd
   tools/smoke_widow_tarantula.gd
+  tools/smoke_toad_attack.gd
   tools/smoke_level_progression.gd
 blender/
   build_mansion_map.py
@@ -132,6 +136,7 @@ blender/
   build_tank.py
   build_widow.py
   build_tarantula.py
+  build_toad.py
   prepare_slime.py
   build_furniture.py
   ussr_mansion_map.blend
