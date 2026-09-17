@@ -140,8 +140,13 @@ func advance() -> void:
 		finish_typing_now()
 		return
 	_advancing = true
+	var next_scene := SceneFlow.GAME_MAP
+	var fade := UiStyle.CRT_VOID
+	if GameProgress.aristocrat_mode == GameProgress.AristocratMode.DEFEAT:
+		next_scene = SceneFlow.TITLE
+		fade = UiStyle.VOID
 	GameProgress.aristocrat_mode = GameProgress.AristocratMode.BRIEFING
-	SceneFlow.request_change(self, SceneFlow.GAME_MAP, UiStyle.CRT_VOID)
+	SceneFlow.request_change(self, next_scene, fade)
 
 
 func is_typing_complete() -> bool:

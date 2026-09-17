@@ -679,7 +679,7 @@ func _on_player_died() -> void:
 	if _state != GameState.PLAYING:
 		return
 	_state = GameState.LOST
-	_end_run("GAME OVER")
+	_begin_defeat()
 
 func _on_player_escaped(_body: Node3D) -> void:
 	if _state != GameState.PLAYING:
@@ -696,23 +696,22 @@ func _begin_victory() -> void:
 	GameProgress.award_escape()
 	GameProgress.advance_level()
 	GameProgress.aristocrat_mode = GameProgress.AristocratMode.VICTORY
-	_show_victory_aristocrat()
+	_show_aristocrat_overlay("VictoryOverlay")
 
-func _show_victory_aristocrat() -> void:
-	if get_node_or_null("VictoryOverlay") != null:
+func _begin_defeat() -> void:
+	if player and player.has_method("lock_input"):
+		player.lock_input()
+	set_monsters_processing(false)
+	GameProgress.aristocrat_mode = GameProgress.AristocratMode.DEFEAT
+	_show_aristocrat_overlay("DefeatOverlay")
+
+func _show_aristocrat_overlay(layer_name: String) -> void:
+	if get_node_or_null(layer_name) != null:
 		return
 	var layer := CanvasLayer.new()
-	layer.name = "VictoryOverlay"
+	layer.name = layer_name
 	layer.layer = 64
 	add_child(layer)
 	var screen: Control = ARISTOCRAT_SCREEN.instantiate()
 	screen.name = "AristocratScreen"
 	layer.add_child(screen)
-
-func _end_run(message: String) -> void:
-	if player and player.has_method("lock_input"):
-		player.lock_input()
-	set_monsters_processing(false)
-	if _status_label:
-		_status_label.text = message
-		_status_label.visible = true

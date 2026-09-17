@@ -1,6 +1,6 @@
 extends SceneTree
 
-## Headless smoke for the core loop: pickup (E), monster alert, victory aristocrat, GAME OVER.
+## Headless smoke for the core loop: pickup (E), monster alert, victory aristocrat, defeat aristocrat.
 
 func _initialize() -> void:
 	call_deferred("_run")
@@ -113,13 +113,23 @@ func _run() -> void:
 		" rations=", gp.rations
 	)
 
-	# Fresh scene for GAME OVER path. Victory advanced the campaign level;
+	# Fresh scene for defeat aristocrat path. Victory advanced the campaign level;
 	# pin this probe back to level 1 so it stays a single open floorplan.
+	# Load via change_scene so SceneFlow can replace Main with the title screen.
 	gp.current_level = 1
 	main.queue_free()
 	await create_timer(0.1).timeout
-	main = packed.instantiate()
-	root.add_child(main)
+	var load_err := change_scene_to_file("res://scenes/Main.tscn")
+	if load_err != OK:
+		push_error("Failed to reload Main for defeat path")
+		quit(1)
+		return
+	await process_frame
+	main = current_scene as Node3D
+	if main == null:
+		push_error("Main was not current scene after reload")
+		quit(1)
+		return
 	if not main.is_level_ready():
 		await main.level_ready
 	player = main.get_node("Player")
@@ -143,9 +153,43 @@ func _run() -> void:
 		player.take_damage(100.0)
 	await create_timer(0.05).timeout
 	var lose_ok: bool = main.get_game_state() == main.GameState.LOST
-	var lose_label := main.get_node_or_null("HUD/StatusLabel") as Label
-	var lose_text_ok: bool = lose_label != null and lose_label.visible and lose_label.text == "GAME OVER"
-	print("game_over_ok=", lose_ok and lose_text_ok, " state=", main.get_game_state(), " text=", lose_label.text if lose_label else "")
+	var defeat_overlay := main.get_node_or_null("DefeatOverlay")
+	var defeat_aristocrat := defeat_overlay.get_node_or_null("AristocratScreen") if defeat_overlay else null
+	if defeat_aristocrat and defeat_aristocrat.has_method("finish_typing_now"):
+		defeat_aristocrat.finish_typing_now()
+	var lose_line: String = (
+		defeat_aristocrat.spoken_line()
+		if defeat_aristocrat and defeat_aristocrat.has_method("spoken_line")
+		else ""
+	)
+	var lose_text_ok: bool = (
+		defeat_overlay != null
+		and defeat_aristocrat != null
+		and lose_line == "Finally, you are no longer a drain on the motherland"
+	)
+	print(
+		"game_over_ok=",
+		lose_ok and lose_text_ok,
+		" state=",
+		main.get_game_state(),
+		" line=",
+		lose_line
+	)
+
+	# Continuing from defeat should return to the title screen.
+	var flow: Node = root.get_node_or_null("SceneFlow")
+	if flow:
+		flow.fade_duration = 0.0
+	if defeat_aristocrat and defeat_aristocrat.has_method("advance"):
+		defeat_aristocrat.advance()
+	if flow and flow.busy:
+		await flow.transition_finished
+	for i in 20:
+		if current_scene and current_scene.name == "TitleScreen":
+			break
+		await process_frame
+	var title_ok: bool = current_scene != null and current_scene.name == "TitleScreen"
+	print("defeat_to_title_ok=", title_ok, " scene=", current_scene.name if current_scene else "")
 
 	var all_ok: bool = (
 		clips_ok
@@ -160,6 +204,7 @@ func _run() -> void:
 		and rations_ok
 		and lose_ok
 		and lose_text_ok
+		and title_ok
 	)
 	print("game_loop_smoke_ok=", all_ok)
 	quit(0 if all_ok else 1)
