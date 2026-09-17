@@ -124,7 +124,10 @@ func _run() -> void:
 		push_error("Failed to reload Main for defeat path")
 		quit(1)
 		return
-	await process_frame
+	for i in 30:
+		await process_frame
+		if current_scene != null and current_scene.name == "Main":
+			break
 	main = current_scene as Node3D
 	if main == null:
 		push_error("Main was not current scene after reload")
