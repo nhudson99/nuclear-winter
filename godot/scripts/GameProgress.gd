@@ -2,7 +2,7 @@ extends Node
 
 ## Session-wide run state: rations, shop loadout, and which aristocrat line to show.
 
-enum AristocratMode { BRIEFING, VICTORY }
+enum AristocratMode { BRIEFING, VICTORY, DEFEAT }
 enum ShopItem { PISTOL, SPEED, SNEAK }
 
 const PISTOL_COST := 5
@@ -13,6 +13,7 @@ const LEVEL_RATION_REWARD := 5
 
 const VICTORY_LINE := "Well, you survived. Good for you. Here is your ration reward"
 const BRIEFING_LINE := "You want to eat? Then get to work"
+const DEFEAT_LINE := "Finally, you are no longer a drain on the motherland"
 
 signal rations_changed(amount: int)
 signal upgrades_changed
@@ -92,8 +93,13 @@ func advance_level() -> void:
 
 
 func dialogue_line() -> String:
-	if aristocrat_mode == AristocratMode.VICTORY:
-		return VICTORY_LINE
+	match aristocrat_mode:
+		AristocratMode.VICTORY:
+			return VICTORY_LINE
+		AristocratMode.DEFEAT:
+			return DEFEAT_LINE
+		AristocratMode.BRIEFING:
+			return BRIEFING_LINE
 	return BRIEFING_LINE
 
 
