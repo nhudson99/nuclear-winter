@@ -1329,6 +1329,89 @@ func _pick_item_cell(
 	return candidates[0] if not candidates.is_empty() else start_cell
 
 
+## One tile is 12 m. Distance 2 is outside the 16 m sight range, so a monster
+## placed this far from the start cannot see the player on the first frame.
+const MIN_START_SPAWN_DISTANCE := 2
+
+
+## True when `cell` is not the start room and not a same-floor neighbour of it.
+static func is_clear_of_start(
+	cell: Vector2i,
+	start_cell: Vector2i,
+	floor_of: Dictionary
+) -> bool:
+	return cell != start_cell and not _shares_start_neighbourhood(cell, start_cell, floor_of)
+
+
+## True when `cell` is off the player's start, outside the start neighbourhood
+## on that floor, and on the opposite side of the layout's bounding-box center.
+static func is_opposite_monster_spawn(
+	cell: Vector2i,
+	start_cell: Vector2i,
+	cells: Array,
+	floor_of: Dictionary
+) -> bool:
+	if cell == start_cell or _shares_start_neighbourhood(cell, start_cell, floor_of):
+		return false
+	var center := _local_layout_center(cells, floor_of)
+	return _is_on_opposite_side(cell, start_cell, floor_of, center)
+
+
+static func _local_layout_center(cells: Array, floor_of: Dictionary) -> Vector2:
+	var min_x := 1 << 30
+	var min_y := 1 << 30
+	var max_x := -(1 << 30)
+	var max_y := -(1 << 30)
+	var any := false
+	for cell in cells:
+		var local: Vector2i = cell - floor_origin(int(floor_of.get(cell, 0)))
+		min_x = mini(min_x, local.x)
+		min_y = mini(min_y, local.y)
+		max_x = maxi(max_x, local.x)
+		max_y = maxi(max_y, local.y)
+		any = true
+	if not any:
+		return Vector2.ZERO
+	return Vector2(float(min_x + max_x) * 0.5, float(min_y + max_y) * 0.5)
+
+
+static func _shares_start_neighbourhood(
+	cell: Vector2i,
+	start_cell: Vector2i,
+	floor_of: Dictionary
+) -> bool:
+	if int(floor_of.get(cell, 0)) != int(floor_of.get(start_cell, 0)):
+		return false
+	return _local_manhattan(cell, start_cell, floor_of) < MIN_START_SPAWN_DISTANCE
+
+
+static func _local_manhattan(cell: Vector2i, start_cell: Vector2i, floor_of: Dictionary) -> int:
+	var local: Vector2i = cell - floor_origin(int(floor_of.get(cell, 0)))
+	var start_local: Vector2i = start_cell - floor_origin(int(floor_of.get(start_cell, 0)))
+	return absi(local.x - start_local.x) + absi(local.y - start_local.y)
+
+
+static func _is_on_opposite_side(
+	cell: Vector2i,
+	start_cell: Vector2i,
+	floor_of: Dictionary,
+	center: Vector2
+) -> bool:
+	var start_local: Vector2i = start_cell - floor_origin(int(floor_of.get(start_cell, 0)))
+	var local: Vector2i = cell - floor_origin(int(floor_of.get(cell, 0)))
+	var use_x := absf(float(start_local.x) - center.x) >= absf(float(start_local.y) - center.y)
+	if use_x:
+		if float(start_local.x) <= center.x:
+			return float(local.x) > center.x
+		return float(local.x) < center.x
+	if float(start_local.y) <= center.y:
+		return float(local.y) > center.y
+	return float(local.y) < center.y
+
+
+## Every monster goes on the far side of the map from the player. The objective,
+## keys, exit and stairs stay reserved, so the mission item is still in the
+## last wing and nothing spawns in the start neighbourhood.
 func _place_enemy_roster(
 	cells: Array[Vector2i],
 	start_cell: Vector2i,
@@ -1340,58 +1423,17 @@ func _place_enemy_roster(
 	rng: RandomNumberGenerator = null
 ) -> Array[Dictionary]:
 	var kinds := LevelRules.monster_kinds(level)
-	var last_zone := 0
-	for cell in zone_of:
-		last_zone = maxi(last_zone, int(zone_of[cell]))
 	var forbidden := reserved.duplicate()
 	forbidden[start_cell] = true
-	var enemies: Array[Dictionary] = []
+	forbidden[objective_cell] = true
+	var center := _local_layout_center(cells, floor_of)
+	var opposite := _opposite_spawn_pool(cells, start_cell, floor_of, forbidden, center)
 	var randomize := LevelRules.randomize_monster_spawns(level) and rng != null
+	var enemies: Array[Dictionary] = []
 	for kind in kinds:
-		var pool: Array[Vector2i] = cells
-		var near := true
-		var anchor := start_cell
-		match kind:
-			LevelRules.KIND_SLIME:
-				pool = _cells_in_zone(cells, zone_of, 0)
-				near = true
-				anchor = start_cell
-			LevelRules.KIND_HARE:
-				var mid_zone := last_zone / 2
-				pool = _cells_in_zone(cells, zone_of, mid_zone)
-				near = false
-				anchor = start_cell
-			LevelRules.KIND_TANK:
-				pool = _cells_in_zone(cells, zone_of, last_zone)
-				near = true
-				anchor = objective_cell
-			LevelRules.KIND_TARANTULA:
-				var mid_web_zone := last_zone / 2
-				pool = _cells_in_zone(cells, zone_of, mid_web_zone)
-				near = false
-				anchor = start_cell
-			LevelRules.KIND_WIDOW:
-				pool = _cells_in_zone(cells, zone_of, last_zone)
-				near = true
-				anchor = objective_cell
-			LevelRules.KIND_TOAD:
-				# Search the mission wing so it can actually find the item.
-				pool = _cells_in_zone(cells, zone_of, last_zone)
-				near = true
-				anchor = objective_cell
-			_:
-				push_error("MapGenerator: unknown monster kind '%s'" % kind)
-		var cell := (
-			_pick_random_spawn_cell(pool, forbidden, rng)
-			if randomize
-			else _pick_spawn_cell(pool, forbidden, anchor, near)
+		var cell := _pick_far_spawn_cell(
+			opposite, cells, start_cell, floor_of, forbidden, randomize, rng
 		)
-		if forbidden.has(cell) or cell == start_cell:
-			cell = (
-				_pick_random_spawn_cell(cells, forbidden, rng)
-				if randomize
-				else _pick_spawn_cell(cells, forbidden, objective_cell, true)
-			)
 		forbidden[cell] = true
 		enemies.append({
 			"kind": kind,
@@ -1403,19 +1445,73 @@ func _place_enemy_roster(
 	return enemies
 
 
-func _pick_random_spawn_cell(
+func _opposite_spawn_pool(
 	cells: Array,
+	start_cell: Vector2i,
+	floor_of: Dictionary,
 	forbidden: Dictionary,
+	center: Vector2
+) -> Array[Vector2i]:
+	var pool: Array[Vector2i] = []
+	for cell in cells:
+		if forbidden.has(cell) or _shares_start_neighbourhood(cell, start_cell, floor_of):
+			continue
+		if _is_on_opposite_side(cell, start_cell, floor_of, center):
+			pool.append(cell)
+	return pool
+
+
+func _pick_far_spawn_cell(
+	opposite: Array[Vector2i],
+	cells: Array,
+	start_cell: Vector2i,
+	floor_of: Dictionary,
+	forbidden: Dictionary,
+	randomize: bool,
 	rng: RandomNumberGenerator
 ) -> Vector2i:
-	var options: Array[Vector2i] = []
+	var pool := _open_cells(opposite, forbidden)
+	if not pool.is_empty():
+		if randomize and rng != null:
+			return pool[rng.randi_range(0, pool.size() - 1)]
+		return _farthest_open_cell(pool, start_cell, floor_of)
+	# The far half can be full of the objective and stairs. Keep walking
+	# outward, still skipping the rooms next to the player.
+	var legal: Array[Vector2i] = []
+	for cell in cells:
+		if forbidden.has(cell) or cell == start_cell:
+			continue
+		if _shares_start_neighbourhood(cell, start_cell, floor_of):
+			continue
+		legal.append(cell)
+	if not legal.is_empty():
+		return _farthest_open_cell(legal, start_cell, floor_of)
+	var anywhere := _open_cells(cells, forbidden)
+	if not anywhere.is_empty():
+		return _farthest_open_cell(anywhere, start_cell, floor_of)
+	return start_cell
+
+
+func _open_cells(cells: Array, forbidden: Dictionary) -> Array[Vector2i]:
+	var open: Array[Vector2i] = []
 	for cell in cells:
 		if forbidden.has(cell):
 			continue
-		options.append(cell)
-	if options.is_empty():
-		return _pick_spawn_cell(cells, forbidden, Vector2i.ZERO, true)
-	return options[rng.randi_range(0, options.size() - 1)]
+		open.append(cell)
+	return open
+
+
+func _farthest_open_cell(cells: Array, start_cell: Vector2i, floor_of: Dictionary) -> Vector2i:
+	var best: Vector2i = start_cell
+	var found := false
+	var best_distance := -1
+	for cell in cells:
+		var distance := _local_manhattan(cell, start_cell, floor_of)
+		if not found or distance > best_distance:
+			best = cell
+			best_distance = distance
+			found = true
+	return best if found else start_cell
 
 
 func _first_enemy_cell(enemies: Array, kind: String, fallback: Vector2i) -> Vector2i:
@@ -1423,21 +1519,3 @@ func _first_enemy_cell(enemies: Array, kind: String, fallback: Vector2i) -> Vect
 		if String(spec.get("kind", "")) == kind:
 			return spec["cell"]
 	return fallback
-
-
-## Picks a leftover room. `near_anchor` prefers the closest unused cell to
-## `anchor`; otherwise the furthest unused cell is used (the Tank camps the back).
-func _pick_spawn_cell(cells: Array, forbidden: Dictionary, anchor: Vector2i, near_anchor: bool) -> Vector2i:
-	var best: Vector2i = anchor
-	var found := false
-	var best_score := 0
-	for cell in cells:
-		if forbidden.has(cell):
-			continue
-		var dist := absi(cell.x - anchor.x) + absi(cell.y - anchor.y)
-		var score := -dist if near_anchor else dist
-		if not found or score > best_score:
-			best = cell
-			best_score = score
-			found = true
-	return best if found else anchor

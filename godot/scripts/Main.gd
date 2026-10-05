@@ -264,10 +264,14 @@ func _place_enemy_roster(layout: Dictionary) -> void:
 		var leftover: CharacterBody3D = templates.get(kind, null)
 		if leftover == null:
 			continue
-		_place_enemy(leftover, layout.get("start", Vector3.ZERO), layout)
+		# Configure off the map. Doing this on the start cell used to leave a
+		# tarantula web under the player after the body was parked.
 		leftover.set_physics_process(false)
 		leftover.visible = false
-		leftover.global_position += Vector3(200.0, 0.0, 200.0)
+		var parked: Vector3 = layout.get("start", Vector3.ZERO) + Vector3(200.0, 0.0, 200.0)
+		_place_enemy(leftover, parked, layout)
+		leftover.set_physics_process(false)
+		leftover.visible = false
 
 
 func _next_enemy_name(kind: String) -> String:

@@ -124,7 +124,7 @@ func _build() -> void:
 		"Slime",
 		slime_path,
 		{
-			"move_speed": 5.2,
+			"move_speed": 3.9,
 			"max_health": 45.0,
 			"touch_damage": 35.0,
 			"proximity_radius": 2.4,

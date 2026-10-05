@@ -52,8 +52,9 @@ func _effective_move_speed() -> float:
 
 
 func _on_level_configured() -> void:
+	# Setup must not plant a web. A live tarantula still webs the room it
+	# arrives in during patrol; a parked template never reaches that step.
 	_abandon_weave(false)
-	_start_weave_at_current_room()
 
 
 func _on_started_chase() -> void:
