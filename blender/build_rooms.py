@@ -1,6 +1,7 @@
 """
 Build tileable room modules for Nuclear Winter's procedural maps:
-bedroom, living room, office, storage, and up/down stairwells.
+bedroom, living room, office, storage, up/down stairwells, a boiler
+room (steam valve) and a pipe gallery.
 
 Every room shares one square footprint with a doorway centred on each of the
 four walls, so the Godot map generator can butt any two rooms together on a
@@ -29,6 +30,7 @@ import bpy
 OUT_DIR = Path("/workspace/godot/assets/rooms")
 BLEND_OUT = Path("/workspace/blender/procedural_rooms.blend")
 PNG_OUT = Path("/opt/cursor/artifacts/blender_procedural_rooms.png")
+PNG_STEAM = Path("/opt/cursor/artifacts/blender_steam_rooms.png")
 
 TILE = 12.0  # grid pitch; must match MapGenerator.TILE
 HALF = TILE * 0.5
@@ -102,13 +104,52 @@ def cube(name: str, loc, size, material, parent=None, yaw: float = 0.0):
 
 
 def cylinder(name: str, loc, radius: float, depth: float, material, parent=None, verts: int = 12):
+    return cylinder_along(name, loc, radius, depth, material, parent, axis="Z", verts=verts)
+
+
+def cylinder_along(
+    name: str,
+    loc,
+    radius: float,
+    depth: float,
+    material,
+    parent=None,
+    axis: str = "Z",
+    verts: int = 12,
+):
+    """Cylinder whose axis is X, Y or Z in Blender space. Axis Z stays vertical in Godot."""
     bpy.ops.mesh.primitive_cylinder_add(vertices=verts, radius=radius, depth=depth, location=loc)
     obj = bpy.context.active_object
     obj.name = name
+    if axis == "X":
+        obj.rotation_euler = (0.0, math.radians(90.0), 0.0)
+    elif axis == "Y":
+        obj.rotation_euler = (math.radians(90.0), 0.0, 0.0)
+    if axis != "Z":
+        bpy.ops.object.select_all(action="DESELECT")
+        obj.select_set(True)
+        bpy.context.view_layer.objects.active = obj
+        bpy.ops.object.transform_apply(location=False, rotation=True, scale=False)
     obj.data.materials.append(material)
     if parent is not None:
         obj.parent = parent
     return obj
+
+
+def attach(obj, parent) -> None:
+    """Parent `obj` without sliding it. Props parented to the origin empty can
+    skip this; a wheel is not at the origin, so a bare `.parent =` would treat
+    world coordinates as local and throw the mesh across the room."""
+    obj.parent = parent
+    obj.matrix_parent_inverse = parent.matrix_world.inverted()
+
+
+def pipe_seg(name: str, start, end, radius: float, material, parent, collide: bool = False):
+    """Axis-aligned pipe. Thin runs are decoration so they never fill a doorway."""
+    loc = tuple((start[i] + end[i]) * 0.5 for i in range(3))
+    size = tuple(max(abs(end[i] - start[i]), radius * 2.0) for i in range(3))
+    full = name if collide else f"NoCol_{name}"
+    return cube(full, loc, size, material, parent)
 
 
 def make_root(name: str):
@@ -698,6 +739,167 @@ def build_stairwell_down():
 
 
 # --------------------------------------------------------------------------- #
+# Boiler — the steam valve lives here
+# --------------------------------------------------------------------------- #
+
+
+def build_boiler():
+    """Heating plant. The wheel named ValveWheel is what the player turns;
+    ValveUse is the standing spot Godot searches for."""
+    concrete = mat("BoilerFloor", (0.26, 0.26, 0.25), 0.92)
+    plaster = mat("BoilerWall", (0.34, 0.32, 0.30), 0.9)
+    grime = mat("BoilerGrime", (0.18, 0.17, 0.16), 0.95)
+    steel = mat("BoilerSteel", (0.34, 0.35, 0.37), 0.35)
+    rust = mat("BoilerRust", (0.45, 0.24, 0.13), 0.8)
+    soot = mat("BoilerSoot", (0.12, 0.11, 0.10), 0.95)
+    hazard = mat("BoilerHazard", (0.62, 0.48, 0.10), 0.65)
+    red = mat("BoilerRed", (0.55, 0.12, 0.08), 0.45)
+    heat = emissive("BoilerHeat", (1.0, 0.42, 0.12), 1.4)
+    lamp = emissive("BoilerLamp", (1.0, 0.22, 0.12), 2.4)
+    bulb = emissive("BoilerBulb", (1.0, 0.84, 0.55), 1.5)
+    debris = mat("BoilerDebris", (0.20, 0.18, 0.16), 0.95)
+
+    root = build_shell("Boiler", concrete, plaster, plaster)
+    add_wall_grime(
+        root,
+        grime,
+        [
+            ("N", -3.6, 1.3, 1.8, 1.4),
+            ("E", 3.2, 1.6, 2.0, 1.1),
+            ("S", -2.2, 0.9, 2.2, 1.3),
+        ],
+    )
+
+    # Northwest corner, clear of the doorway cross.
+    tank = (-4.05, 3.75)
+    cylinder_along("BoilerTank", (*tank, 0.78), 0.62, 2.3, rust, root, axis="Y", verts=16)
+    cylinder_along("BoilerTankBandA", (tank[0], tank[1] - 0.7, 0.78), 0.66, 0.08, steel, root, axis="Y", verts=16)
+    cylinder_along("BoilerTankBandB", (tank[0], tank[1] + 0.7, 0.78), 0.66, 0.08, steel, root, axis="Y", verts=16)
+    for index, dy in enumerate((-1.0, 1.0)):
+        cube(f"BoilerLeg_{index}", (tank[0], tank[1] + dy, 0.16), (0.9, 0.16, 0.32), steel, root)
+    cube("BoilerSoot", (tank[0], tank[1], 0.22), (1.5, 2.5, 0.04), soot, root)
+
+    # Riser and a horizontal gate valve. The wheel's axis is vertical so a
+    # yaw in Godot reads as turning it.
+    riser = (-3.15, 3.75)
+    cube("ValveRiser", (*riser, 1.05), (0.16, 0.16, 1.5), steel, root)
+    cube("ValveBody", (*riser, 1.55), (0.28, 0.28, 0.22), rust, root)
+    wheel = cylinder_along("ValveWheel", (*riser, 1.78), 0.4, 0.07, red, root, axis="Z", verts=20)
+    spoke_a = cube("ValveSpoke_0", (*riser, 1.78), (0.72, 0.06, 0.05), steel, root)
+    spoke_b = cube("ValveSpoke_1", (*riser, 1.78), (0.06, 0.72, 0.05), steel, root)
+    hub = cylinder_along("ValveHub", (*riser, 1.78), 0.1, 0.12, steel, root, axis="Z", verts=12)
+    for part in (spoke_a, spoke_b, hub):
+        attach(part, wheel)
+    cube("NoCol_ValveLamp", (riser[0], riser[1], 1.28), (0.1, 0.1, 0.1), lamp, root)
+
+    # Standing spot south of the wheel, still in the corner, not in the cross.
+    add_empty("ValveUse", (-2.35, 2.55, 1.0), root)
+
+    # Hookup that meets the procedural pipe run at the ceiling centre.
+    pipe_seg("BoilerHeader", (*riser, 2.02), (0.0, 0.0, 2.02), 0.07, rust, root)
+    pipe_seg("BoilerHeaderB", (riser[0], riser[1], 1.78), (*riser, 2.02), 0.06, steel, root)
+    pipe_seg("BoilerReturn", (tank[0], tank[1], 1.35), (*riser, 1.55), 0.06, rust, root)
+
+    # Coal bin and a gauge board in the other corners.
+    cube("CoalBin", (4.35, -4.15, 0.4), (1.3, 1.1, 0.8), steel, root)
+    cube("NoCol_Coal", (4.35, -4.15, 0.86), (1.1, 0.9, 0.16), soot, root)
+    cube("GaugeBoard", (-4.7, -3.6, 1.35), (0.12, 1.4, 0.9), steel, root)
+    cylinder("NoCol_Gauge_0", (-4.58, -3.95, 1.5), 0.16, 0.06, hazard, root, verts=12)
+    cylinder("NoCol_Gauge_1", (-4.58, -3.25, 1.5), 0.16, 0.06, heat, root, verts=12)
+    cube("NoCol_GaugeNeedle", (-4.54, -3.25, 1.5), (0.03, 0.04, 0.18), red, root)
+
+    cube("ToolChest", (4.4, 3.5, 0.38), (0.9, 0.55, 0.76), red, root)
+    cube("NoCol_ChestHandle", (4.4, 3.2, 0.55), (0.4, 0.05, 0.06), steel, root)
+    cube("NoCol_HazardStripe", (4.6, -2.3, 1.15), (0.06, 0.9, 0.16), hazard, root)
+
+    add_floor_debris(
+        root,
+        debris,
+        [(1.4, 1.6, 1.6, 1.0), (0.6, -1.8, 1.2, 0.8), (-1.2, 1.1, 0.9, 0.7)],
+    )
+    add_ceiling_lamp(root, steel, bulb, loc=(1.8, -1.4))
+    return root
+
+
+# --------------------------------------------------------------------------- #
+# Pipe gallery — the run you follow away from a steaming doorway
+# --------------------------------------------------------------------------- #
+
+
+def _wall_pipe_runs(root, material, y: float, z: float, name: str) -> None:
+    """North/south pipe broken around the centred doorway."""
+    pipe_seg(f"{name}_W", (-5.3, y, z), (-1.85, y, z), 0.07, material, root)
+    pipe_seg(f"{name}_E", (1.85, y, z), (5.3, y, z), 0.07, material, root)
+
+
+def _side_pipe_runs(root, material, x: float, z: float, name: str) -> None:
+    """East/west pipe broken around the centred doorway."""
+    pipe_seg(f"{name}_S", (x, -5.3, z), (x, -1.85, z), 0.07, material, root)
+    pipe_seg(f"{name}_N", (x, 1.85, z), (x, 5.3, z), 0.07, material, root)
+
+
+def build_pipe_gallery():
+    concrete = mat("PipeFloor", (0.24, 0.25, 0.24), 0.92)
+    plaster = mat("PipeWall", (0.30, 0.32, 0.31), 0.9)
+    grime = mat("PipeGrime", (0.16, 0.18, 0.17), 0.95)
+    steel = mat("PipeSteel", (0.36, 0.37, 0.38), 0.32)
+    rust = mat("PipeRust", (0.46, 0.26, 0.14), 0.78)
+    hazard = mat("PipeHazard", (0.60, 0.46, 0.09), 0.6)
+    red = mat("PipeRed", (0.48, 0.12, 0.10), 0.55)
+    heat = emissive("PipeHeat", (1.0, 0.48, 0.16), 1.1)
+    bulb = emissive("PipeBulb", (0.95, 0.90, 0.72), 1.4)
+    debris = mat("PipeDebris", (0.18, 0.18, 0.17), 0.95)
+
+    root = build_shell("PipeGallery", concrete, plaster, plaster)
+    add_wall_grime(
+        root,
+        grime,
+        [
+            ("W", 2.8, 1.2, 2.0, 1.5),
+            ("E", -2.4, 1.5, 1.8, 1.2),
+            ("S", 3.4, 1.7, 1.4, 0.8),
+        ],
+    )
+
+    for z, material, tag in ((1.72, rust, "Low"), (2.02, steel, "High")):
+        _wall_pipe_runs(root, material, 5.42, z, f"North{tag}")
+        _wall_pipe_runs(root, material, -5.42, z, f"South{tag}")
+        _side_pipe_runs(root, material, 5.42, z, f"East{tag}")
+        _side_pipe_runs(root, material, -5.42, z, f"West{tag}")
+
+    # Brackets and a corner manifold. The doorway cross stays empty so the
+    # generator can blast steam through whichever wall it chooses.
+    for index, (x, y) in enumerate(((-4.2, 5.55), (-2.4, 5.55), (2.4, 5.55), (4.2, 5.55))):
+        cube(f"NoCol_BracketN_{index}", (x, y, 1.87), (0.1, 0.16, 0.5), steel, root)
+    for index, (x, y) in enumerate(((5.55, -4.0), (5.55, -2.3), (5.55, 2.3), (5.55, 4.0))):
+        cube(f"NoCol_BracketE_{index}", (x, y, 1.87), (0.16, 0.1, 0.5), steel, root)
+
+    cylinder_along("Manifold", (4.15, -4.15, 1.15), 0.28, 1.7, rust, root, axis="Z", verts=14)
+    cylinder_along("ManifoldCap", (4.15, -4.15, 2.02), 0.34, 0.08, steel, root, axis="Z", verts=14)
+    pipe_seg("ManifoldTapN", (4.15, -4.15, 1.72), (4.15, -1.9, 1.72), 0.06, steel, root)
+    pipe_seg("ManifoldTapW", (4.15, -4.15, 2.02), (1.9, -4.15, 2.02), 0.06, rust, root)
+    cube("NoCol_ManifoldHeat", (4.15, -4.15, 1.15), (0.12, 0.12, 0.5), heat, root)
+
+    cube("ValveCabinet", (-4.35, -4.2, 0.7), (0.7, 1.1, 1.4), steel, root)
+    cube("NoCol_CabinetDoor", (-3.98, -4.2, 0.75), (0.05, 0.9, 1.15), plaster, root)
+    cube("NoCol_CabinetLamp", (-3.92, -4.2, 1.15), (0.05, 0.16, 0.1), heat, root)
+
+    cube("NoCol_SteamSign", (5.55, 0.0, 1.55), (0.05, 1.3, 0.48), red, root)
+    cube("NoCol_SteamSignBar", (5.5, 0.0, 1.55), (0.03, 0.9, 0.08), hazard, root)
+
+    cube("DripTray", (-4.3, 3.4, 0.06), (1.2, 0.8, 0.08), steel, root)
+    cube("NoCol_Drip", (-4.3, 3.4, 0.12), (0.7, 0.45, 0.02), grime, root)
+
+    add_floor_debris(
+        root,
+        debris,
+        [(1.1, 0.8, 1.8, 1.1), (-0.8, -1.4, 1.2, 0.8), (0.4, 2.2, 1.0, 0.7)],
+    )
+    add_ceiling_lamp(root, steel, bulb, loc=(-1.6, 1.2))
+    return root
+
+
+# --------------------------------------------------------------------------- #
 # Export + preview
 # --------------------------------------------------------------------------- #
 
@@ -711,6 +913,11 @@ ROOM_BUILDERS = (
 STAIR_BUILDERS = (
     ("stairwell_up", build_stairwell_up),
     ("stairwell_down", build_stairwell_down),
+)
+
+STEAM_BUILDERS = (
+    ("boiler", build_boiler),
+    ("pipe_gallery", build_pipe_gallery),
 )
 
 
@@ -729,26 +936,34 @@ def export_room(root, glb_path: Path) -> None:
     )
 
 
-def build_preview() -> None:
-    """Lay the livable modules 2x2 and the stairwells in a third row."""
-    clear_scene()
+def _place_preview_modules() -> None:
     spacing = TILE
     livable = (
+        (-spacing * 0.5, spacing * 1.5),
+        (spacing * 0.5, spacing * 1.5),
         (-spacing * 0.5, spacing * 0.5),
         (spacing * 0.5, spacing * 0.5),
-        (-spacing * 0.5, -spacing * 0.5),
-        (spacing * 0.5, -spacing * 0.5),
     )
     for (_, builder), (x, y) in zip(ROOM_BUILDERS, livable):
         root = builder()
         root.location = (x, y, 0.0)
-    stair_offsets = ((-spacing * 0.5, -spacing * 1.5), (spacing * 0.5, -spacing * 1.5))
+    stair_offsets = ((-spacing * 0.5, -spacing * 0.5), (spacing * 0.5, -spacing * 0.5))
     for (_, builder), (x, y) in zip(STAIR_BUILDERS, stair_offsets):
         root = builder()
         root.location = (x, y, 0.0)
+    steam_offsets = ((-spacing * 0.5, -spacing * 1.5), (spacing * 0.5, -spacing * 1.5))
+    for (_, builder), (x, y) in zip(STEAM_BUILDERS, steam_offsets):
+        root = builder()
+        root.location = (x, y, 0.0)
+
+
+def build_preview() -> None:
+    """Lay the livable modules, stairwells and steam rooms in four rows."""
+    clear_scene()
+    _place_preview_modules()
 
     ground = mat("PreviewGround", (0.15, 0.15, 0.14), 0.95)
-    cube("PreviewGround", (0, -6, -0.14), (64, 80, 0.12), ground)
+    cube("PreviewGround", (0, -6, -0.14), (64, 110, 0.12), ground)
 
     bpy.ops.object.light_add(type="AREA", location=(0, -8, 24))
     key = bpy.context.active_object
@@ -763,11 +978,11 @@ def build_preview() -> None:
     sun.data.energy = 1.9
     sun.rotation_euler = (math.radians(48), math.radians(12), math.radians(24))
 
-    bpy.ops.object.camera_add(location=(28, -36, 34))
+    bpy.ops.object.camera_add(location=(34, -52, 42))
     cam = bpy.context.active_object
     cam.name = "PreviewCam"
-    cam.rotation_euler = (math.radians(54), 0, math.radians(40))
-    cam.data.lens = 46
+    cam.rotation_euler = (math.radians(52), 0, math.radians(36))
+    cam.data.lens = 38
     bpy.context.scene.camera = cam
 
     scene = bpy.context.scene
@@ -795,20 +1010,70 @@ def build_preview() -> None:
         print(f"Preview render skipped: {exc}")
 
 
+def render_steam_closeup() -> None:
+    """Closer shot of the boiler and the pipe gallery for the walkthrough."""
+    clear_scene()
+    spacing = TILE
+    for (_, builder), x in zip(STEAM_BUILDERS, (-spacing * 0.55, spacing * 0.55)):
+        root = builder()
+        root.location = (x, 0.0, 0.0)
+    ground = mat("SteamPreviewGround", (0.12, 0.12, 0.11), 0.95)
+    cube("PreviewGround", (0, 0, -0.14), (40, 28, 0.12), ground)
+
+    bpy.ops.object.light_add(type="AREA", location=(0, -10, 14))
+    key = bpy.context.active_object
+    key.data.energy = 4500
+    key.data.size = 12
+    key.rotation_euler = (math.radians(40), 0, 0)
+    bpy.ops.object.light_add(type="SUN", location=(6, -8, 10))
+    sun = bpy.context.active_object
+    sun.data.energy = 1.6
+    sun.rotation_euler = (math.radians(50), math.radians(8), math.radians(20))
+
+    bpy.ops.object.camera_add(location=(16, -18, 12))
+    cam = bpy.context.active_object
+    cam.rotation_euler = (math.radians(58), 0, math.radians(42))
+    cam.data.lens = 42
+    bpy.context.scene.camera = cam
+
+    scene = bpy.context.scene
+    if scene.world is None:
+        scene.world = bpy.data.worlds.new("World")
+    scene.world.use_nodes = True
+    background = scene.world.node_tree.nodes.get("Background")
+    if background:
+        background.inputs[0].default_value = (0.08, 0.09, 0.10, 1.0)
+        background.inputs[1].default_value = 0.45
+
+    scene.render.engine = "CYCLES"
+    scene.cycles.device = "CPU"
+    scene.cycles.samples = 24
+    scene.render.resolution_x = 1400
+    scene.render.resolution_y = 800
+    scene.render.filepath = str(PNG_STEAM)
+    try:
+        bpy.ops.render.render(write_still=True)
+        print(f"Wrote {PNG_STEAM}")
+    except Exception as exc:  # noqa: BLE001 - preview art is optional
+        print(f"Steam preview skipped: {exc}")
+
+
 def main() -> None:
     OUT_DIR.mkdir(parents=True, exist_ok=True)
     BLEND_OUT.parent.mkdir(parents=True, exist_ok=True)
     PNG_OUT.parent.mkdir(parents=True, exist_ok=True)
+    PNG_STEAM.parent.mkdir(parents=True, exist_ok=True)
 
     # One room per scene: Blender would otherwise suffix duplicate object names
     # (Plug_N.001) and break the generator's node lookups.
-    for name, builder in ROOM_BUILDERS + STAIR_BUILDERS:
+    for name, builder in ROOM_BUILDERS + STAIR_BUILDERS + STEAM_BUILDERS:
         clear_scene()
         root = builder()
         glb_path = OUT_DIR / f"room_{name}.glb"
         export_room(root, glb_path)
         print(f"Wrote {glb_path}")
 
+    render_steam_closeup()
     build_preview()
     print(f"Wrote {BLEND_OUT}")
 

@@ -3,6 +3,7 @@ extends CharacterBody3D
 signal died
 signal item_collected
 signal key_collected(stage: int)
+signal valve_shut
 signal stair_used(stair: Node)
 
 @export var move_speed: float = 2.4
@@ -361,6 +362,11 @@ func _try_interact() -> void:
 		item_collected.emit()
 		return
 
+	var valve := _nearest_steam_valve()
+	if valve != null and valve.has_method("try_shut") and valve.try_shut():
+		valve_shut.emit()
+		return
+
 	var stair := _nearest_stairwell()
 	if stair == null or not stair.has_method("try_use"):
 		return
@@ -368,6 +374,23 @@ func _try_interact() -> void:
 		return
 	if stair.try_use():
 		stair_used.emit(stair)
+
+
+func _nearest_steam_valve() -> Node:
+	var best: Node = null
+	var best_dist := interact_range
+	for node in get_tree().get_nodes_in_group("steam_valve"):
+		if node == null or not is_instance_valid(node):
+			continue
+		if not node.has_method("can_interact") or not node.can_interact(global_position):
+			continue
+		var to_valve: Vector3 = (node as Node3D).global_position - global_position
+		to_valve.y = 0.0
+		var dist := to_valve.length()
+		if dist <= best_dist:
+			best_dist = dist
+			best = node
+	return best
 
 
 func _nearest_stairwell() -> Node:

@@ -58,13 +58,15 @@ func _run() -> void:
 	var zones3_ok := _check_chained_zones(level3["layout"], 3)
 	print("zones_l1_ok=", zones1_ok, " zones_l2_ok=", zones2_ok, " zones_l3_ok=", zones3_ok)
 
-	var reach1_ok := _reachable_without_locks(level1["layout"], level1["layout"]["objective_cell"])
+	var reach1_ok := _check_steam(level1["layout"], true)
 	var reach2_blocked := not _reachable_without_locks(level2["layout"], level2["layout"]["objective_cell"])
 	var reach2_key := _reachable_without_locks(level2["layout"], (level2["layout"]["keys"] as Array)[0]["cell"])
+	var steam_higher_ok := _check_steam(level2["layout"], false) and _check_steam(level3["layout"], false)
 	print(
-		"mission_l1_open_ok=", reach1_ok,
+		"steam_l1_ok=", reach1_ok,
 		" mission_l2_locked_ok=", reach2_blocked,
-		" key_l2_open_ok=", reach2_key
+		" key_l2_open_ok=", reach2_key,
+		" steam_higher_ok=", steam_higher_ok
 	)
 
 	var floors_ok := (
@@ -74,6 +76,13 @@ func _run() -> void:
 		and _check_floor_rules(level4["layout"], 4, level4["container"])
 	)
 	print("floors_ok=", floors_ok)
+	# These maps sit on the same world origin as the live scenes below. Free
+	# them before any walk, or a leftover steam jet blocks the doorway.
+	for probe in [level1, level2, level3, level4, level6]:
+		var leftover: Node = probe["container"]
+		if is_instance_valid(leftover):
+			leftover.queue_free()
+	await create_timer(0.05).timeout
 
 	var stairs_ok := _check_stairs(level3["layout"], 3) and _check_stairs(level4["layout"], 4)
 	print("stairs_ok=", stairs_ok)
@@ -87,17 +96,14 @@ func _run() -> void:
 	var live_ok := await _check_live_level_2()
 	print("live_unlock_ok=", live_ok)
 
+	var live_steam_ok := await _check_live_steam()
+	print("live_steam_ok=", live_steam_ok)
+
 	var live_floor_ok := await _check_live_floor_change()
 	print("live_floor_ok=", live_floor_ok)
 
 	var advance_ok := _check_level_advance(gp)
 	print("advance_ok=", advance_ok)
-
-	(level1["container"] as Node3D).queue_free()
-	(level2["container"] as Node3D).queue_free()
-	(level3["container"] as Node3D).queue_free()
-	(level4["container"] as Node3D).queue_free()
-	(level6["container"] as Node3D).queue_free()
 
 	var all_ok: bool = (
 		formulas_ok
@@ -110,11 +116,13 @@ func _run() -> void:
 		and reach1_ok
 		and reach2_blocked
 		and reach2_key
+		and steam_higher_ok
 		and floors_ok
 		and stairs_ok
 		and spawn_rand_ok
 		and clear_start_ok
 		and live_ok
+		and live_steam_ok
 		and live_floor_ok
 		and advance_ok
 	)
@@ -146,10 +154,15 @@ func _check_formulas() -> bool:
 		]
 		var want: Array = expected[level]
 		var match_ok: bool = got == want and LevelRules.counts_match_cycle(level)
+		var valve_listed := false
+		for spec in LevelRules.objectives(level):
+			if String(spec.get("kind", "")) == LevelRules.KIND_VALVE:
+				valve_listed = true
 		var obj_ok: bool = (
-			LevelRules.objective_count(level) == level
+			LevelRules.objective_count(level) == level + 1
 			and LevelRules.key_count(level) == maxi(level - 1, 0)
-			and LevelRules.objectives(level).size() == level
+			and LevelRules.objectives(level).size() == level + 1
+			and valve_listed
 		)
 		var floors_ok: bool = (
 			LevelRules.floor_count(level) == int(ceili(float(level) / 2.0))
@@ -221,10 +234,15 @@ func _objectives_match(layout: Dictionary, level: int) -> bool:
 	var keys: Array = layout.get("keys", [])
 	var locks: Array = layout.get("locks", [])
 	var objectives: Array = layout.get("objectives", [])
+	var valve := 0
+	for spec in objectives:
+		if String(spec.get("kind", "")) == LevelRules.KIND_VALVE:
+			valve += 1
 	var ok := (
 		keys.size() == LevelRules.key_count(level)
 		and locks.size() >= LevelRules.locked_door_count(level)
 		and objectives.size() == LevelRules.objective_count(level)
+		and valve == 1
 	)
 	print(
 		"objectives level=", level,
@@ -353,6 +371,187 @@ func _check_chained_zones(layout: Dictionary, level: int) -> bool:
 			print("key_on_start stage=", stage)
 			return false
 	return true
+
+
+func _check_steam(layout: Dictionary, valve_from_start: bool) -> bool:
+	var steam: Dictionary = layout.get("steam", {})
+	if not steam.has("boiler_cell") or not steam.has("mission_cell"):
+		print("steam_missing level=", layout.get("level"))
+		return false
+	var boiler: Vector2i = steam["boiler_cell"]
+	var gallery: Vector2i = steam["gallery_cell"]
+	var mission: Vector2i = steam["mission_cell"]
+	if mission != layout.get("objective_cell"):
+		print("steam_mission_mismatch mission=", mission, " objective=", layout.get("objective_cell"))
+		return false
+	if _room_type(layout, boiler) != MapGenerator.TYPE_BOILER:
+		print("boiler_type_wrong cell=", boiler, " type=", _room_type(layout, boiler))
+		return false
+	if gallery != boiler:
+		var gallery_type := _room_type(layout, gallery)
+		var gallery_ok := (
+			gallery_type == MapGenerator.TYPE_PIPE_GALLERY
+			or MapGenerator.is_stair_type(gallery_type)
+		)
+		if not gallery_ok:
+			print("gallery_type_wrong cell=", gallery, " type=", gallery_type)
+			return false
+	var pipes: Array = steam.get("pipe_cells", [])
+	if pipes.is_empty() or pipes[0] != gallery or pipes[pipes.size() - 1] != boiler:
+		print("pipe_path_wrong pipes=", pipes, " gallery=", gallery, " boiler=", boiler)
+		return false
+	var mission_blocked := not _reachable_past(layout, gallery, mission, true, true)
+	var mission_open := _reachable_past(layout, gallery, mission, false, true)
+	var valve_open := _reachable_past(layout, gallery, boiler, true, true)
+	var from_start := _reachable_past(layout, layout["start_cell"], boiler, true, true)
+	var far_has_mission := false
+	for cell in steam.get("far_cells", []):
+		if cell == mission:
+			far_has_mission = true
+	var ok := (
+		mission_blocked
+		and mission_open
+		and valve_open
+		and from_start == valve_from_start
+		and far_has_mission
+		and boiler != mission
+	)
+	print(
+		"steam level=", layout.get("level"),
+		" blocked=", mission_blocked,
+		" opens=", mission_open,
+		" valve=", valve_open,
+		" from_start=", from_start,
+		" ok=", ok
+	)
+	return ok
+
+
+func _room_type(layout: Dictionary, cell: Vector2i) -> String:
+	for room in layout.get("rooms", []):
+		if room.get("cell") == cell:
+			return String(room.get("type", ""))
+	return ""
+
+
+func _reachable_past(
+	layout: Dictionary,
+	start: Vector2i,
+	goal: Vector2i,
+	block_steam: bool,
+	block_sealed: bool
+) -> bool:
+	var rooms: Array = layout.get("rooms", [])
+	var locked := {}
+	for lock in layout.get("locks", []):
+		if String(lock.get("kind", "")) == MapGenerator.LOCK_KIND_STAIR:
+			continue
+		locked[MapGenerator.edge_key(lock["from_cell"], lock["to_cell"])] = true
+	var cells := {}
+	for room in rooms:
+		cells[room["cell"]] = true
+	if not cells.has(start) or not cells.has(goal):
+		return false
+	var seen := {start: true}
+	var queue: Array[Vector2i] = [start]
+	while not queue.is_empty():
+		var cell: Vector2i = queue.pop_back()
+		if cell == goal:
+			return true
+		for side in MapGenerator.SIDES:
+			var nxt: Vector2i = cell + MapGenerator.SIDE_STEPS[side]
+			if not cells.has(nxt) or seen.has(nxt):
+				continue
+			if locked.has(MapGenerator.edge_key(cell, nxt)):
+				continue
+			if block_steam and MapGenerator.edge_is_steam_door(layout, cell, nxt):
+				continue
+			if block_sealed and MapGenerator.edge_is_sealed(layout, cell, nxt):
+				continue
+			seen[nxt] = true
+			queue.append(nxt)
+	return false
+
+
+func _check_live_steam() -> bool:
+	OS.set_environment("NW_LEVEL", "1")
+	OS.set_environment("NW_LEVEL_SEED", "11")
+	var packed: PackedScene = load("res://scenes/Main.tscn")
+	if packed == null:
+		OS.set_environment("NW_LEVEL", "")
+		return false
+	var main: Node3D = packed.instantiate()
+	root.add_child(main)
+	if not main.is_level_ready():
+		await main.level_ready
+	if main.has_method("park_monsters"):
+		main.park_monsters()
+	var layout: Dictionary = main.get_layout()
+	var steam: Dictionary = layout.get("steam", {})
+	var barriers: Array = main.steam_barriers()
+	var barrier_ok := barriers.size() == 1 and (barriers[0] as SteamBarrier).is_blocked()
+	var pipes := main.get_node_or_null("GeneratedMap/Steam/SteamPipes")
+	var valve := main.get_node_or_null("GeneratedMap/Steam/SteamValve") as SteamValve
+	var placed_ok := pipes != null and valve != null and pipes.get_child_count() > 0
+	print(
+		"steam_placed barrier=", barrier_ok,
+		" count=", barriers.size(),
+		" pipes=", placed_ok,
+		" valve=", valve != null,
+		" level=", main.get_play_level()
+	)
+	if valve == null or barriers.is_empty():
+		main.queue_free()
+		OS.set_environment("NW_LEVEL", "")
+		OS.set_environment("NW_LEVEL_SEED", "")
+		return false
+
+	var player: CharacterBody3D = main.get_node("Player")
+	player.set_physics_process(false)
+	var from_cell: Vector2i = steam["from_cell"]
+	var to_cell: Vector2i = steam["to_cell"]
+	var from_center := MapGenerator.cell_to_world(from_cell)
+	var to_center := MapGenerator.cell_to_world(to_cell)
+	var walk_dir := (to_center - from_center).normalized()
+	await _walk_from(player, from_center, walk_dir, WALK_STEPS)
+	var blocked := _planar(player.global_position, to_center) > MapGenerator.TILE * 0.45
+	print("steam_blocked_ok=", blocked, " dist=", _planar(player.global_position, to_center))
+
+	player.set_physics_process(true)
+	var stand := valve.global_position
+	stand.y = 0.05
+	player.global_position = stand
+	player.velocity = Vector3.ZERO
+	await create_timer(0.05).timeout
+	Input.action_press("interact")
+	await create_timer(0.05).timeout
+	player._physics_process(0.033)
+	Input.action_release("interact")
+	await create_timer(0.1).timeout
+	var shut: bool = main.valve_is_shut() and valve.is_shut() and not (barriers[0] as SteamBarrier).is_blocked()
+	print("steam_shut_ok=", shut)
+
+	player.set_physics_process(false)
+	await _walk_from(player, from_center, walk_dir, WALK_STEPS)
+	var opened := _planar(player.global_position, to_center) < MapGenerator.TILE * 0.45
+	print("steam_opened_ok=", opened, " dist=", _planar(player.global_position, to_center))
+
+	var track_open := false
+	var nodes: Dictionary = main.get_layout().get("monster_track", {}).get("nodes", {})
+	var side := String(steam.get("side", "E"))
+	var canon_cell := from_cell
+	var canon_side := side
+	if not MapGenerator.TRACK_CANONICAL_SIDES.has(side):
+		canon_cell = to_cell
+		canon_side = String(MapGenerator.OPPOSITE_SIDE.get(side, "E"))
+	track_open = nodes.has(MapGenerator.door_track_id(canon_cell, canon_side))
+	print("steam_track_open=", track_open)
+
+	main.queue_free()
+	await create_timer(0.05).timeout
+	OS.set_environment("NW_LEVEL", "")
+	OS.set_environment("NW_LEVEL_SEED", "")
+	return barrier_ok and placed_ok and blocked and shut and opened and track_open
 
 
 func _reachable_without_locks(layout: Dictionary, goal: Vector2i) -> bool:

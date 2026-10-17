@@ -76,7 +76,7 @@ func _run() -> void:
 
 	# Chase around a wall: same-latitude rooms so a straight line hits the
 	# shared wall instead of the doorway. The track must route through the door.
-	var neighbour := _first_neighbour(layout, start_cell)
+	var neighbour := MapGenerator.first_open_neighbour(layout, start_cell)
 	var neighbour_center := _cell_center(neighbour)
 	var door_pos := (start_center + neighbour_center) * 0.5
 	door_pos.y = MapGenerator.TRACK_Y

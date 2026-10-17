@@ -12,7 +12,9 @@ func _initialize() -> void:
 func _run() -> void:
 	var modules_ok := _check_room_modules()
 	var stairs_ok := _check_stair_modules()
+	var steam_modules_ok := _check_steam_modules()
 	print("stair_modules_ok=", stairs_ok)
+	print("steam_modules_ok=", steam_modules_ok)
 
 	var first := await _generate(101, ROOM_COUNT)
 	var replay := await _generate(101, ROOM_COUNT)
@@ -63,6 +65,7 @@ func _run() -> void:
 	var all_ok: bool = (
 		modules_ok
 		and stairs_ok
+		and steam_modules_ok
 		and exits_ok
 		and count_ok
 		and deterministic
@@ -100,6 +103,35 @@ func _check_room_modules() -> bool:
 			if MapGenerator.find_child_by_name(room, node_name) == null:
 				missing.append(node_name)
 		print("module_ok=", missing.is_empty(), " type=", type_name, " missing=", missing)
+		if not missing.is_empty():
+			ok = false
+		room.free()
+	return ok
+
+
+func _check_steam_modules() -> bool:
+	var ok := true
+	for type_name in MapGenerator.STEAM_ROOM_TYPES:
+		var path: String = MapGenerator.ROOM_SCENES[type_name]
+		if not ResourceLoader.exists(path):
+			print("steam_module_missing=", path)
+			ok = false
+			continue
+		var room: Node3D = (load(path) as PackedScene).instantiate()
+		var required: Array[String] = ["Floor"]
+		for side in MapGenerator.SIDES:
+			required.append("Wall_%s_A" % side)
+			required.append("Wall_%s_B" % side)
+			required.append("Wall_%s_L" % side)
+			required.append("Plug_%s" % side)
+		if type_name == MapGenerator.TYPE_BOILER:
+			required.append("ValveUse")
+			required.append("ValveWheel")
+		var missing: Array[String] = []
+		for node_name in required:
+			if MapGenerator.find_child_by_name(room, node_name) == null:
+				missing.append(node_name)
+		print("steam_module_ok=", missing.is_empty(), " type=", type_name, " missing=", missing)
 		if not missing.is_empty():
 			ok = false
 		room.free()
@@ -184,10 +216,13 @@ func _check_types(layout: Dictionary) -> bool:
 	for type_name in MapGenerator.ROOM_TYPES:
 		counts[type_name] = 0
 	for room in layout["rooms"]:
-		if not counts.has(room["type"]):
-			print("unknown_room_type=", room["type"])
+		var type_name := String(room["type"])
+		if MapGenerator.STEAM_ROOM_TYPES.has(type_name) or MapGenerator.is_stair_type(type_name):
+			continue
+		if not counts.has(type_name):
+			print("unknown_room_type=", type_name)
 			return false
-		counts[room["type"]] += 1
+		counts[type_name] += 1
 
 	var lowest := 1 << 30
 	var highest := 0
@@ -220,15 +255,23 @@ func _check_doorways(result: Dictionary) -> bool:
 			print("room_node_missing=", cell)
 			return false
 		for side in MapGenerator.SIDES:
+			var neighbor: Vector2i = cell + MapGenerator.SIDE_STEPS[side]
 			var has_plug := MapGenerator.find_child_by_name(node, "Plug_%s" % side) != null
-			var is_shared: bool = occupied.has(cell + MapGenerator.SIDE_STEPS[side])
+			var is_shared: bool = occupied.has(neighbor)
 			var is_exit: bool = cell == exit_cell and side == exit_side
-			var should_be_open := is_shared or is_exit
-			if has_plug == should_be_open:
+			var plug_expected := true
+			if is_exit:
+				plug_expected = false
+			elif is_shared and MapGenerator.edge_is_sealed(layout, cell, neighbor):
+				plug_expected = cell == MapGenerator.sealed_plug_owner(cell, neighbor)
+			elif is_shared:
+				plug_expected = false
+			if has_plug != plug_expected:
 				print(
 					"doorway_wrong cell=", cell,
 					" side=", side,
 					" plug=", has_plug,
+					" expected=", plug_expected,
 					" shared=", is_shared,
 					" exit=", is_exit
 				)
@@ -375,6 +418,13 @@ func _check_monster_track(result: Dictionary) -> bool:
 			var neighbor: Vector2i = cell + MapGenerator.SIDE_STEPS[side]
 			if not occupied.has(neighbor):
 				continue
+			var door_blocked := MapGenerator.edge_is_blocked(layout, cell, neighbor)
+			var blocked_id := MapGenerator.door_track_id(cell, side)
+			if door_blocked:
+				if nodes.has(blocked_id):
+					print("blocked_door_on_track cell=", cell, " side=", side)
+					return false
+				continue
 			expected_doors += 1
 			var door_id := MapGenerator.door_track_id(cell, side)
 			if not nodes.has(door_id):
@@ -410,9 +460,25 @@ func _check_monster_track(result: Dictionary) -> bool:
 		return false
 
 	var start_id := MapGenerator.room_track_id(layout["start_cell"])
-	if not _track_graph_connected(nodes, start_id):
-		print("track_not_connected start=", start_id)
-		return false
+	var steam: Dictionary = layout.get("steam", {})
+	var far_set := {}
+	for cell in steam.get("far_cells", []):
+		far_set[cell] = true
+	if far_set.is_empty():
+		if not _track_graph_connected(nodes, start_id):
+			print("track_not_connected start=", start_id)
+			return false
+	else:
+		for room in layout["rooms"]:
+			var room_cell: Vector2i = room["cell"]
+			var room_id := MapGenerator.room_track_id(room_cell)
+			var reaches := _track_reaches(nodes, start_id, room_id)
+			if far_set.has(room_cell) and reaches:
+				print("steam_track_leaks cell=", room_cell)
+				return false
+			if not far_set.has(room_cell) and not reaches:
+				print("near_room_off_track cell=", room_cell)
+				return false
 
 	print(
 		"track_graph_ok=true rooms=", room_count,
@@ -424,6 +490,25 @@ func _check_monster_track(result: Dictionary) -> bool:
 
 func _planar_distance(a: Vector3, b: Vector3) -> float:
 	return Vector2(a.x - b.x, a.z - b.z).length()
+
+
+func _track_reaches(nodes: Dictionary, start_id: String, goal_id: String) -> bool:
+	if not nodes.has(start_id) or not nodes.has(goal_id):
+		return false
+	var seen := {start_id: true}
+	var queue: Array[String] = [start_id]
+	while not queue.is_empty():
+		var cur: String = queue.pop_back()
+		if cur == goal_id:
+			return true
+		var exits: Dictionary = nodes[cur].get("exits", {})
+		for dir in exits:
+			var nxt := str(exits[dir])
+			if seen.has(nxt) or not nodes.has(nxt):
+				continue
+			seen[nxt] = true
+			queue.append(nxt)
+	return false
 
 
 func _track_graph_connected(nodes: Dictionary, start_id: String) -> bool:

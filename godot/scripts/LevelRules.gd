@@ -7,7 +7,8 @@ extends RefCounted
 ## Monsters cycle easy → moderate → dangerous as the level index grows:
 ##   n=1 slime, n=2 slime+hare, n=3 slime+hare+tank, n=4 …+tarantula, n=5 …+widow, n=6 …+toad…
 ## Objectives: one mission item, plus (n-1) keys that each open the next locked
-## wing of rooms. The mission item sits in the last locked wing.
+## wing of rooms, plus the steam valve that clears the breach in front of the
+## mission item. The mission item sits in the last locked wing.
 
 const KIND_SLIME := "slime"
 const KIND_HARE := "hare"
@@ -17,6 +18,7 @@ const KIND_WIDOW := "widow"
 const KIND_TOAD := "toad"
 const KIND_MISSION := "mission"
 const KIND_KEY := "key"
+const KIND_VALVE := "valve"
 
 const MONSTER_CYCLE: Array[String] = [
 	KIND_SLIME, KIND_HARE, KIND_TANK, KIND_TARANTULA, KIND_WIDOW, KIND_TOAD
@@ -93,7 +95,8 @@ static func monster_counts(level: int) -> Dictionary:
 
 
 static func objective_count(level: int) -> int:
-	return clamp_level(level)
+	# Keys, the steam valve, and the mission item.
+	return clamp_level(level) + 1
 
 
 static func locked_door_count(level: int) -> int:
@@ -157,7 +160,8 @@ static func randomize_monster_spawns(level: int) -> bool:
 	return clamp_level(level) >= 2
 
 
-## n objectives: key 1..n-1 (if any), then the mission item.
+## n keys-or-mission steps, plus the steam valve that has to be shut before the
+## mission pocket can be entered: key 1..n-1 (if any), the valve, then the item.
 static func objectives(level: int) -> Array[Dictionary]:
 	var n := clamp_level(level)
 	var out: Array[Dictionary] = []
@@ -167,6 +171,11 @@ static func objectives(level: int) -> Array[Dictionary]:
 			"stage": stage,
 			"label": _key_label(stage, n - 1),
 		})
+	out.append({
+		"kind": KIND_VALVE,
+		"stage": 0,
+		"label": "Follow the pipes and shut the steam valve",
+	})
 	out.append({
 		"kind": KIND_MISSION,
 		"stage": 0,

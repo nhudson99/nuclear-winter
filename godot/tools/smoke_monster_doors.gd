@@ -52,7 +52,7 @@ func _run() -> void:
 	player.set_physics_process(false)
 
 	# A shared wall must be walkable: cross from the start room into a neighbour.
-	var neighbour_cell := _first_neighbour(layout, start_cell)
+	var neighbour_cell := MapGenerator.first_open_neighbour(layout, start_cell)
 	var neighbour_center := _cell_center(neighbour_cell)
 	var walk_dir := (neighbour_center - start_center).normalized()
 	await _walk_from(player, start_center, walk_dir, WALK_STEPS)

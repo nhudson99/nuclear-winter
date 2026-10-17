@@ -1,7 +1,8 @@
 class_name MapGenerator
 extends Node
 
-## Builds a level out of the Blender room modules, including up/down stairwells.
+## Builds a level out of the Blender room modules, including up/down stairwells
+## and the boiler / pipe-gallery pair used by the steam-valve objective.
 ##
 ## A run picks a pseudorandom, always-connected set of grid cells, drops a room
 ## tile on each one, and opens the doorway between every pair of neighbours by
@@ -38,6 +39,12 @@ const LOCK_KIND_STAIR := "stair"
 
 const ROOM_TYPES: Array[String] = ["bedroom", "living_room", "office", "storage"]
 const STAIR_TYPES: Array[String] = ["stairwell_up", "stairwell_down"]
+const TYPE_BOILER := "boiler"
+const TYPE_PIPE_GALLERY := "pipe_gallery"
+const STEAM_ROOM_TYPES: Array[String] = [TYPE_BOILER, TYPE_PIPE_GALLERY]
+## Ceiling pipe the player follows from a steaming doorway to the valve.
+const STEAM_PIPE_Y := 1.82
+const STEAM_PIPE_RADIUS := 0.065
 
 const ROOM_SCENES := {
 	"bedroom": "res://assets/rooms/room_bedroom.glb",
@@ -46,6 +53,8 @@ const ROOM_SCENES := {
 	"storage": "res://assets/rooms/room_storage.glb",
 	"stairwell_up": "res://assets/rooms/room_stairwell_up.glb",
 	"stairwell_down": "res://assets/rooms/room_stairwell_down.glb",
+	"boiler": "res://assets/rooms/room_boiler.glb",
+	"pipe_gallery": "res://assets/rooms/room_pipe_gallery.glb",
 }
 
 const ROOM_LABELS := {
@@ -55,6 +64,8 @@ const ROOM_LABELS := {
 	"storage": "СКЛАД / STORAGE",
 	"stairwell_up": "ЛЕСТНИЦА ВВЕРХ / STAIRS UP",
 	"stairwell_down": "ЛЕСТНИЦА ВНИЗ / STAIRS DOWN",
+	"boiler": "КОТЕЛЬНАЯ / BOILER",
+	"pipe_gallery": "ТРУБЫ / PIPE GALLERY",
 }
 
 const SIDES: Array[String] = ["N", "S", "E", "W"]
@@ -179,11 +190,19 @@ func generate(
 	var planned := _plan_floored_level(rng, zone_counts)
 	var cells: Array[Vector2i] = planned["cells"]
 	var floor_of: Dictionary = planned["floor_of"]
-	var types := _assign_types(rng, cells.size())
-	var type_of := {}
-	for index in cells.size():
-		type_of[cells[index]] = types[index]
+	var steam := SteamPlan.build(
+		cells,
+		planned.get("zone_of", {}),
+		floor_of,
+		planned.get("locks", []),
+		planned.get("stairs", [])
+	)
+	if steam.is_empty():
+		push_warning("MapGenerator: steam pocket could not be placed")
+	planned["steam"] = steam
+	var type_of := _types_for_cells(rng, cells, steam, planned.get("stairs", []))
 	_apply_stair_types(type_of, planned["stairs"])
+	var sealed := _sealed_edge_set(steam)
 
 	var occupied := {}
 	for index in cells.size():
@@ -203,7 +222,7 @@ func generate(
 		var room_floor := int(floor_of.get(cell, 0))
 		var room: Node3D = null
 		if room_floor == wanted_floor:
-			room = _spawn_room(container, cell, type_name, occupied, floor_of)
+			room = _spawn_room(container, cell, type_name, occupied, floor_of, sealed)
 			if room == null:
 				push_error("MapGenerator: could not instantiate room type '%s'" % type_name)
 			spawned += 1
@@ -241,6 +260,7 @@ func generate(
 	)
 	_add_locked_doors(container, layout, wanted_floor)
 	_add_stairwells(container, layout, wanted_floor)
+	_add_steam(container, layout, wanted_floor)
 	_add_ground(container, layout["bounds"])
 	_add_monster_track(container, layout["monster_track"])
 	progress.emit(1.0, "ГОТОВО / READY")
@@ -703,6 +723,39 @@ func _fits_span(cells: Array[Vector2i], candidate: Vector2i, max_span: int) -> b
 	return (max_x - min_x + 1) <= max_span and (max_y - min_y + 1) <= max_span
 
 
+## Livable types fill every cell that is not a boiler or a pipe gallery.
+## Stairwells overwrite afterwards, and they win if a steam cell was also a landing.
+func _types_for_cells(
+	rng: RandomNumberGenerator,
+	cells: Array[Vector2i],
+	steam: Dictionary,
+	stairs: Array
+) -> Dictionary:
+	var stair_cells := {}
+	for spec in stairs:
+		stair_cells[spec["cell"]] = true
+	var reserved := {}
+	if steam.has("boiler_cell"):
+		var boiler: Vector2i = steam["boiler_cell"]
+		if not stair_cells.has(boiler):
+			reserved[boiler] = TYPE_BOILER
+	if steam.has("gallery_cell"):
+		var gallery: Vector2i = steam["gallery_cell"]
+		if gallery != steam.get("boiler_cell") and not stair_cells.has(gallery):
+			reserved[gallery] = TYPE_PIPE_GALLERY
+	var open: Array[Vector2i] = []
+	for cell in cells:
+		if not reserved.has(cell):
+			open.append(cell)
+	var bag := _assign_types(rng, open.size())
+	var type_of := {}
+	for index in open.size():
+		type_of[open[index]] = bag[index]
+	for cell in reserved:
+		type_of[cell] = reserved[cell]
+	return type_of
+
+
 ## Deals the room types in whole cycles, so every level shows all four and no
 ## type can dominate; the cycle order is shuffled first so which types get the
 ## leftover slots still varies by seed.
@@ -738,7 +791,8 @@ func _spawn_room(
 	cell: Vector2i,
 	type_name: String,
 	occupied: Dictionary,
-	floor_of: Dictionary = {}
+	floor_of: Dictionary = {},
+	sealed: Dictionary = {}
 ) -> Node3D:
 	var path: String = ROOM_SCENES.get(type_name, "")
 	if path.is_empty() or not ResourceLoader.exists(path):
@@ -757,8 +811,16 @@ func _spawn_room(
 	var room_floor := int(floor_of.get(cell, 0))
 	var floor_cells := _floor_occupied(occupied, floor_of, room_floor)
 	for side in SIDES:
-		if floor_cells.has(cell + SIDE_STEPS[side]):
-			open_doorway(room, side)
+		var neighbor: Vector2i = cell + SIDE_STEPS[side]
+		if not floor_cells.has(neighbor):
+			continue
+		if sealed.has(edge_key(cell, neighbor)):
+			# Two modules would each leave a plug on the same plane. Keep the
+			# owner's plug so the bypass stays a wall, and drop the duplicate.
+			if cell != sealed_plug_owner(cell, neighbor):
+				open_doorway(room, side)
+			continue
+		open_doorway(room, side)
 
 	_build_room_collision(room)
 	return room
@@ -932,6 +994,49 @@ func build_monster_track(
 	return {"nodes": nodes}
 
 
+static func edge_is_sealed(layout: Dictionary, a: Vector2i, b: Vector2i) -> bool:
+	var steam: Dictionary = layout.get("steam", {})
+	var key := edge_key(a, b)
+	for spec in steam.get("sealed", []):
+		if edge_key(spec["a"], spec["b"]) == key:
+			return true
+	return false
+
+
+static func edge_is_steam_door(layout: Dictionary, a: Vector2i, b: Vector2i) -> bool:
+	var steam: Dictionary = layout.get("steam", {})
+	if not steam.has("from_cell") or not steam.has("to_cell"):
+		return false
+	return edge_key(a, b) == edge_key(steam["from_cell"], steam["to_cell"])
+
+
+## Steam still fills the breach, or a bypass was plugged and stays a wall.
+static func edge_is_blocked(layout: Dictionary, a: Vector2i, b: Vector2i) -> bool:
+	return edge_is_sealed(layout, a, b) or edge_is_steam_door(layout, a, b)
+
+
+## The lower cell keeps its plug when a bypass is sealed, so the two modules
+## don't z-fight a pair of fillers in the same doorway.
+static func sealed_plug_owner(a: Vector2i, b: Vector2i) -> Vector2i:
+	if a.x < b.x or (a.x == b.x and a.y <= b.y):
+		return a
+	return b
+
+
+static func first_open_neighbour(layout: Dictionary, cell: Vector2i) -> Vector2i:
+	var occupied := {}
+	for room in layout.get("rooms", []):
+		occupied[room["cell"]] = true
+	for side in SIDES:
+		var candidate: Vector2i = cell + SIDE_STEPS[side]
+		if not occupied.has(candidate):
+			continue
+		if edge_is_blocked(layout, cell, candidate):
+			continue
+		return candidate
+	return cell
+
+
 static func edge_key(a: Vector2i, b: Vector2i) -> String:
 	if a.x < b.x or (a.x == b.x and a.y <= b.y):
 		return "%d:%d|%d:%d" % [a.x, a.y, b.x, b.y]
@@ -1088,6 +1193,129 @@ func _add_stairwells(container: Node3D, layout: Dictionary, active_floor: int) -
 		spec["node_name"] = stair.name
 
 
+func _sealed_edge_set(steam: Dictionary) -> Dictionary:
+	var sealed := {}
+	for spec in steam.get("sealed", []):
+		sealed[edge_key(spec["a"], spec["b"])] = true
+	return sealed
+
+
+func _add_steam(container: Node3D, layout: Dictionary, active_floor: int) -> void:
+	var steam: Dictionary = layout.get("steam", {})
+	if not steam.has("from_cell"):
+		return
+	if int(steam.get("floor", 0)) != active_floor:
+		return
+	var floor_of: Dictionary = layout.get("floors", {})
+	var from_cell: Vector2i = steam["from_cell"]
+	var to_cell: Vector2i = steam["to_cell"]
+	var root := Node3D.new()
+	root.name = "Steam"
+	container.add_child(root)
+
+	var barrier := SteamBarrier.new()
+	barrier.name = "SteamBarrier"
+	barrier.position = (_world_of(from_cell, floor_of) + _world_of(to_cell, floor_of)) * 0.5
+	root.add_child(barrier)
+	barrier.configure(from_cell, to_cell, String(steam.get("side", "E")), _door_size_for_side(String(steam.get("side", "E"))))
+
+	var valve_pos := _valve_marker_position(layout, steam["boiler_cell"], floor_of)
+	steam["valve_position"] = valve_pos
+	layout["steam"] = steam
+	var valve := SteamValve.new()
+	valve.name = "SteamValve"
+	root.add_child(valve)
+	valve.global_position = valve_pos
+	var boiler := _room_node(layout, steam["boiler_cell"])
+	var wheel := find_child_by_name(boiler, "ValveWheel") as Node3D
+	var lamp := find_child_by_name(boiler, "NoCol_ValveLamp") as MeshInstance3D
+	valve.configure(wheel, lamp)
+
+	_add_steam_pipes(root, steam, floor_of, valve_pos)
+
+
+func _room_node(layout: Dictionary, cell: Vector2i) -> Node3D:
+	for room in layout.get("rooms", []):
+		if room.get("cell") == cell:
+			return room.get("node") as Node3D
+	return null
+
+
+func _valve_marker_position(layout: Dictionary, cell: Vector2i, floor_of: Dictionary) -> Vector3:
+	var node := _room_node(layout, cell)
+	if node:
+		var marker := find_child_by_name(node, "ValveUse")
+		if marker is Node3D:
+			return (marker as Node3D).global_position
+	return _world_of(cell, floor_of) + Vector3(0.0, 1.0, 0.0)
+
+
+func _add_steam_pipes(root: Node3D, steam: Dictionary, floor_of: Dictionary, valve_pos: Vector3) -> void:
+	var points: Array[Vector3] = []
+	var from_cell: Vector2i = steam["from_cell"]
+	var to_cell: Vector2i = steam["to_cell"]
+	var door := (_world_of(from_cell, floor_of) + _world_of(to_cell, floor_of)) * 0.5
+	door.y = STEAM_PIPE_Y
+	points.append(door)
+	for cell in steam.get("pipe_cells", []):
+		var at := _world_of(cell, floor_of)
+		at.y = STEAM_PIPE_Y
+		points.append(at)
+	var above_valve := Vector3(valve_pos.x, STEAM_PIPE_Y, valve_pos.z)
+	if points.is_empty() or points[points.size() - 1].distance_to(above_valve) > 0.35:
+		points.append(above_valve)
+	points.append(valve_pos + Vector3(0.0, 0.35, 0.0))
+
+	var pipes := Node3D.new()
+	pipes.name = "SteamPipes"
+	root.add_child(pipes)
+	var spans := points.size() - 1
+	for index in spans:
+		var heat := 1.0 - float(index) / float(maxi(spans - 1, 1))
+		_add_pipe_pair(pipes, points[index], points[index + 1], heat, index)
+
+
+func _add_pipe_pair(parent: Node3D, a: Vector3, b: Vector3, heat: float, index: int) -> void:
+	var delta := b - a
+	if delta.length() < 0.05:
+		return
+	var flat := Vector3(delta.x, 0.0, delta.z)
+	var side := Vector3(0.16, 0.0, 0.0)
+	if flat.length() > 0.05:
+		side = Vector3.UP.cross(flat.normalized()) * 0.16
+	_add_pipe_segment(parent, a + side + Vector3(0.0, 0.12, 0.0), b + side + Vector3(0.0, 0.12, 0.0), heat, index * 2)
+	_add_pipe_segment(parent, a - side, b - side, heat * 0.75, index * 2 + 1)
+
+
+func _add_pipe_segment(parent: Node3D, a: Vector3, b: Vector3, heat: float, index: int) -> void:
+	var delta := b - a
+	var length := delta.length()
+	if length < 0.05:
+		return
+	var mesh := MeshInstance3D.new()
+	mesh.name = "SteamPipe_%d" % index
+	var cyl := CylinderMesh.new()
+	cyl.top_radius = STEAM_PIPE_RADIUS
+	cyl.bottom_radius = STEAM_PIPE_RADIUS
+	cyl.height = length
+	mesh.mesh = cyl
+	mesh.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	var y := delta / length
+	var reference := Vector3.FORWARD if absf(y.dot(Vector3.UP)) > 0.95 else Vector3.UP
+	var x := reference.cross(y).normalized()
+	var z := x.cross(y).normalized()
+	mesh.transform = Transform3D(Basis(x, y, z), (a + b) * 0.5)
+	var mat := StandardMaterial3D.new()
+	mat.albedo_color = Color(0.42, 0.28, 0.16).lerp(Color(0.55, 0.32, 0.18), heat)
+	mat.metallic = 0.55
+	mat.roughness = 0.42
+	mat.emission_enabled = true
+	mat.emission = Color(1.0, 0.46, 0.12)
+	mat.emission_energy_multiplier = lerpf(0.15, 2.4, heat)
+	mesh.material_override = mat
+	parent.add_child(mesh)
+
+
 func _stair_door_position(layout: Dictionary, spec: Dictionary) -> Vector3:
 	var from_cell: Vector2i = spec["from_cell"]
 	for room in layout.get("rooms", []):
@@ -1146,7 +1374,14 @@ func _describe_layout(
 	for spec in stairs:
 		reserved[spec["cell"]] = true
 	var objective_cell := _pick_item_cell(last_zone_cells, start_cell, exit_cell, reserved)
+	var steam: Dictionary = (planned.get("steam", {}) as Dictionary).duplicate(true)
+	if steam.has("mission_cell"):
+		var mission_cell: Vector2i = steam["mission_cell"]
+		if mission_cell != start_cell and mission_cell != exit_cell:
+			objective_cell = mission_cell
 	reserved[objective_cell] = true
+	if steam.has("boiler_cell"):
+		reserved[steam["boiler_cell"]] = true
 
 	var key_specs: Array[Dictionary] = []
 	for lock in locks:
@@ -1233,6 +1468,15 @@ func _describe_layout(
 		if int(floor_of.get(lock["from_cell"], 0)) != active_floor:
 			continue
 		locked_edges[edge_key(lock["from_cell"], lock["to_cell"])] = true
+	if steam.has("from_cell") and int(steam.get("floor", 0)) == active_floor:
+		locked_edges[edge_key(steam["from_cell"], steam["to_cell"])] = true
+		for spec in steam.get("sealed", []):
+			var seal_cell: Vector2i = spec["a"]
+			if int(floor_of.get(seal_cell, 0)) != active_floor:
+				continue
+			locked_edges[edge_key(spec["a"], spec["b"])] = true
+	if steam.has("boiler_cell"):
+		steam["valve_position"] = _world_of(steam["boiler_cell"], floor_of) + Vector3(0.0, 1.0, 0.0)
 
 	return {
 		"seed": level_seed,
@@ -1264,6 +1508,7 @@ func _describe_layout(
 		"keys": key_specs,
 		"locks": locks,
 		"stairs": stair_specs,
+		"steam": steam,
 		"zones": zone_of,
 		"floors": floor_of,
 		"objectives": LevelRules.objectives(level),
