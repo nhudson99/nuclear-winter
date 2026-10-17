@@ -34,6 +34,7 @@ signal stair_used(stair: Node)
 @onready var visual: Node3D = $Model
 
 const LOOPING_CLIPS := ["Idle", "Walk", "Run"]
+const TOUCH_CONTROLS := preload("res://scripts/TouchControls.gd")
 const BULLET_SCRIPT := preload("res://scripts/Bullet.gd")
 
 var _anim: AnimationPlayer
@@ -94,8 +95,11 @@ func _physics_process(delta: float) -> void:
 			_play("Idle", 1.0)
 		return
 
-	# Hold RMB: light on and yaw lock onto the cursor. WASD still strafes.
-	var aiming := Input.is_action_pressed("flashlight")
+	# RMB or the right stick: light on and yaw lock onto the aim.
+	# WASD / the left stick still strafes independently.
+	var touch := _touch_controls()
+	var stick_aim := _stick_is_aiming(touch)
+	var aiming := stick_aim or Input.is_action_pressed("flashlight")
 	set_flashlight_on(aiming)
 
 	if Input.is_action_just_pressed("interact"):
@@ -103,19 +107,23 @@ func _physics_process(delta: float) -> void:
 	if Input.is_action_just_pressed("fire"):
 		attack()
 
-	var input := Vector2.ZERO
-	input.x = Input.get_action_strength("move_right") - Input.get_action_strength("move_left")
-	input.y = Input.get_action_strength("move_down") - Input.get_action_strength("move_up")
+	var keyboard := Vector2.ZERO
+	keyboard.x = Input.get_action_strength("move_right") - Input.get_action_strength("move_left")
+	keyboard.y = Input.get_action_strength("move_down") - Input.get_action_strength("move_up")
+	# Stick space is +x right, +y up. Keyboard +y is screen-down.
+	var stick := Vector2(keyboard.x, -keyboard.y)
+	var touch_running := false
+	if touch != null and touch.has_method("move_stick_vector"):
+		var touch_stick: Vector2 = touch.move_stick_vector()
+		if touch_stick.length_squared() > stick.length_squared():
+			stick = touch_stick
+			touch_running = touch_stick.length() >= 0.85
 
-	# Camera-relative isometric movement.
-	var forward := Vector3(-1, 0, -1).normalized()
-	var right := Vector3(1, 0, -1).normalized()
-	var direction := (right * input.x) + (forward * -input.y)
-	if direction.length() > 1.0:
-		direction = direction.normalized()
+	var direction := TOUCH_CONTROLS.stick_to_planar(stick)
 
 	# Digital WASD is otherwise always full speed, which would skip Walk.
-	var gait := run_speed if Input.is_action_pressed("sprint") else move_speed
+	# A full left-stick shove runs, since the touch HUD has no sprint key.
+	var gait := run_speed if (Input.is_action_pressed("sprint") or touch_running) else move_speed
 	gait *= WebField.player_speed_scale(self)
 	velocity.x = direction.x * gait
 	velocity.z = direction.z * gait
@@ -124,7 +132,11 @@ func _physics_process(delta: float) -> void:
 
 	var planar := Vector3(velocity.x, 0.0, velocity.z)
 	var speed := planar.length()
-	var aim_dir := _aim_planar() if aiming else Vector3.ZERO
+	var aim_dir := Vector3.ZERO
+	if stick_aim and touch.has_method("aim_planar"):
+		aim_dir = touch.aim_planar()
+	elif aiming:
+		aim_dir = _aim_planar()
 	if aim_dir.length() > 0.2:
 		_face_planar(aim_dir, delta)
 	elif speed > 0.15:
@@ -156,6 +168,9 @@ func is_alive() -> bool:
 func has_collected_item() -> bool:
 	return _has_item
 
+func is_input_locked() -> bool:
+	return _input_locked
+
 func lock_input() -> void:
 	_input_locked = true
 	velocity = Vector3.ZERO
@@ -163,6 +178,12 @@ func lock_input() -> void:
 
 func unlock_input() -> void:
 	_input_locked = false
+
+## E / the on-screen USE button. Picks up a nearby objective or uses stairs.
+func interact() -> void:
+	if not _alive or _input_locked:
+		return
+	_try_interact()
 
 func is_flashlight_on() -> bool:
 	return _flashlight_on
@@ -232,6 +253,11 @@ func is_sneaking() -> bool:
 	return Input.is_action_pressed("sneak")
 
 func get_aim_direction() -> Vector3:
+	var touch := _touch_controls()
+	if _stick_is_aiming(touch) and touch.has_method("aim_planar"):
+		var stick_dir: Vector3 = touch.aim_planar()
+		if stick_dir.length_squared() > 0.01:
+			return stick_dir
 	if _aim_override_enabled:
 		var to_point := _aim_override - global_position
 		to_point.y = 0.0
@@ -410,6 +436,15 @@ func _cycle_speed(clip: String, speed: float, cycle_metres: float) -> float:
 func _face_planar(dir: Vector3, delta: float) -> void:
 	var target_yaw := atan2(dir.x, dir.z) + PI
 	visual.rotation.y = lerp_angle(visual.rotation.y, target_yaw, clampf(turn_speed * delta, 0.0, 1.0))
+
+func _touch_controls() -> Node:
+	var parent := get_parent()
+	if parent == null:
+		return null
+	return parent.get_node_or_null("TouchControls")
+
+func _stick_is_aiming(touch: Node) -> bool:
+	return touch != null and touch.has_method("is_aiming") and bool(touch.is_aiming())
 
 func _aim_planar() -> Vector3:
 	var point := _aim_world_point()

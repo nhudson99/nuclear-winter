@@ -11,6 +11,7 @@ enum GameState { LOADING, PLAYING, WON, LOST }
 
 const LOADING_SCREEN := preload("res://scenes/LoadingScreen.tscn")
 const ARISTOCRAT_SCREEN := preload("res://scenes/AristocratScreen.tscn")
+const TOUCH_CONTROLS := preload("res://scripts/TouchControls.gd")
 ## 50% more zoom onto the player than the original 20 m ortho height.
 const PLAY_CAMERA_SIZE := 20.0 / 1.5
 ## 10% ambient so rooms are faintly readable with the flashlight off.
@@ -531,6 +532,10 @@ func _setup_hud() -> void:
 	_objective_label.add_theme_color_override("font_outline_color", Color(0, 0, 0, 1))
 	_objective_label.add_theme_constant_override("outline_size", 6)
 	layer.add_child(_objective_label)
+
+	var touch: Node = TOUCH_CONTROLS.new()
+	touch.name = "TouchControls"
+	add_child(touch)
 
 func _on_item_collected() -> void:
 	if _state != GameState.PLAYING:
