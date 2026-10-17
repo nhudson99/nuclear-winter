@@ -13,7 +13,8 @@
     "desktop:dev": "electron .",
     "mobile:sync": "npm run build && npx cap sync",
     "mobile:android": "npm run mobile:sync && npx cap open android",
-    "mobile:ios": "npm run mobile:sync && npx cap open ios"
+    "mobile:ios": "npm run mobile:sync && npx cap open ios",
+    "android:apk": "bash scripts/build_android_apk.sh"
   },
   "dependencies": {
     "@capacitor/android": "^7.4.3",

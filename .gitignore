@@ -8,6 +8,7 @@ dist/
 *.local
 local.properties
 *.keystore
+*.idsig
 .gradle/
 build/
 app/build/
