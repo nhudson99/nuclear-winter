@@ -81,6 +81,9 @@ func _run() -> void:
 	var spawn_rand_ok := await _check_spawn_randomization()
 	print("spawn_random_ok=", spawn_rand_ok)
 
+	var clear_start_ok := await _check_level1_no_start_web()
+	print("level1_no_web_ok=", clear_start_ok)
+
 	var live_ok := await _check_live_level_2()
 	print("live_unlock_ok=", live_ok)
 
@@ -110,6 +113,7 @@ func _run() -> void:
 		and floors_ok
 		and stairs_ok
 		and spawn_rand_ok
+		and clear_start_ok
 		and live_ok
 		and live_floor_ok
 		and advance_ok
@@ -198,6 +202,9 @@ func _roster_matches(layout: Dictionary, level: int) -> bool:
 		if spec.get("cell") == layout.get("start_cell"):
 			print("enemy_on_start kind=", kind, " level=", level)
 			return false
+	if not _roster_stays_clear(layout, layout.get("enemies", [])):
+		print("roster_not_clear level=", level)
+		return false
 	var ok := (
 		int(counts[LevelRules.KIND_SLIME]) == LevelRules.slime_count(level)
 		and int(counts[LevelRules.KIND_HARE]) == LevelRules.hare_count(level)
@@ -227,6 +234,69 @@ func _objectives_match(layout: Dictionary, level: int) -> bool:
 		" ok=", ok
 	)
 	return ok
+
+
+func _roster_stays_clear(layout: Dictionary, enemies: Array) -> bool:
+	var cells: Array = []
+	var floor_of: Dictionary = layout.get("floors", {})
+	for room in layout.get("rooms", []):
+		cells.append(room["cell"])
+	var start: Vector2i = layout["start_cell"]
+	var reserved := {start: true}
+	if layout.has("exit_cell"):
+		reserved[layout["exit_cell"]] = true
+	if layout.has("objective_cell"):
+		reserved[layout["objective_cell"]] = true
+	for key in layout.get("keys", []):
+		reserved[key["cell"]] = true
+	for stair in layout.get("stairs", []):
+		reserved[stair["cell"]] = true
+	var opposite := 0
+	for cell in cells:
+		if reserved.has(cell):
+			continue
+		if MapGenerator.is_opposite_monster_spawn(cell, start, cells, floor_of):
+			opposite += 1
+	var offside := 0
+	for spec in enemies:
+		var cell: Vector2i = spec["cell"]
+		if not MapGenerator.is_clear_of_start(cell, start, floor_of):
+			print("enemy_too_close kind=", spec.get("kind"), " cell=", cell, " start=", start)
+			return false
+		if MapGenerator.is_opposite_monster_spawn(cell, start, cells, floor_of):
+			continue
+		offside += 1
+	# The far half can be smaller than the roster once the objective and stairs
+	# are reserved. Only the overflow may leave that half, and it still has to
+	# stay out of the start neighbourhood.
+	if offside > maxi(enemies.size() - opposite, 0):
+		print("enemy_offside=", offside, " opposite_free=", opposite, " roster=", enemies.size())
+		return false
+	return true
+
+
+func _check_level1_no_start_web() -> bool:
+	OS.set_environment("NW_LEVEL", "")
+	OS.set_environment("NW_LEVEL_SEED", "")
+	var packed: PackedScene = load("res://scenes/Main.tscn")
+	if packed == null:
+		print("level1_scene_missing")
+		return false
+	var main: Node3D = packed.instantiate()
+	root.add_child(main)
+	if not main.is_level_ready():
+		await main.level_ready
+	var layout: Dictionary = main.get_layout()
+	var start: Vector2i = layout.get("start_cell", Vector2i.ZERO)
+	var webs := WebField.webs_in(self)
+	var on_start := false
+	for node in webs:
+		if node.get("room_cell") == start:
+			on_start = true
+	var clear := webs.is_empty() and not on_start
+	print("level1_webs=", webs.size(), " on_start=", on_start, " start=", start)
+	main.queue_free()
+	return clear
 
 
 func _room_count(layout: Dictionary) -> int:

@@ -44,6 +44,7 @@ func _run() -> void:
 	var slime_stats_ok: bool = (
 		slime != null
 		and slime.max_health < 80.0
+		and is_equal_approx(slime.move_speed, 3.9)
 		and slime.move_speed > monster.move_speed
 		and slime.touch_damage < 80.0
 		and slime.idle_clip == "idle"

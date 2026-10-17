@@ -278,6 +278,7 @@ func _check_spawns(layout: Dictionary) -> bool:
 	var monster_away: bool = monster_cell != start_cell
 	var slime_away: bool = slime_cell != start_cell
 	var tank_away: bool = tank_cell != start_cell
+	var far_ok := _enemies_keep_clear(layout)
 	print(
 		"spawns start=", start_cell,
 		" objective=", objective_cell,
@@ -285,9 +286,48 @@ func _check_spawns(layout: Dictionary) -> bool:
 		" slime=", slime_cell,
 		" tank=", tank_cell,
 		" exit=", exit_cell,
-		" in_map=", in_map
+		" in_map=", in_map,
+		" far=", far_ok
 	)
-	return in_map and objective_away and monster_away and slime_away and tank_away
+	return in_map and objective_away and monster_away and slime_away and tank_away and far_ok
+
+
+func _enemies_keep_clear(layout: Dictionary) -> bool:
+	var enemies: Array = layout.get("enemies", [])
+	if enemies.is_empty():
+		print("enemies_missing")
+		return false
+	var cells: Array = []
+	var floor_of: Dictionary = layout.get("floors", {})
+	for room in layout.get("rooms", []):
+		cells.append(room["cell"])
+	var start: Vector2i = layout["start_cell"]
+	var reserved := {start: true}
+	reserved[layout["exit_cell"]] = true
+	reserved[layout["objective_cell"]] = true
+	for key in layout.get("keys", []):
+		reserved[key["cell"]] = true
+	for stair in layout.get("stairs", []):
+		reserved[stair["cell"]] = true
+	var opposite := 0
+	for cell in cells:
+		if reserved.has(cell):
+			continue
+		if MapGenerator.is_opposite_monster_spawn(cell, start, cells, floor_of):
+			opposite += 1
+	var offside := 0
+	for spec in enemies:
+		var cell: Vector2i = spec["cell"]
+		if not MapGenerator.is_clear_of_start(cell, start, floor_of):
+			print("enemy_too_close kind=", spec.get("kind"), " cell=", cell, " start=", start)
+			return false
+		if MapGenerator.is_opposite_monster_spawn(cell, start, cells, floor_of):
+			continue
+		offside += 1
+	if offside > maxi(enemies.size() - opposite, 0):
+		print("enemy_offside=", offside, " opposite_free=", opposite, " roster=", enemies.size())
+		return false
+	return true
 
 
 ## Room centres and interior doorway centres must form one connected graph.
