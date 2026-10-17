@@ -74,9 +74,21 @@ func _run() -> void:
 	touch.pointer_move(3, drag_up)
 	var dragged: Vector2 = touch.move_stick_vector()
 	var drag_ok := captured and dragged.y > 0.35 and absf(dragged.x) < 0.35
+	# A short shove, about 44% of the pad radius, must already be a strong
+	# stick. At 1:1 that travel only reaches ~0.44.
+	var short := move_rect.get_center() + Vector2(0.0, -move_rect.size.y * 0.22)
+	touch.pointer_move(3, short)
+	var boosted: Vector2 = touch.move_stick_vector()
+	var sensitivity_ok := boosted.y > 0.7 and absf(boosted.x) < 0.25
 	touch.pointer_up(3)
 	var released_ok: bool = touch.move_stick_vector().length_squared() < 0.0001
-	print("drag_ok=", drag_ok, " released_ok=", released_ok, " dragged=", dragged)
+	print(
+		"drag_ok=", drag_ok,
+		" sensitivity_ok=", sensitivity_ok,
+		" released_ok=", released_ok,
+		" dragged=", dragged,
+		" boosted=", boosted
+	)
 
 	touch.set_move_stick(Vector2(0.0, 1.0))
 	var pos0 := player.global_position
@@ -160,6 +172,7 @@ func _run() -> void:
 		and present_ok
 		and layout_ok
 		and drag_ok
+		and sensitivity_ok
 		and released_ok
 		and moved_ok
 		and run_ok
