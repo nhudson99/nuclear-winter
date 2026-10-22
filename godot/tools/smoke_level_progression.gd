@@ -82,7 +82,7 @@ func _run() -> void:
 	print("spawn_random_ok=", spawn_rand_ok)
 
 	var clear_start_ok := await _check_level1_no_start_web()
-	print("level1_no_web_ok=", clear_start_ok)
+	print("level1_start_clear_ok=", clear_start_ok)
 
 	var live_ok := await _check_live_level_2()
 	print("live_unlock_ok=", live_ok)
@@ -294,9 +294,31 @@ func _check_level1_no_start_web() -> bool:
 		if node.get("room_cell") == start:
 			on_start = true
 	var clear := webs.is_empty() and not on_start
+	var spawn_clear := _spawn_floor_is_clear(main)
 	print("level1_webs=", webs.size(), " on_start=", on_start, " start=", start)
+	print("level1_spawn_clear_ok=", spawn_clear)
 	main.queue_free()
-	return clear
+	return clear and spawn_clear
+
+
+func _spawn_floor_is_clear(main: Node3D) -> bool:
+	var player := main.get_node_or_null("Player") as Node3D
+	var map := main.get_node_or_null("GeneratedMap")
+	if player == null or map == null:
+		print("level1_spawn_missing")
+		return false
+	return _spawn_debris_clear(map, player.global_position)
+
+
+func _spawn_debris_clear(node: Node, origin: Vector3) -> bool:
+	if node is MeshInstance3D and String(node.name).begins_with("NoCol_Debris"):
+		if MapGenerator.debris_covers_point(node as MeshInstance3D, origin, MapGenerator.SPAWN_CLEAR_RADIUS):
+			print("spawn_debris=", node.get_path())
+			return false
+	for child in node.get_children():
+		if not _spawn_debris_clear(child, origin):
+			return false
+	return true
 
 
 func _room_count(layout: Dictionary) -> int:

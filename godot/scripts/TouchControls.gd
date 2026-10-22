@@ -7,6 +7,9 @@ extends CanvasLayer
 ## a deflected stick wins over WASD while it is held.
 
 const DEADZONE := 0.18
+## Finger travel is mapped past 1:1 so a thumb does not have to cross the whole
+## pad to walk, run, or aim. 1.8 reaches full deflection at about 55% of the rim.
+const STICK_SENSITIVITY := 1.8
 const MOVE_SIZE := 168.0
 const AIM_SIZE := 168.0
 const BUTTON_SIZE := 100.0
@@ -251,7 +254,7 @@ func _drag_stick(stick: TouchStick, pos: Vector2, is_move: bool) -> void:
 	var delta := pos - center
 	if delta.length() > radius:
 		delta = delta * (radius / delta.length())
-	var vector := Vector2(delta.x / radius, -delta.y / radius)
+	var vector := Vector2(delta.x / radius, -delta.y / radius) * STICK_SENSITIVITY
 	if is_move:
 		set_move_stick(vector)
 	else:

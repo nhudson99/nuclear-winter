@@ -26,6 +26,8 @@ const WORLD_LAYER := 1
 const MIN_SHAPE_EDGE := 0.05
 ## Blender prefixes decoration that should never grow a collider.
 const NO_COLLISION_PREFIX := "NoCol_"
+## Radius around the player spawn that must stay free of floor decals.
+const SPAWN_CLEAR_RADIUS := 1.15
 ## Room floor slab thickness from the Blender modules.
 const FLOOR_THICKNESS := 0.1
 const GROUND_THICKNESS := 0.6
@@ -229,6 +231,17 @@ func generate(
 
 	progress.emit(0.96, "РАССТАНОВКА / PLACING ASSETS")
 	planned["active_floor"] = wanted_floor
+	# The player stands on the start-room centre. Every module dresses that
+	# middle with a dark rubble decal, which reads as a blot directly under
+	# their feet. Other rooms keep the dressing.
+	if wanted_floor == 0:
+		for room_info in rooms:
+			if room_info.get("cell") != cells[0]:
+				continue
+			var start_room := room_info.get("node") as Node3D
+			if start_room:
+				_clear_spawn_floor_dressing(start_room)
+			break
 	var layout := _describe_layout(
 		rooms,
 		cells,
@@ -772,6 +785,37 @@ func open_doorway(room: Node3D, side: String) -> bool:
 	plug.get_parent().remove_child(plug)
 	plug.queue_free()
 	return true
+
+
+## True when a floor decal's footprint comes within `radius` of `origin`.
+static func debris_covers_point(mesh_instance: MeshInstance3D, origin: Vector3, radius: float) -> bool:
+	if mesh_instance == null or mesh_instance.mesh == null:
+		return false
+	var bounds := mesh_instance.mesh.get_aabb()
+	var xf := mesh_instance.global_transform
+	var center := xf * bounds.get_center()
+	var half := (xf.basis * bounds.size).abs() * 0.5
+	var dx := maxf(absf(center.x - origin.x) - half.x, 0.0)
+	var dz := maxf(absf(center.z - origin.z) - half.z, 0.0)
+	return dx * dx + dz * dz <= radius * radius
+
+
+## Drops rubble decals that cover the room centre. The player spawns there, and
+## the decal otherwise sits under their boots for the whole opening of the level.
+func _clear_spawn_floor_dressing(room: Node3D) -> void:
+	var origin := room.global_position
+	var doomed: Array[Node] = []
+	_collect_spawn_debris(room, origin, doomed)
+	for node in doomed:
+		node.queue_free()
+
+
+func _collect_spawn_debris(node: Node, origin: Vector3, doomed: Array[Node]) -> void:
+	if node is MeshInstance3D and String(node.name).begins_with("NoCol_Debris"):
+		if debris_covers_point(node as MeshInstance3D, origin, SPAWN_CLEAR_RADIUS):
+			doomed.append(node)
+	for child in node.get_children():
+		_collect_spawn_debris(child, origin, doomed)
 
 
 ## One static body per room with a box per mesh. The Blender modules are built
