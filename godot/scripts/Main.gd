@@ -55,6 +55,7 @@ var _widow_serial: int = 1
 var _toad_serial: int = 1
 var _resolved_level: int = 1
 var _collected_keys: Dictionary = {}
+var _valve_shut: bool = false
 var _used_seed: int = 0
 var _used_rooms: int = 9
 var _active_floor: int = 0
@@ -200,6 +201,8 @@ func _apply_layout(layout: Dictionary, arrival_cell = null) -> void:
 			exit_zone.visible = false
 
 	_apply_collected_keys()
+	if _valve_shut:
+		_open_steam_passage()
 	_refresh_objective_hud()
 	_snap_camera()
 
@@ -497,6 +500,8 @@ func _wire_game_loop() -> void:
 		player.item_collected.connect(_on_item_collected)
 	if player.has_signal("key_collected") and not player.key_collected.is_connected(_on_key_collected):
 		player.key_collected.connect(_on_key_collected)
+	if player.has_signal("valve_shut") and not player.valve_shut.is_connected(_on_valve_shut):
+		player.valve_shut.connect(_on_valve_shut)
 	if player.has_signal("stair_used") and not player.stair_used.is_connected(_on_stair_used):
 		player.stair_used.connect(_on_stair_used)
 	var exit_zone := get_node_or_null("ExitZone")
@@ -551,6 +556,61 @@ func _on_item_collected() -> void:
 	if exit_zone and exit_zone.has_method("set_glow_visible"):
 		exit_zone.set_glow_visible(true)
 	_refresh_objective_hud()
+
+
+func _on_valve_shut() -> void:
+	if _state != GameState.PLAYING and _state != GameState.LOADING:
+		return
+	if _valve_shut:
+		_open_steam_passage()
+		_refresh_objective_hud()
+		return
+	_valve_shut = true
+	_open_steam_passage()
+	_refresh_objective_hud()
+
+
+func valve_is_shut() -> bool:
+	return _valve_shut
+
+
+func steam_barriers() -> Array[SteamBarrier]:
+	var out: Array[SteamBarrier] = []
+	for node in get_tree().get_nodes_in_group("steam_barrier"):
+		if node is SteamBarrier:
+			out.append(node)
+	return out
+
+
+func _open_steam_passage() -> void:
+	for barrier in steam_barriers():
+		barrier.shut_off()
+	for node in get_tree().get_nodes_in_group("steam_valve"):
+		if node != null and node.has_method("force_closed"):
+			node.force_closed()
+	var steam: Dictionary = _layout.get("steam", {})
+	if not steam.has("from_cell"):
+		return
+	var floor_of: Dictionary = _layout.get("floors", {})
+	var from_cell: Vector2i = steam["from_cell"]
+	if int(floor_of.get(from_cell, -1)) != _active_floor:
+		steam["blocked"] = false
+		_layout["steam"] = steam
+		return
+	var track: Dictionary = _layout.get("monster_track", {})
+	MapGenerator.add_unlocked_door_to_track(
+		track,
+		from_cell,
+		String(steam.get("side", "E")),
+		steam["to_cell"],
+		int(floor_of.get(from_cell, 0))
+	)
+	_layout["monster_track"] = track
+	steam["blocked"] = false
+	_layout["steam"] = steam
+	for body in monsters():
+		if body.has_method("apply_monster_track"):
+			body.apply_monster_track(track)
 
 
 func _on_key_collected(stage: int) -> void:
@@ -675,6 +735,8 @@ func _refresh_objective_hud() -> void:
 		var done := false
 		if kind == LevelRules.KIND_KEY:
 			done = _collected_keys.has(int(spec.get("stage", 0)))
+		elif kind == LevelRules.KIND_VALVE:
+			done = _valve_shut or _layout.get("steam", {}).is_empty()
 		elif kind == LevelRules.KIND_MISSION:
 			done = player != null and player.has_collected_item()
 		var mark := "x" if done else " "

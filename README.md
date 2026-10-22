@@ -9,7 +9,7 @@ Post-fallout USSR game. The **full Godot flow** is title → fat aristocrat brie
 godot --path godot
 ```
 
-- Room modules authored in Blender (`blender/build_rooms.py`) → `godot/assets/rooms/room_{bedroom,living_room,office,storage,stairwell_up,stairwell_down}.glb`
+- Room modules authored in Blender (`blender/build_rooms.py`) → `godot/assets/rooms/room_{bedroom,living_room,office,storage,stairwell_up,stairwell_down,boiler,pipe_gallery}.glb`
 - Player authored in Blender (`blender/build_prisoner.py`) → `godot/assets/characters/player_prisoner.glb`
 - Original monster authored in Blender (`blender/build_monster.py`) → `godot/assets/characters/enemy_monster.glb`
 - Slime enemy from [Poly Pizza](https://poly.pizza/m/6O6XUMssAW) (Charlie, CC-BY) is scaled and reoriented by `blender/prepare_slime.py` → `godot/assets/characters/enemy_slime.glb`
@@ -26,7 +26,7 @@ godot --path godot
 
 `godot/scripts/MapGenerator.gd` builds the floorplan at load time, so no two runs share a layout.
 
-- **Room modules**: six Blender tiles — bedroom, living room, office, storage, stairwell up, stairwell down — all sharing one 12 m square footprint with a doorway centred on each wall, so any two rooms can butt together on a grid.
+- **Room modules**: eight Blender tiles — bedroom, living room, office, storage, stairwell up, stairwell down, boiler, pipe gallery — all sharing one 12 m square footprint with a doorway centred on each wall, so any two rooms can butt together on a grid. The boiler holds the steam valve (`ValveUse` / `ValveWheel`); the pipe gallery is the room the breach opens from.
 - **Layout**: the generator grows the map one neighbour at a time from the start cell, which keeps every room reachable without a separate connectivity pass. The footprint is capped to roughly square so the level does not sprawl into a corridor.
 - **Floors**: each storey has at most two wings. One wing is gated by a locked door; when another storey exists the stairs are behind the next key. Only the active floor is spawned, so later levels do not keep the whole building in memory. Press **E** at a stair landing to change floors.
 - **Room types**: one of each livable type is dealt first so every level shows all four; the remainder is random, then the whole bag is shuffled with the seeded RNG. Stairwell rooms replace one cell in each connecting wing.
@@ -70,7 +70,7 @@ done
 - **Lighting**: Level 1 has no sun. Ambient is 10% so you can pick a path with the flashlight off. Hold **RMB** or deflect the **right stick** to turn on the flashlight and aim the prisoner (and the cone); WASD / the **left stick** still strafes independently. Release to go dark again. The glowing objective is the other light; collecting it lights a green exit beacon.
 - **Touch**: during a level, the left stick moves (a full shove runs), the right stick aims the flashlight and the prisoner, **USE** picks up or takes stairs, and **ATK** is the melee swing or pistol shot. Keyboard and mouse still work beside the sticks.
 - **Camera**: the isometric view is zoomed 50% onto the player (ortho size 20 → 13.3).
-- **Objectives**: a level has `n` objectives. Level 1 is just the glowing mission item. Level `n>1` adds `n-1` keys; each key unlocks the next locked-door wing. The mission item is behind the last lock. Press **E** nearby to collect a key or the mission item, then reach the exit doorway of the start room without dying.
+- **Objectives**: a level has `n + 1` objectives. Level 1 is the steam valve plus the glowing mission item. Level `n>1` adds `n-1` keys; each key unlocks the next locked-door wing. The mission item is in the last wing, behind a doorway blocked by steam. Follow the glowing pipes to the boiler and press **E** to shut the valve; that clears the steam. Then press **E** to collect a key or the mission item, and reach the exit doorway of the start room without dying.
 - **Alarm**: collecting the item halves every enemy's dwell timer and doubles its proximity detection radius, and turns on the green exit glow.
 - **Win / lose**: escaping with the item awards **5 rations** and brings up the fat aristocrat ("Well, you survived. Good for you. Here is your ration reward"); dying brings up the fat aristocrat ("Finally, you are no longer a drain on the motherland") and returns to the title screen.
 - **Shop**: the Pip-Boy map has **SHOP** in the top right. Cards are **pistol** (5 rations, LMB / **ATK** fires 10 damage along the flashlight), **speed upgrade** (1 ration, +5% speed, stackable), and **sneak** (3 rations, hold **Ctrl** with the flashlight off to avoid sight detection). **LMB** / **ATK** is always attack: unarmed it is a short melee swing (10 damage); with the pistol equipped it fires the weapon.
