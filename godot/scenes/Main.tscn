@@ -27,8 +27,8 @@ radius = 0.3
 height = 1.6
 
 [sub_resource type="CapsuleShape3D" id="CapsuleShape3D_gsxep"]
-radius = 0.42
-height = 1.35
+radius = 0.48
+height = 1.6
 
 [sub_resource type="CapsuleShape3D" id="CapsuleShape3D_1a61f"]
 radius = 0.36
@@ -82,9 +82,16 @@ shape = SubResource("CapsuleShape3D_e2s0e")
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.05, -12)
 collision_layer = 4
 script = ExtResource("4_ft6cd")
+eye_height = 1.38
+health_bar_height = 2.05
+touch_radius = 1.05
+idle_clip = "Idle"
+walk_clip = "Walk"
+death_clip = "Die"
+walk_cycle_metres = 1.05
 
 [node name="CollisionShape3D" type="CollisionShape3D" parent="Monster"]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 1, 0)
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.9, 0)
 shape = SubResource("CapsuleShape3D_gsxep")
 
 [node name="MonsterMesh" type="Node3D" parent="Monster" instance=ExtResource("5_bb450")]
