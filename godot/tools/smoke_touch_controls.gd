@@ -50,16 +50,27 @@ func _run() -> void:
 	var move_rect: Rect2 = touch.get_node("Root/MoveStick").get_global_rect()
 	var aim_rect: Rect2 = touch.get_node("Root/AimStick").get_global_rect()
 	var use_rect: Rect2 = touch.get_node("Root/InteractButton").get_global_rect()
+	var move_shift := _center_shift(Vector2(TouchControlsScript.MARGIN, vp.y - TouchControlsScript.MARGIN - TouchControlsScript.MOVE_SIZE), TouchControlsScript.MOVE_SIZE, vp)
+	var aim_corner := Vector2(vp.x - TouchControlsScript.MARGIN - TouchControlsScript.AIM_SIZE, vp.y - TouchControlsScript.MARGIN - TouchControlsScript.AIM_SIZE)
+	var aim_shift := _center_shift(aim_corner, TouchControlsScript.AIM_SIZE, vp)
+	var shift_ok := (
+		move_rect.get_center().distance_to(move_shift) < 1.0
+		and aim_rect.get_center().distance_to(aim_shift) < 1.0
+		and move_rect.get_center().y < vp.y - TouchControlsScript.MARGIN - TouchControlsScript.MOVE_SIZE * 0.5
+		and aim_rect.get_center().x < vp.x - TouchControlsScript.MARGIN - TouchControlsScript.AIM_SIZE * 0.5
+	)
 	var layout_ok := (
 		vp.x > 100.0
-		and move_rect.get_center().x < vp.x * 0.35
-		and aim_rect.get_center().x > vp.x * 0.65
+		and shift_ok
+		and move_rect.get_center().x < vp.x * 0.45
+		and aim_rect.get_center().x > vp.x * 0.55
 		and use_rect.get_center().x > vp.x * 0.5
 		and use_rect.get_center().y < aim_rect.get_center().y
 	)
 	print(
 		"present_ok=", present_ok,
 		" layout_ok=", layout_ok,
+		" shift_ok=", shift_ok,
 		" vp=", vp,
 		" move=", move_rect,
 		" aim=", aim_rect,
@@ -238,6 +249,12 @@ func _run() -> void:
 	)
 	print("touch_controls_smoke_ok=", all_ok)
 	quit(0 if all_ok else 1)
+
+
+func _center_shift(corner: Vector2, size: float, vp: Vector2) -> Vector2:
+	var box := Vector2(size, size)
+	var stick_center := corner + box * 0.5
+	return stick_center + (vp * 0.5 - stick_center) * TouchControlsScript.CENTER_SHIFT
 
 
 func _bullet_count(main: Node) -> int:

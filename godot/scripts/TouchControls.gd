@@ -16,6 +16,9 @@ const BUTTON_SIZE := 100.0
 const MARGIN := 28.0
 const GAP := 36.0
 const HIT_PADDING := 8.0
+## Fraction of the vector from each stick's center to the screen center.
+## Moves both pads up and inward from the bottom corners.
+const CENTER_SHIFT := 0.25
 
 var move_stick := Vector2.ZERO
 var aim_stick := Vector2.ZERO
@@ -227,8 +230,16 @@ func _layout() -> void:
 	var vp := get_viewport().get_visible_rect().size
 	if vp.x < 16.0 or vp.y < 16.0:
 		return
-	_place(_move, Vector2(MARGIN, vp.y - MARGIN - MOVE_SIZE), Vector2(MOVE_SIZE, MOVE_SIZE))
-	_place(_aim, Vector2(vp.x - MARGIN - AIM_SIZE, vp.y - MARGIN - AIM_SIZE), Vector2(AIM_SIZE, AIM_SIZE))
+	var move_box := Vector2(MOVE_SIZE, MOVE_SIZE)
+	var aim_box := Vector2(AIM_SIZE, AIM_SIZE)
+	var move_pos := _shift_toward_center(Vector2(MARGIN, vp.y - MARGIN - MOVE_SIZE), move_box, vp)
+	var aim_pos := _shift_toward_center(
+		Vector2(vp.x - MARGIN - AIM_SIZE, vp.y - MARGIN - AIM_SIZE),
+		aim_box,
+		vp
+	)
+	_place(_move, move_pos, move_box)
+	_place(_aim, aim_pos, aim_box)
 	var use_pos := Vector2(
 		vp.x - MARGIN - BUTTON_SIZE,
 		vp.y - MARGIN - AIM_SIZE - GAP - BUTTON_SIZE
@@ -239,6 +250,12 @@ func _layout() -> void:
 func _place(control: Control, pos: Vector2, box: Vector2) -> void:
 	control.position = pos
 	control.size = box
+
+
+func _shift_toward_center(pos: Vector2, box: Vector2, vp: Vector2) -> Vector2:
+	var stick_center := pos + box * 0.5
+	var toward_center := vp * 0.5 - stick_center
+	return pos + toward_center * CENTER_SHIFT
 
 
 func _drag_stick(stick: TouchStick, pos: Vector2, is_move: bool) -> void:
