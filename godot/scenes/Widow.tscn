@@ -1,0 +1,17 @@
+[gd_scene load_steps=3 format=3]
+
+[ext_resource type="PackedScene" path="res://assets/characters/enemy_widow_concept.glb" id="1_widow"]
+
+[sub_resource type="CapsuleShape3D" id="CapsuleShape3D_widow"]
+radius = 0.4
+height = 1.8
+
+[node name="Widow" type="CharacterBody3D"]
+collision_layer = 4
+
+[node name="CollisionShape3D" type="CollisionShape3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.9, 0)
+shape = SubResource("CapsuleShape3D_widow")
+
+[node name="MonsterMesh" type="Node3D" parent="." instance=ExtResource("1_widow")]
+transform = Transform3D(-1, 0, -8.74228e-08, 0, 1, 0, 8.74228e-08, 0, -1, 0, 0, 0)
