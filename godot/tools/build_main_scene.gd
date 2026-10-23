@@ -100,6 +100,12 @@ func _build() -> void:
 	monster.collision_layer = 4
 	monster.collision_mask = 1
 	monster.position = Vector3(0.0, 0.05, -MapGenerator.TILE)
+	monster.set("idle_clip", "Idle")
+	monster.set("walk_clip", "Walk")
+	monster.set("hit_clip", "Hit")
+	monster.set("death_clip", "Die")
+	monster.set("attack_clip", "Attack")
+	monster.set("walk_cycle_metres", 1.6)
 	main.add_child(monster)
 	monster.owner = main
 

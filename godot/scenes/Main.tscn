@@ -82,6 +82,12 @@ shape = SubResource("CapsuleShape3D_e2s0e")
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.05, -12)
 collision_layer = 4
 script = ExtResource("4_ft6cd")
+idle_clip = "Idle"
+walk_clip = "Walk"
+hit_clip = "Hit"
+death_clip = "Die"
+attack_clip = "Attack"
+walk_cycle_metres = 1.6
 
 [node name="CollisionShape3D" type="CollisionShape3D" parent="Monster"]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 1, 0)
