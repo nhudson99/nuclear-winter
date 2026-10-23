@@ -409,16 +409,20 @@ func _try_interact() -> void:
 
 func _nearest_steam_valve() -> Node:
 	var best: Node = null
-	var best_dist := interact_range
+	var best_dist := INF
 	for node in get_tree().get_nodes_in_group("steam_valve"):
 		if node == null or not is_instance_valid(node):
 			continue
 		if not node.has_method("can_interact") or not node.can_interact(global_position):
 			continue
-		var to_valve: Vector3 = (node as Node3D).global_position - global_position
-		to_valve.y = 0.0
-		var dist := to_valve.length()
-		if dist <= best_dist:
+		var dist := interact_range
+		if node.has_method("interact_distance"):
+			dist = float(node.interact_distance(global_position))
+		elif node is Node3D:
+			var to_valve: Vector3 = (node as Node3D).global_position - global_position
+			to_valve.y = 0.0
+			dist = to_valve.length()
+		if dist < best_dist:
 			best_dist = dist
 			best = node
 	return best
