@@ -106,10 +106,17 @@ func _build() -> void:
 	var mcol := CollisionShape3D.new()
 	mcol.name = "CollisionShape3D"
 	var mcapsule := CapsuleShape3D.new()
-	mcapsule.radius = 0.42
-	mcapsule.height = 1.35
+	mcapsule.radius = 0.48
+	mcapsule.height = 1.6
 	mcol.shape = mcapsule
-	mcol.position = Vector3(0, 1.0, 0)
+	mcol.position = Vector3(0, 0.9, 0)
+	monster.eye_height = 1.38
+	monster.health_bar_height = 2.05
+	monster.touch_radius = 1.05
+	monster.idle_clip = "Idle"
+	monster.walk_clip = "Walk"
+	monster.death_clip = "Die"
+	monster.walk_cycle_metres = 1.05
 	monster.add_child(mcol)
 	mcol.owner = main
 
