@@ -1,8 +1,8 @@
 class_name Stairwell
 extends Node3D
 
-## Interactable stair landing. Press E nearby to change floors once the
-## matching key has dropped the lock in front of the steps.
+## Stair landing. Walking up onto the flight, or pressing E there, changes
+## floors once the matching key has dropped the lock.
 
 signal used(stair: Stairwell)
 
@@ -55,6 +55,19 @@ func can_interact(from_pos: Vector3) -> bool:
 	var to_stair := global_position - from_pos
 	to_stair.y = 0.0
 	return to_stair.length() <= interact_range
+
+
+## Up flights count once the feet are on the upper treads. Down flights count
+## once the feet have dropped into the well. The floor at the foot of either
+## flight does not.
+func feet_on_flight(feet: Vector3) -> bool:
+	if not _unlocked:
+		return false
+	var flat := global_position - feet
+	flat.y = 0.0
+	if direction == DIR_UP:
+		return flat.length() <= 1.25 and feet.y >= global_position.y - 0.7
+	return flat.length() <= 1.35 and absf(feet.y - global_position.y) <= 0.8
 
 
 func can_use() -> bool:

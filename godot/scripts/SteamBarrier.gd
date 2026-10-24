@@ -55,6 +55,10 @@ func shut_off() -> void:
 	shut_off_completed.emit(self)
 
 
+func is_visually_clear() -> bool:
+	return not _blocked and not visible
+
+
 func _build(size: Vector3) -> void:
 	_visual = Node3D.new()
 	_visual.name = "SteamVisual"

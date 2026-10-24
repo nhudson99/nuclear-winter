@@ -1,10 +1,10 @@
 class_name TouchControls
 extends CanvasLayer
 
-## On-screen twin sticks and buttons for touch play.
+## On-screen twin sticks and a USE button for touch play.
 ## Left stick moves (full shove runs). Right stick aims the flashlight and the
-## prisoner. USE interacts. ATK swings or fires. Keyboard and mouse keep working;
-## a deflected stick wins over WASD while it is held.
+## prisoner. On a phone, aiming that stick at a monster attacks. USE interacts.
+## Keyboard and mouse keep working; a deflected stick wins over WASD while held.
 
 const DEADZONE := 0.18
 ## Finger travel is mapped past 1:1 so a thumb does not have to cross the whole
@@ -16,6 +16,9 @@ const BUTTON_SIZE := 100.0
 const MARGIN := 28.0
 const GAP := 36.0
 const HIT_PADDING := 8.0
+## Fraction of the vector from each stick's center to the screen center.
+## Moves both pads up and inward from the bottom corners.
+const CENTER_SHIFT := 0.25
 
 var move_stick := Vector2.ZERO
 var aim_stick := Vector2.ZERO
@@ -24,17 +27,35 @@ var _root: Control
 var _move: TouchStick
 var _aim: TouchStick
 var _interact: TouchButton
-var _attack: TouchButton
 var _move_index := -2
 var _aim_index := -2
 var _interact_index := -2
-var _attack_index := -2
+var _mobile_combat := false
+## Physics frame until which an emulated touch click must not count as LMB fire.
+var _block_click_fire_until := -1
 
 func _ready() -> void:
 	layer = 20
 	visible = false
+	_mobile_combat = (
+		OS.has_feature("android")
+		or OS.has_feature("ios")
+		or OS.has_feature("mobile")
+	)
 	_build()
 	_layout()
+
+
+func uses_mobile_combat() -> bool:
+	return _mobile_combat
+
+
+func set_mobile_combat(enabled: bool) -> void:
+	_mobile_combat = enabled
+
+
+func blocks_click_fire() -> bool:
+	return Engine.get_physics_frames() <= _block_click_fire_until
 
 
 func _process(_delta: float) -> void:
@@ -52,6 +73,7 @@ func _input(event: InputEvent) -> void:
 		return
 	if event is InputEventScreenTouch:
 		var touch := event as InputEventScreenTouch
+		_suppress_click_fire()
 		if touch.pressed:
 			pointer_down(touch.index, touch.position)
 		else:
@@ -60,12 +82,14 @@ func _input(event: InputEvent) -> void:
 		return
 	if event is InputEventScreenDrag:
 		var drag := event as InputEventScreenDrag
+		_suppress_click_fire()
 		pointer_move(drag.index, drag.position)
 		get_viewport().set_input_as_handled()
 		return
 	if event is InputEventMouse and (event as InputEventMouse).device < 0:
-		# Touch already arrived as a screen event. Drop the emulated click so a
-		# tap on empty space does not become an LMB attack.
+		# Touch is also delivered as a mouse click. The fire action is LMB, so
+		# release it or the left stick shoots.
+		_suppress_click_fire()
 		get_viewport().set_input_as_handled()
 		return
 	if event is InputEventMouseButton:
@@ -78,6 +102,7 @@ func _input(event: InputEvent) -> void:
 		else:
 			used = pointer_up(-1)
 		if used:
+			_suppress_click_fire()
 			get_viewport().set_input_as_handled()
 		return
 	if event is InputEventMouseMotion and _owns_index(-1):
@@ -132,25 +157,12 @@ func press_interact() -> void:
 		player.interact()
 
 
-func press_attack() -> void:
-	if not _controls_enabled():
-		return
-	var player := _player()
-	if player != null and player.has_method("attack"):
-		player.attack()
-
-
 ## Returns true when the pointer landed on a control.
 func pointer_down(index: int, pos: Vector2) -> bool:
 	if _hits(_interact, pos):
 		_interact_index = index
 		_interact.set_held(true)
 		press_interact()
-		return true
-	if _hits(_attack, pos):
-		_attack_index = index
-		_attack.set_held(true)
-		press_attack()
 		return true
 	if _hits(_move, pos):
 		_move_index = index
@@ -185,10 +197,6 @@ func pointer_up(index: int) -> bool:
 		_interact_index = -2
 		_interact.set_held(false)
 		used = true
-	if index == _attack_index:
-		_attack_index = -2
-		_attack.set_held(false)
-		used = true
 	return used
 
 
@@ -213,14 +221,7 @@ func _build() -> void:
 	_interact = TouchButton.new()
 	_interact.name = "InteractButton"
 	_interact.caption = "USE"
-	_interact.attack = false
 	_root.add_child(_interact)
-
-	_attack = TouchButton.new()
-	_attack.name = "AttackButton"
-	_attack.caption = "ATK"
-	_attack.attack = true
-	_root.add_child(_attack)
 
 
 func _layout() -> void:
@@ -229,19 +230,32 @@ func _layout() -> void:
 	var vp := get_viewport().get_visible_rect().size
 	if vp.x < 16.0 or vp.y < 16.0:
 		return
-	_place(_move, Vector2(MARGIN, vp.y - MARGIN - MOVE_SIZE), Vector2(MOVE_SIZE, MOVE_SIZE))
-	_place(_aim, Vector2(vp.x - MARGIN - AIM_SIZE, vp.y - MARGIN - AIM_SIZE), Vector2(AIM_SIZE, AIM_SIZE))
-	var attack_pos := Vector2(
+	var move_box := Vector2(MOVE_SIZE, MOVE_SIZE)
+	var aim_box := Vector2(AIM_SIZE, AIM_SIZE)
+	var move_pos := _shift_toward_center(Vector2(MARGIN, vp.y - MARGIN - MOVE_SIZE), move_box, vp)
+	var aim_pos := _shift_toward_center(
+		Vector2(vp.x - MARGIN - AIM_SIZE, vp.y - MARGIN - AIM_SIZE),
+		aim_box,
+		vp
+	)
+	_place(_move, move_pos, move_box)
+	_place(_aim, aim_pos, aim_box)
+	var use_pos := Vector2(
 		vp.x - MARGIN - BUTTON_SIZE,
 		vp.y - MARGIN - AIM_SIZE - GAP - BUTTON_SIZE
 	)
-	_place(_attack, attack_pos, Vector2(BUTTON_SIZE, BUTTON_SIZE))
-	_place(_interact, attack_pos - Vector2(BUTTON_SIZE + GAP, 0.0), Vector2(BUTTON_SIZE, BUTTON_SIZE))
+	_place(_interact, use_pos, Vector2(BUTTON_SIZE, BUTTON_SIZE))
 
 
 func _place(control: Control, pos: Vector2, box: Vector2) -> void:
 	control.position = pos
 	control.size = box
+
+
+func _shift_toward_center(pos: Vector2, box: Vector2, vp: Vector2) -> Vector2:
+	var stick_center := pos + box * 0.5
+	var toward_center := vp * 0.5 - stick_center
+	return pos + toward_center * CENTER_SHIFT
 
 
 func _drag_stick(stick: TouchStick, pos: Vector2, is_move: bool) -> void:
@@ -272,25 +286,23 @@ func _hits(control: Control, pos: Vector2) -> bool:
 
 
 func _owns_index(index: int) -> bool:
-	return (
-		index == _move_index
-		or index == _aim_index
-		or index == _interact_index
-		or index == _attack_index
-	)
+	return index == _move_index or index == _aim_index or index == _interact_index
+
+
+func _suppress_click_fire() -> void:
+	_block_click_fire_until = Engine.get_physics_frames() + 4
+	if InputMap.has_action("fire"):
+		Input.action_release("fire")
 
 
 func _release_all() -> void:
 	_move_index = -2
 	_aim_index = -2
 	_interact_index = -2
-	_attack_index = -2
 	set_move_stick(Vector2.ZERO)
 	set_aim_stick(Vector2.ZERO)
 	if _interact:
 		_interact.set_held(false)
-	if _attack:
-		_attack.set_held(false)
 
 
 func _controls_enabled() -> bool:
@@ -365,7 +377,6 @@ class TouchStick extends Control:
 class TouchButton extends Control:
 	var caption := ""
 	var held := false
-	var attack := false
 
 	func _ready() -> void:
 		mouse_filter = MOUSE_FILTER_IGNORE
@@ -381,7 +392,7 @@ class TouchButton extends Control:
 		var radius := minf(size.x, size.y) * 0.5 - 3.0
 		if radius < 4.0:
 			return
-		var fill := Color(0.55, 0.16, 0.12, 0.86) if attack else Color(0.09, 0.24, 0.12, 0.86)
+		var fill := Color(0.09, 0.24, 0.12, 0.86)
 		if held:
 			fill = fill.lightened(0.28)
 		draw_circle(center, radius, fill)

@@ -894,10 +894,18 @@ func _build_room_collision(room: Node3D) -> int:
 	room.add_child(body)
 
 	var built := 0
+	var treads: Array[MeshInstance3D] = []
 	for mesh_instance in meshes:
 		if mesh_instance.name.begins_with(NO_COLLISION_PREFIX):
 			continue
 		if mesh_instance.mesh == null:
+			continue
+		# Individual risers are taller than the capsule can step. One slope
+		# replaces them so walking up the flight actually climbs.
+		if String(mesh_instance.name).begins_with("StairTread_"):
+			treads.append(mesh_instance)
+			continue
+		if String(mesh_instance.name) == "Landing":
 			continue
 		var bounds := mesh_instance.mesh.get_aabb()
 		var box := BoxShape3D.new()
@@ -914,6 +922,8 @@ func _build_room_collision(room: Node3D) -> int:
 			* Transform3D(Basis.IDENTITY, bounds.get_center())
 		)
 		body.add_child(shape)
+		built += 1
+	if _add_stair_ramp(body, room, treads):
 		built += 1
 	return built
 
@@ -957,6 +967,105 @@ func _add_ground(container: Node3D, bounds: AABB) -> void:
 	body.collision_mask = 0
 	body.add_child(shape)
 	ground.add_child(body)
+
+
+## One walkable slope along a flight. The visual treads stay, but their
+## vertical faces are not colliders.
+func _add_stair_ramp(body: StaticBody3D, room: Node3D, treads: Array[MeshInstance3D]) -> bool:
+	if treads.size() < 2:
+		return false
+	var lowest: MeshInstance3D = treads[0]
+	var highest: MeshInstance3D = treads[0]
+	var low_box: Dictionary = _mesh_room_box(lowest, room)
+	var high_box: Dictionary = low_box
+	var low_center_start: Vector3 = low_box["center"]
+	var low_y: float = low_center_start.y
+	var high_y: float = low_y
+	for tread in treads:
+		var box: Dictionary = _mesh_room_box(tread, room)
+		var center: Vector3 = box["center"]
+		var y: float = center.y
+		if y < low_y:
+			low_y = y
+			lowest = tread
+			low_box = box
+		if y > high_y:
+			high_y = y
+			highest = tread
+			high_box = box
+	var low_center: Vector3 = low_box["center"]
+	var high_center: Vector3 = high_box["center"]
+	var run := high_center - low_center
+	run.y = 0.0
+	if run.length() < 0.2:
+		return false
+	var along := run.normalized()
+	var low_size: Vector3 = low_box["size"]
+	var bottom := low_center - along * _extent_along(low_size, along)
+	bottom.y = low_center.y - low_size.y * 0.5
+	var high_size: Vector3 = high_box["size"]
+	var top := high_center + along * _extent_along(high_size, along)
+	top.y = high_center.y + high_size.y * 0.5
+	var landing := find_child_by_name(room, "Landing") as MeshInstance3D
+	var land_center := Vector3.ZERO
+	var land_size := Vector3.ZERO
+	if landing != null and landing.mesh != null:
+		var land: Dictionary = _mesh_room_box(landing, room)
+		land_center = land["center"]
+		land_size = land["size"]
+		top = land_center - along * _extent_along(land_size, along)
+		top.y = land_center.y + land_size.y * 0.5
+	# Start on the floor just before the first riser.
+	bottom -= along * 0.2
+	var delta := top - bottom
+	if delta.length() < 0.3:
+		return false
+	var slope := delta.normalized()
+	var side := Vector3.UP.cross(Vector3(delta.x, 0.0, delta.z)).normalized()
+	if side.length() < 0.5:
+		return false
+	var normal := side.cross(slope).normalized()
+	if normal.y < 0.0:
+		normal = -normal
+	var width := _extent_along(low_size, side) * 2.0
+	width = minf(width, 1.55)
+	var thickness := 0.28
+	var box := BoxShape3D.new()
+	box.size = Vector3(width, delta.length(), thickness)
+	var shape := CollisionShape3D.new()
+	shape.name = "Col_StairRamp"
+	shape.shape = box
+	shape.transform = Transform3D(Basis(side, slope, normal), (bottom + top) * 0.5 - normal * thickness * 0.5)
+	body.add_child(shape)
+	if land_size.length() > 0.1:
+		var slab := BoxShape3D.new()
+		var along_span := _extent_along(land_size, along) * 2.0
+		var side_span := _extent_along(land_size, side) * 2.0
+		slab.size = Vector3(minf(side_span, 1.55), 0.16, maxf(along_span - 0.08, 0.2))
+		var slab_shape := CollisionShape3D.new()
+		slab_shape.name = "Col_StairLanding"
+		slab_shape.shape = slab
+		var slab_at := land_center + along * 0.04
+		slab_at.y = top.y - 0.08
+		# Box local Z is the run, local X is the side, so yaw it onto `along`.
+		var flat_side := side
+		var flat_along := Vector3(along.x, 0.0, along.z).normalized()
+		slab_shape.transform = Transform3D(Basis(flat_side, Vector3.UP, flat_along), slab_at)
+		body.add_child(slab_shape)
+	return true
+
+
+func _mesh_room_box(mesh_instance: MeshInstance3D, room: Node3D) -> Dictionary:
+	var bounds := mesh_instance.mesh.get_aabb()
+	var xf := _transform_relative_to(mesh_instance, room)
+	return {
+		"center": xf * bounds.get_center(),
+		"size": (xf.basis * bounds.size).abs(),
+	}
+
+
+func _extent_along(size: Vector3, axis: Vector3) -> float:
+	return absf(size.x * axis.x) * 0.5 + absf(size.z * axis.z) * 0.5
 
 
 func _collect_meshes(node: Node, out: Array[MeshInstance3D]) -> void:
@@ -1234,6 +1343,11 @@ func _add_stairwells(container: Node3D, layout: Dictionary, active_floor: int) -
 		stair.configure(spec)
 		stair.position = spec.get("position", Vector3.ZERO)
 		root.add_child(stair)
+		if stair.is_down():
+			var lip := _down_stair_lip(_room_node(layout, spec["cell"]))
+			if lip.is_finite():
+				stair.global_position = lip
+		spec["position"] = stair.global_position
 		spec["node_name"] = stair.name
 
 
@@ -1276,6 +1390,38 @@ func _add_steam(container: Node3D, layout: Dictionary, active_floor: int) -> voi
 	valve.configure(wheel, lamp)
 
 	_add_steam_pipes(root, steam, floor_of, valve_pos)
+
+
+## Floor in front of a downward flight. The well itself is under the room
+## slab, so the walk that changes floors is the head of the stairs.
+func _down_stair_lip(room: Node3D) -> Vector3:
+	if room == null:
+		return Vector3(INF, INF, INF)
+	var treads: Array[MeshInstance3D] = []
+	_collect_prefixed(room, "StairTread_", treads)
+	if treads.size() < 2:
+		return Vector3(INF, INF, INF)
+	var low := treads[0]
+	var high := treads[0]
+	for tread in treads:
+		if tread.global_position.y < low.global_position.y:
+			low = tread
+		if tread.global_position.y > high.global_position.y:
+			high = tread
+	var run := high.global_position - low.global_position
+	run.y = 0.0
+	if run.length() < 0.2:
+		return Vector3(INF, INF, INF)
+	var lip := high.global_position + run.normalized() * 0.9
+	lip.y = 0.05
+	return lip
+
+
+func _collect_prefixed(node: Node, prefix: String, into: Array[MeshInstance3D]) -> void:
+	if node is MeshInstance3D and String(node.name).begins_with(prefix):
+		into.append(node)
+	for child in node.get_children():
+		_collect_prefixed(child, prefix, into)
 
 
 func _room_node(layout: Dictionary, cell: Vector2i) -> Node3D:

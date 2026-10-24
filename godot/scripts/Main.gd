@@ -213,7 +213,18 @@ func _arrival_position(layout: Dictionary, arrival_cell) -> Vector3:
 			continue
 		if int(spec.get("floor", -1)) != int(layout.get("active_floor", 0)):
 			continue
-		return spec.get("position", layout.get("start", Vector3.ZERO))
+		var marker: Vector3 = spec.get("position", layout.get("start", Vector3.ZERO))
+		var center := marker
+		for room in layout.get("rooms", []):
+			if room.get("cell") == spec.get("cell"):
+				center = room.get("center", marker)
+				break
+		var inward := center - marker
+		inward.y = 0.0
+		if inward.length() > 0.4:
+			marker += inward.normalized() * minf(inward.length() * 0.55, 3.2)
+		marker.y = 0.05
+		return marker
 	return layout.get("start", Vector3.ZERO)
 
 
