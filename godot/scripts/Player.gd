@@ -53,6 +53,8 @@ var _aim_override: Vector3 = Vector3.ZERO
 var _fire_cooldown: float = 0.0
 var _base_move_speed: float = 2.4
 var _base_run_speed: float = 5.5
+## Frames after a floor change during which another stair cannot fire.
+var _stair_grace: int = 0
 
 func current_clip() -> String:
 	return _clip
@@ -134,6 +136,7 @@ func _physics_process(delta: float) -> void:
 	velocity.z = direction.z * gait
 	_apply_gravity(delta)
 	move_and_slide()
+	_try_auto_stairs()
 
 	var planar := Vector3(velocity.x, 0.0, velocity.z)
 	var speed := planar.length()
@@ -398,13 +401,7 @@ func _try_interact() -> void:
 		valve_shut.emit()
 		return
 
-	var stair := _nearest_stairwell()
-	if stair == null or not stair.has_method("try_use"):
-		return
-	if stair.has_method("can_use") and not stair.can_use():
-		return
-	if stair.try_use():
-		stair_used.emit(stair)
+	_use_stair(_nearest_stairwell())
 
 
 func _nearest_steam_valve() -> Node:
@@ -443,6 +440,32 @@ func _nearest_stairwell() -> Node:
 			best_dist = dist
 			best = node
 	return best
+
+func _try_auto_stairs() -> void:
+	if _stair_grace > 0:
+		_stair_grace -= 1
+		return
+	if not is_on_floor():
+		return
+	for node in get_tree().get_nodes_in_group("stairwell"):
+		if node == null or not is_instance_valid(node):
+			continue
+		if not node.has_method("feet_on_flight") or not node.feet_on_flight(global_position):
+			continue
+		_use_stair(node)
+		return
+
+
+func _use_stair(stair: Node) -> void:
+	if stair == null or not stair.has_method("try_use"):
+		return
+	if stair.has_method("can_use") and not stair.can_use():
+		return
+	if not stair.try_use():
+		return
+	_stair_grace = 90
+	stair_used.emit(stair)
+
 
 func _apply_gravity(delta: float) -> void:
 	if not is_on_floor():
