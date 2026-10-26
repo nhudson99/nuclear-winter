@@ -495,6 +495,25 @@ func _reachable_past(
 	return false
 
 
+func _panel_stand(main: Node3D, valve: SteamValve) -> Vector3:
+	var board := MapGenerator.find_child_by_name(main.get_node("GeneratedMap"), "GaugeBoard") as Node3D
+	if board == null:
+		var fallback := valve.global_position
+		fallback.y = 0.05
+		return fallback
+	var stand := board.global_position
+	var room: Node = board
+	while room != null and not String(room.name).begins_with("Room_"):
+		room = room.get_parent()
+	if room is Node3D:
+		var inward: Vector3 = (room as Node3D).global_position - board.global_position
+		inward.y = 0.0
+		if inward.length() > 0.2:
+			stand += inward.normalized() * 1.15
+	stand.y = 0.05
+	return stand
+
+
 func _check_live_steam() -> bool:
 	OS.set_environment("NW_LEVEL", "1")
 	OS.set_environment("NW_LEVEL_SEED", "11")
@@ -539,19 +558,68 @@ func _check_live_steam() -> bool:
 	var blocked := _planar(player.global_position, to_center) > MapGenerator.TILE * 0.45
 	print("steam_blocked_ok=", blocked, " dist=", _planar(player.global_position, to_center))
 
-	player.set_physics_process(true)
-	var stand := valve.global_position
-	stand.y = 0.05
+	player.set_physics_process(false)
+	var stand := _panel_stand(main, valve)
 	player.global_position = stand
 	player.velocity = Vector3.ZERO
-	await create_timer(0.05).timeout
-	Input.action_press("interact")
-	await create_timer(0.05).timeout
-	player._physics_process(0.033)
-	Input.action_release("interact")
+	var panel_reach := valve.can_interact(player.global_position)
+	var status_before := valve.get_node_or_null("PanelStatusLight") as MeshInstance3D
+	var before_mat: StandardMaterial3D = null
+	if status_before != null:
+		before_mat = status_before.material_override as StandardMaterial3D
+	var started_orange := before_mat != null and before_mat.emission.r > before_mat.emission.g and before_mat.emission.r > 0.6
+	print(
+		"panel_reach=", panel_reach,
+		" dist=", valve.interact_distance(player.global_position),
+		" started_orange=", started_orange
+	)
+	player.interact()
 	await create_timer(0.1).timeout
-	var shut: bool = main.valve_is_shut() and valve.is_shut() and not (barriers[0] as SteamBarrier).is_blocked()
-	print("steam_shut_ok=", shut)
+	var barrier := barriers[0] as SteamBarrier
+	var shut: bool = (
+		panel_reach
+		and started_orange
+		and main.valve_is_shut()
+		and valve.is_shut()
+		and valve.indicator_is_green()
+		and not barrier.is_blocked()
+		and barrier.is_visually_clear()
+	)
+	var pipe: MeshInstance3D = null
+	if pipes != null and pipes.get_child_count() > 0:
+		pipe = pipes.get_child(0) as MeshInstance3D
+	var pipe_mat: StandardMaterial3D = null
+	if pipe != null:
+		pipe_mat = pipe.material_override as StandardMaterial3D
+	var pipes_cold := pipe_mat != null and pipe_mat.emission.r < 0.2 and pipe_mat.emission.g > pipe_mat.emission.r
+	var lamp := MapGenerator.find_child_by_name(main.get_node("GeneratedMap"), "NoCol_ValveLamp") as MeshInstance3D
+	var lamp_mat: StandardMaterial3D = null
+	if lamp != null:
+		lamp_mat = lamp.material_override as StandardMaterial3D
+	var lamp_green := lamp_mat != null and lamp_mat.emission.g > lamp_mat.emission.r and lamp_mat.emission_energy_multiplier > 3.0
+	var gauge := MapGenerator.find_child_by_name(main.get_node("GeneratedMap"), "NoCol_Gauge_1") as MeshInstance3D
+	var gauge_mat: StandardMaterial3D = null
+	if gauge != null:
+		gauge_mat = gauge.material_override as StandardMaterial3D
+	var gauge_green := gauge_mat != null and gauge_mat.emission.g > gauge_mat.emission.r and gauge_mat.emission_energy_multiplier > 3.0
+	var status := valve.get_node_or_null("PanelStatusLight") as MeshInstance3D
+	var status_mat: StandardMaterial3D = null
+	if status != null:
+		status_mat = status.material_override as StandardMaterial3D
+	var status_green := status_mat != null and status_mat.emission.g > status_mat.emission.r
+	print(
+		"steam_shut_ok=", shut,
+		" valve_flag=", main.valve_is_shut(),
+		" valve_closed=", valve.is_shut(),
+		" indicator=", valve.indicator_is_green(),
+		" barrier_blocked=", barrier.is_blocked(),
+		" barrier_clear=", barrier.is_visually_clear(),
+		" pipes_cold=", pipes_cold,
+		" lamp_green=", lamp_green,
+		" gauge_green=", gauge_green,
+		" status_green=", status_green
+	)
+	shut = shut and pipes_cold and lamp_green and gauge_green and status_green
 
 	player.set_physics_process(false)
 	await _walk_from(player, from_center, walk_dir, WALK_STEPS)

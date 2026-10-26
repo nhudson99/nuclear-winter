@@ -15,7 +15,7 @@ func _card_specs() -> Array:
 		{
 			"item": GameProgress.ShopItem.PISTOL,
 			"title": "PISTOL",
-			"blurb": "LMB fires 10 damage along the flashlight aim.",
+			"blurb": "Fires 10 damage along your aim. On a phone, aim the right stick at an enemy.",
 		},
 		{
 			"item": GameProgress.ShopItem.SPEED,

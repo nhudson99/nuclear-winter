@@ -75,12 +75,57 @@ func _run() -> void:
 	print("hp_stays_revealed_ok=", stays_ok)
 
 	monster.health = 100.0
+	# Fast enough that a discrete area step skips a body. The sweep must still hit.
+	player.pistol_speed = 90.0
 	var fired: Node3D = player.fire_weapon()
 	var spawned: bool = fired != null
-	for _i in 45:
+	for _i in 20:
 		await physics_frame
 	var pistol_ok: bool = spawned and is_equal_approx(float(monster.health), 90.0)
 	print("pistol_hit_ok=", pistol_ok, " hp=", monster.health, " spawned=", spawned)
+
+	var slime: CharacterBody3D = main.get_node("Slime")
+	slime.visible = true
+	slime.set_physics_process(false)
+	slime.touch_damage = 0.0
+	monster.global_position = start + Vector3(80.0, 0.05, 80.0)
+	slime.global_position = start + Vector3(4.0, 0.05, 0.0)
+	player.global_position = start + Vector3(0.0, 0.05, 0.0)
+	player.set_aim_world_override(slime.global_position)
+	player._fire_cooldown = 0.0
+	var slime_before: float = slime.health
+	var slime_shot: Node3D = player.fire_weapon()
+	var slime_spawned := slime_shot != null
+	for _i in 20:
+		await physics_frame
+	var slime_ok: bool = slime_spawned and slime.health < slime_before - 0.5
+	print("slime_hit_ok=", slime_ok, " hp=", slime.health, " before=", slime_before)
+
+	var wall := StaticBody3D.new()
+	wall.name = "BulletWall"
+	wall.collision_layer = 1
+	wall.collision_mask = 0
+	var wall_shape := CollisionShape3D.new()
+	var wall_box := BoxShape3D.new()
+	wall_box.size = Vector3(0.4, 2.4, 4.0)
+	wall_shape.shape = wall_box
+	wall_shape.position = Vector3(0.0, 1.2, 0.0)
+	wall.add_child(wall_shape)
+	main.add_child(wall)
+	player.global_position = start + Vector3(0.0, 0.05, 0.0)
+	wall.global_position = start + Vector3(2.0, 0.0, 0.0)
+	slime.global_position = start + Vector3(4.0, 0.05, 0.0)
+	player.set_aim_world_override(slime.global_position)
+	await physics_frame
+	player._fire_cooldown = 0.0
+	var blocked_before: float = slime.health
+	var blocked_shot: Node3D = player.fire_weapon()
+	var blocked_spawned := blocked_shot != null
+	for _i in 20:
+		await physics_frame
+	var wall_ok: bool = blocked_spawned and is_equal_approx(slime.health, blocked_before)
+	print("bullet_wall_ok=", wall_ok, " hp=", slime.health)
+	wall.free()
 
 	var mesh: Node3D = monster.get_node("MonsterMesh")
 	monster.proximity_radius = 0.15
@@ -120,6 +165,8 @@ func _run() -> void:
 		and revealed_ok
 		and stays_ok
 		and pistol_ok
+		and slime_ok
+		and wall_ok
 		and sneak_hidden
 		and seen_without
 		and glow_off

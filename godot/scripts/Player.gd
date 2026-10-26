@@ -53,6 +53,8 @@ var _aim_override: Vector3 = Vector3.ZERO
 var _fire_cooldown: float = 0.0
 var _base_move_speed: float = 2.4
 var _base_run_speed: float = 5.5
+## Frames after a floor change during which another stair cannot fire.
+var _stair_grace: int = 0
 
 func current_clip() -> String:
 	return _clip
@@ -105,7 +107,11 @@ func _physics_process(delta: float) -> void:
 
 	if Input.is_action_just_pressed("interact"):
 		_try_interact()
-	if Input.is_action_just_pressed("fire"):
+	# Touch taps are also delivered as mouse clicks. On a phone that click is
+	# not an attack; aiming the right stick at a monster is.
+	if Input.is_action_just_pressed("fire") and not _click_fire_blocked(touch):
+		attack()
+	elif _mobile_auto_attack(touch):
 		attack()
 
 	var keyboard := Vector2.ZERO
@@ -130,6 +136,7 @@ func _physics_process(delta: float) -> void:
 	velocity.z = direction.z * gait
 	_apply_gravity(delta)
 	move_and_slide()
+	_try_auto_stairs()
 
 	var planar := Vector3(velocity.x, 0.0, velocity.z)
 	var speed := planar.length()
@@ -210,7 +217,8 @@ func has_weapon() -> bool:
 	return has_pistol()
 
 
-## LMB attack. A equipped weapon (pistol) fires; otherwise this is a melee swing.
+## Desktop attack is LMB. A phone attacks by aiming the right stick at a monster.
+## An equipped pistol fires; otherwise this is a melee swing.
 func attack() -> Node3D:
 	if has_weapon():
 		return fire_weapon()
@@ -315,9 +323,9 @@ func fire_weapon() -> Node3D:
 	bullet.name = "Bullet"
 	bullet.damage = pistol_damage
 	var direction := get_aim_direction()
-	var origin := global_position + Vector3(0.0, 1.15, 0.0) + direction * 0.55
-	if _flashlight:
-		origin = _flashlight.global_position + direction * 0.35
+	# Chest height, not the raised flashlight. The sweep in Bullet still covers
+	# shorter bodies the muzzle would otherwise sail over.
+	var origin := global_position + Vector3(0.0, 0.85, 0.0) + direction * 0.7
 	var host := get_parent()
 	if host == null:
 		host = self
@@ -393,27 +401,25 @@ func _try_interact() -> void:
 		valve_shut.emit()
 		return
 
-	var stair := _nearest_stairwell()
-	if stair == null or not stair.has_method("try_use"):
-		return
-	if stair.has_method("can_use") and not stair.can_use():
-		return
-	if stair.try_use():
-		stair_used.emit(stair)
+	_use_stair(_nearest_stairwell())
 
 
 func _nearest_steam_valve() -> Node:
 	var best: Node = null
-	var best_dist := interact_range
+	var best_dist := INF
 	for node in get_tree().get_nodes_in_group("steam_valve"):
 		if node == null or not is_instance_valid(node):
 			continue
 		if not node.has_method("can_interact") or not node.can_interact(global_position):
 			continue
-		var to_valve: Vector3 = (node as Node3D).global_position - global_position
-		to_valve.y = 0.0
-		var dist := to_valve.length()
-		if dist <= best_dist:
+		var dist := interact_range
+		if node.has_method("interact_distance"):
+			dist = float(node.interact_distance(global_position))
+		elif node is Node3D:
+			var to_valve: Vector3 = (node as Node3D).global_position - global_position
+			to_valve.y = 0.0
+			dist = to_valve.length()
+		if dist < best_dist:
 			best_dist = dist
 			best = node
 	return best
@@ -434,6 +440,32 @@ func _nearest_stairwell() -> Node:
 			best_dist = dist
 			best = node
 	return best
+
+func _try_auto_stairs() -> void:
+	if _stair_grace > 0:
+		_stair_grace -= 1
+		return
+	if not is_on_floor():
+		return
+	for node in get_tree().get_nodes_in_group("stairwell"):
+		if node == null or not is_instance_valid(node):
+			continue
+		if not node.has_method("feet_on_flight") or not node.feet_on_flight(global_position):
+			continue
+		_use_stair(node)
+		return
+
+
+func _use_stair(stair: Node) -> void:
+	if stair == null or not stair.has_method("try_use"):
+		return
+	if stair.has_method("can_use") and not stair.can_use():
+		return
+	if not stair.try_use():
+		return
+	_stair_grace = 90
+	stair_used.emit(stair)
+
 
 func _apply_gravity(delta: float) -> void:
 	if not is_on_floor():
@@ -468,6 +500,85 @@ func _touch_controls() -> Node:
 
 func _stick_is_aiming(touch: Node) -> bool:
 	return touch != null and touch.has_method("is_aiming") and bool(touch.is_aiming())
+
+
+func _click_fire_blocked(touch: Node) -> bool:
+	if touch == null:
+		return false
+	if touch.has_method("uses_mobile_combat") and bool(touch.uses_mobile_combat()):
+		return true
+	if touch.has_method("blocks_click_fire") and bool(touch.blocks_click_fire()):
+		return true
+	return false
+
+
+func _mobile_auto_attack(touch: Node) -> bool:
+	if not _stick_is_aiming(touch):
+		return false
+	if touch == null or not touch.has_method("uses_mobile_combat"):
+		return false
+	if not bool(touch.uses_mobile_combat()):
+		return false
+	return _monster_in_sights()
+
+
+## True when the aim ray crosses a living monster. Guns use a narrow body
+## radius out to the flashlight; melee uses the swing cone.
+func _monster_in_sights() -> bool:
+	if not is_inside_tree():
+		return false
+	var direction := get_aim_direction()
+	if direction.length_squared() < 0.01:
+		return false
+	var armed := has_weapon()
+	for node in get_tree().get_nodes_in_group("monster"):
+		if not (node is CharacterBody3D):
+			continue
+		var body := node as CharacterBody3D
+		if body.has_method("is_alive") and not body.is_alive():
+			continue
+		var to_enemy := body.global_position - global_position
+		to_enemy.y = 0.0
+		var distance := to_enemy.length()
+		if distance < 0.05:
+			continue
+		if armed:
+			var along := to_enemy.dot(direction)
+			if along < 0.35 or along > flashlight_range:
+				continue
+			if (to_enemy - direction * along).length() > 0.5:
+				continue
+			if not _shot_lane_clear(body.global_position, along):
+				continue
+			return true
+		if distance > melee_range:
+			continue
+		if to_enemy.normalized().dot(direction) < melee_dot:
+			continue
+		return true
+	return false
+
+
+func _shot_lane_clear(target: Vector3, reach: float) -> bool:
+	var world := get_world_3d()
+	if world == null:
+		return true
+	var space := world.direct_space_state
+	for height in Bullet.SWEEP_HEIGHTS:
+		var origin := Vector3(global_position.x, height, global_position.z)
+		var end := Vector3(target.x, height, target.z)
+		var query := PhysicsRayQueryParameters3D.create(origin, end)
+		query.collision_mask = 1
+		query.collide_with_areas = false
+		query.collide_with_bodies = true
+		query.exclude = [get_rid()]
+		var hit := space.intersect_ray(query)
+		if hit.is_empty():
+			return true
+		var point: Vector3 = hit.get("position", end)
+		if origin.distance_to(point) > reach - 0.35:
+			return true
+	return false
 
 func _aim_planar() -> Vector3:
 	var point := _aim_world_point()

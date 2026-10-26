@@ -2,9 +2,10 @@ extends SceneTree
 
 const TouchControlsScript := preload("res://scripts/TouchControls.gd")
 
-## Headless smoke for the on-screen sticks and USE / ATK buttons.
+## Headless smoke for the on-screen sticks and USE button.
 ## Left stick moves, a full shove runs, right stick aims the flashlight
-## independently of movement, USE collects, ATK damages.
+## independently of movement. USE collects. On a phone, aiming at a monster
+## attacks, and a left-stick touch does not fire.
 
 func _initialize() -> void:
 	call_deferred("_run")
@@ -42,31 +43,38 @@ func _run() -> void:
 		touch.get_node_or_null("Root/MoveStick") != null
 		and touch.get_node_or_null("Root/AimStick") != null
 		and touch.get_node_or_null("Root/InteractButton") != null
-		and touch.get_node_or_null("Root/AttackButton") != null
+		and touch.get_node_or_null("Root/AttackButton") == null
 		and bool(touch.visible)
 	)
 	var vp := root.get_visible_rect().size
 	var move_rect: Rect2 = touch.get_node("Root/MoveStick").get_global_rect()
 	var aim_rect: Rect2 = touch.get_node("Root/AimStick").get_global_rect()
 	var use_rect: Rect2 = touch.get_node("Root/InteractButton").get_global_rect()
-	var atk_rect: Rect2 = touch.get_node("Root/AttackButton").get_global_rect()
+	var move_shift := _center_shift(Vector2(TouchControlsScript.MARGIN, vp.y - TouchControlsScript.MARGIN - TouchControlsScript.MOVE_SIZE), TouchControlsScript.MOVE_SIZE, vp)
+	var aim_corner := Vector2(vp.x - TouchControlsScript.MARGIN - TouchControlsScript.AIM_SIZE, vp.y - TouchControlsScript.MARGIN - TouchControlsScript.AIM_SIZE)
+	var aim_shift := _center_shift(aim_corner, TouchControlsScript.AIM_SIZE, vp)
+	var shift_ok := (
+		move_rect.get_center().distance_to(move_shift) < 1.0
+		and aim_rect.get_center().distance_to(aim_shift) < 1.0
+		and move_rect.get_center().y < vp.y - TouchControlsScript.MARGIN - TouchControlsScript.MOVE_SIZE * 0.5
+		and aim_rect.get_center().x < vp.x - TouchControlsScript.MARGIN - TouchControlsScript.AIM_SIZE * 0.5
+	)
 	var layout_ok := (
 		vp.x > 100.0
-		and move_rect.get_center().x < vp.x * 0.35
-		and aim_rect.get_center().x > vp.x * 0.65
+		and shift_ok
+		and move_rect.get_center().x < vp.x * 0.45
+		and aim_rect.get_center().x > vp.x * 0.55
 		and use_rect.get_center().x > vp.x * 0.5
-		and atk_rect.get_center().x > use_rect.get_center().x
 		and use_rect.get_center().y < aim_rect.get_center().y
-		and atk_rect.get_center().y < aim_rect.get_center().y
 	)
 	print(
 		"present_ok=", present_ok,
 		" layout_ok=", layout_ok,
+		" shift_ok=", shift_ok,
 		" vp=", vp,
 		" move=", move_rect,
 		" aim=", aim_rect,
-		" use=", use_rect,
-		" atk=", atk_rect
+		" use=", use_rect
 	)
 
 	var drag_up := move_rect.get_center() + Vector2(0.0, -70.0)
@@ -133,6 +141,8 @@ func _run() -> void:
 
 	var monsters: Array = main.monsters() if main.has_method("monsters") else []
 	var attack_ok := false
+	var stick_fire_ok := false
+	var gun_aim_ok := false
 	if monsters.is_empty():
 		push_error("No monster to attack")
 	else:
@@ -140,15 +150,69 @@ func _run() -> void:
 		monster.visible = true
 		monster.set_physics_process(false)
 		monster.touch_damage = 0.0
+		touch.set_mobile_combat(true)
 		touch.set_aim_stick(Vector2(1.0, 0.0))
 		await physics_frame
 		var aim_dir: Vector3 = touch.aim_planar()
 		monster.global_position = player.global_position + aim_dir * 1.15
 		var before: float = monster.health
-		touch.press_attack()
+		for _frame in range(3):
+			await physics_frame
 		attack_ok = monster.health < before - 0.5
 		print("attack_ok=", attack_ok, " before=", before, " after=", monster.health)
+
+		touch.set_aim_stick(Vector2.ZERO)
+		touch.set_move_stick(Vector2(0.0, 1.0))
+		# Desktop path: an emulated left-click from the move stick must not shoot.
+		touch.set_mobile_combat(false)
+		var gp: Node = root.get_node("GameProgress")
+		gp.has_pistol = true
+		player._fire_cooldown = 0.0
+		monster.health = 100.0
+		monster.global_position = player.global_position + aim_dir * 3.0
+		var click := InputEventMouseButton.new()
+		click.button_index = MOUSE_BUTTON_LEFT
+		click.pressed = true
+		click.device = -1
+		click.position = move_rect.get_center()
+		Input.parse_input_event(click)
+		await process_frame
+		for _frame in range(8):
+			await physics_frame
+		stick_fire_ok = is_equal_approx(float(monster.health), 100.0) and _bullet_count(main) == 0
+		print("stick_fire_ok=", stick_fire_ok, " hp=", monster.health, " bullets=", _bullet_count(main))
+
+		touch.set_mobile_combat(true)
+		touch.set_move_stick(Vector2.ZERO)
+		player._fire_cooldown = 0.0
+		monster.health = 80.0
+		var gun_dir := Vector3.ZERO
+		var gun_dist := 0.0
+		for aim_stick in [Vector2(1, 0), Vector2(0, 1), Vector2(-1, 0), Vector2(0, -1)]:
+			touch.set_aim_stick(aim_stick)
+			var dir: Vector3 = touch.aim_planar()
+			for step in range(5, 16):
+				var dist := float(step) * 0.4
+				monster.global_position = player.global_position + dir * dist
+				if player._monster_in_sights():
+					gun_dir = dir
+					gun_dist = dist
+					break
+			if gun_dist > 0.0:
+				break
+		# Outside melee range, so a health drop is the pistol and not a swing.
+		var gun_placed: bool = gun_dist > player.melee_range
+		for _frame in range(24):
+			await physics_frame
+		gun_aim_ok = gun_placed and monster.health < 79.0
+		print(
+			"gun_aim_ok=", gun_aim_ok,
+			" hp=", monster.health,
+			" dist=", gun_dist,
+			" dir=", gun_dir
+		)
 	touch.set_aim_stick(Vector2.ZERO)
+	touch.set_move_stick(Vector2.ZERO)
 
 	var pickup: Node3D = main.get_node_or_null("PickupItem")
 	var interact_ok := false
@@ -161,10 +225,8 @@ func _run() -> void:
 		print("interact_ok=", interact_ok, " has_item=", player.has_collected_item())
 
 	var use_press := bool(touch.pointer_down(4, use_rect.get_center()))
-	var atk_press := bool(touch.pointer_down(5, atk_rect.get_center()))
-	var buttons_ok := use_press and atk_press
+	var buttons_ok := use_press
 	touch.pointer_up(4)
-	touch.pointer_up(5)
 	print("buttons_ok=", buttons_ok)
 
 	var all_ok: bool = (
@@ -180,11 +242,27 @@ func _run() -> void:
 		and strafe_ok
 		and light_off_ok
 		and attack_ok
+		and stick_fire_ok
+		and gun_aim_ok
 		and interact_ok
 		and buttons_ok
 	)
 	print("touch_controls_smoke_ok=", all_ok)
 	quit(0 if all_ok else 1)
+
+
+func _center_shift(corner: Vector2, size: float, vp: Vector2) -> Vector2:
+	var box := Vector2(size, size)
+	var stick_center := corner + box * 0.5
+	return stick_center + (vp * 0.5 - stick_center) * TouchControlsScript.CENTER_SHIFT
+
+
+func _bullet_count(main: Node) -> int:
+	var count := 0
+	for child in main.get_children():
+		if child is Bullet:
+			count += 1
+	return count
 
 
 func _planar_matches_camera() -> bool:
