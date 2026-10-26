@@ -2,9 +2,11 @@ extends CharacterBody3D
 
 ## Patrols a generated monster track (room centres linked through doorway
 ## centres), detects nearby players in a radius, and chases on FOV + line of
-## sight by pathing along that track so walls and furniture do not trap it.
-## After losing detection for `lose_sight_grace` seconds it returns to the
-## track. Touching the player deals lethal damage.
+## sight, when shot, or while the flashlight beam is on them. It path-follows
+## the track so walls and furniture do not trap it. After losing detection for
+## `lose_sight_grace` seconds it returns to the track. Touching the player
+## deals lethal damage. The health bar shows only while this body is inside
+## the flashlight beam.
 
 enum AiMode { PATROL, CHASE, RETURN }
 
@@ -61,6 +63,7 @@ var _health_revealed: bool = false
 var _item_alerted: bool = false
 var _ai_mode: AiMode = AiMode.PATROL
 var _force_detect: bool = false
+var _provoked: bool = false
 var _stuck_time: float = 0.0
 
 var _track_nodes: Dictionary = {}
@@ -135,8 +138,10 @@ func _physics_process(delta: float) -> void:
 		return
 
 	_near_player = _is_player_in_proximity()
-	_seeing_player = _force_detect or _near_player or _can_see_player()
+	var lit := _lit_by_flashlight()
+	_seeing_player = _force_detect or _near_player or _can_see_player() or lit or _provoked
 	if _seeing_player and _allows_chase():
+		_provoked = false
 		_time_since_seen = 0.0
 		_last_seen_pos = player.global_position
 		if _ai_mode != AiMode.CHASE:
@@ -169,7 +174,10 @@ func take_damage(amount: float) -> void:
 	health = maxf(0.0, health - amount)
 	if _health_bar:
 		_health_bar.set_health(health, max_health)
-	reveal_health_bar()
+	_provoked = true
+	_time_since_seen = 0.0
+	if player != null and is_instance_valid(player):
+		_last_seen_pos = player.global_position
 	if health <= 0.0:
 		_alive = false
 		velocity = Vector3.ZERO
@@ -270,19 +278,21 @@ func is_health_bar_revealed() -> bool:
 	return _health_revealed
 
 func reveal_health_bar() -> void:
-	_health_revealed = true
-	if _health_bar:
-		_health_bar.visible = true
+	_update_health_bar_visibility()
 
 func _update_health_bar_visibility() -> void:
-	if _health_revealed:
-		return
+	var lit := _lit_by_flashlight()
+	_health_revealed = lit
+	if _health_bar:
+		_health_bar.visible = lit
+
+
+func _lit_by_flashlight() -> bool:
 	if player == null or not is_instance_valid(player):
-		return
+		return false
 	if not player.has_method("illuminates_point"):
-		return
-	if player.illuminates_point(global_position + Vector3(0.0, 1.2, 0.0)):
-		reveal_health_bar()
+		return false
+	return player.illuminates_point(global_position + Vector3(0.0, 1.2, 0.0))
 
 func _setup_health_bar() -> void:
 	var existing := get_node_or_null("HealthBar")
@@ -334,6 +344,7 @@ func _reset_detection() -> void:
 	_seeing_player = false
 	_near_player = false
 	_force_detect = false
+	_provoked = false
 
 func _patrol(delta: float) -> void:
 	if _track_nodes.is_empty():

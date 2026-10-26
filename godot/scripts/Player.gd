@@ -26,7 +26,15 @@ signal stair_used(stair: Node)
 @export var flashlight_fill_energy: float = 0.45
 @export var pistol_damage: float = 10.0
 @export var pistol_speed: float = 28.0
+## Already authored at 0.4 s. AK is 10 rounds/sec and the shotgun is one shot a second.
 @export var pistol_cooldown: float = 0.4
+@export var shotgun_pellet_damage: float = 10.0
+@export var shotgun_pellets: int = 10
+@export var shotgun_speed: float = 26.0
+@export var shotgun_cooldown: float = 1.0
+@export var ak_damage: float = 25.0
+@export var ak_speed: float = 34.0
+@export var ak_cooldown: float = 0.1
 @export var melee_damage: float = 10.0
 @export var melee_range: float = 1.8
 @export var melee_cooldown: float = 0.45
@@ -53,6 +61,7 @@ var _aim_override: Vector3 = Vector3.ZERO
 var _fire_cooldown: float = 0.0
 var _base_move_speed: float = 2.4
 var _base_run_speed: float = 5.5
+var _base_max_health: float = 100.0
 ## Frames after a floor change during which another stair cannot fire.
 var _stair_grace: int = 0
 
@@ -64,10 +73,17 @@ func _ready() -> void:
 	add_to_group("player")
 	_ensure_key_action("sprint", KEY_SHIFT)
 	_ensure_key_action("sneak", KEY_CTRL)
+	_ensure_key_action("reload", KEY_R)
+	_ensure_key_action("slot_1", KEY_1)
+	_ensure_key_action("slot_2", KEY_2)
+	_ensure_key_action("slot_3", KEY_3)
 	_ensure_mouse_action("flashlight", MOUSE_BUTTON_RIGHT)
 	_ensure_mouse_action("fire", MOUSE_BUTTON_LEFT)
 	_base_move_speed = move_speed
 	_base_run_speed = run_speed
+	_base_max_health = max_health
+	if not GameProgress.upgrades_changed.is_connected(_apply_loadout):
+		GameProgress.upgrades_changed.connect(_apply_loadout)
 	_apply_loadout()
 	health = max_health
 	_anim = _find_animation_player(visual)
@@ -79,7 +95,7 @@ func _ready() -> void:
 				_anim.get_animation(clip_name).loop_mode = Animation.LOOP_LINEAR
 		_play("Idle", 1.0)
 	_setup_flashlight()
-	_setup_pistol_visual()
+	_sync_weapon_visual()
 	_health_bar = HealthBar3D.new()
 	_health_bar.name = "HealthBar"
 	_health_bar.fill_color = Color(0.25, 0.9, 0.4, 1.0)
@@ -89,6 +105,7 @@ func _ready() -> void:
 
 func _physics_process(delta: float) -> void:
 	_fire_cooldown = maxf(0.0, _fire_cooldown - delta)
+	_poll_weapon_input()
 	if not _alive or _input_locked:
 		set_flashlight_on(false)
 		velocity = Vector3.ZERO
@@ -214,11 +231,12 @@ func has_pistol() -> bool:
 
 
 func has_weapon() -> bool:
-	return has_pistol()
+	_ensure_selection()
+	return GameProgress.owns_weapon(GameProgress.selected_weapon)
 
 
 ## Desktop attack is LMB. A phone attacks by aiming the right stick at a monster.
-## An equipped pistol fires; otherwise this is a melee swing.
+## The selected gun fires; otherwise this is a melee swing.
 func attack() -> Node3D:
 	if has_weapon():
 		return fire_weapon()
@@ -314,15 +332,56 @@ func illuminates_point(world_pos: Vector3) -> bool:
 func fire_weapon() -> Node3D:
 	if not _alive or _input_locked:
 		return null
-	if not GameProgress.has_pistol:
+	_ensure_selection()
+	var weapon := GameProgress.selected_weapon
+	if not GameProgress.owns_weapon(weapon):
 		return null
 	if _fire_cooldown > 0.0:
 		return null
-	_fire_cooldown = pistol_cooldown
+	if not GameProgress.consume_round(weapon):
+		return null
+	match weapon:
+		GameProgress.WeaponId.PISTOL:
+			_fire_cooldown = pistol_cooldown
+			return _spawn_bullet(get_aim_direction(), pistol_damage, pistol_speed)
+		GameProgress.WeaponId.SHOTGUN:
+			_fire_cooldown = shotgun_cooldown
+			return _fire_shotgun()
+		GameProgress.WeaponId.AK:
+			_fire_cooldown = ak_cooldown
+			return _spawn_bullet(get_aim_direction(), ak_damage, ak_speed)
+		GameProgress.WeaponId.NONE:
+			return null
+		_:
+			return null
+
+
+func _fire_shotgun() -> Node3D:
+	var aim := get_aim_direction()
+	var count := maxi(shotgun_pellets, 1)
+	var first: Node3D = null
+	for index in count:
+		var direction := _pellet_direction(aim, index, count)
+		var bullet := _spawn_bullet(direction, shotgun_pellet_damage, shotgun_speed)
+		if first == null:
+			first = bullet
+	return first
+
+
+## Even fan that stays inside the flashlight cone. The spot angle is the
+## half-angle from the beam axis to the rim.
+func _pellet_direction(aim: Vector3, index: int, count: int) -> Vector3:
+	if count <= 1:
+		return aim
+	var t := float(index) / float(count - 1)
+	var yaw := lerpf(-1.0, 1.0, t) * deg_to_rad(flashlight_angle) * 0.85
+	return aim.rotated(Vector3.UP, yaw).normalized()
+
+
+func _spawn_bullet(direction: Vector3, damage: float, speed: float) -> Node3D:
 	var bullet: Node3D = BULLET_SCRIPT.new()
 	bullet.name = "Bullet"
-	bullet.damage = pistol_damage
-	var direction := get_aim_direction()
+	bullet.damage = damage
 	# Chest height, not the raised flashlight. The sweep in Bullet still covers
 	# shorter bodies the muzzle would otherwise sail over.
 	var origin := global_position + Vector3(0.0, 0.85, 0.0) + direction * 0.7
@@ -331,7 +390,7 @@ func fire_weapon() -> Node3D:
 		host = self
 	host.add_child(bullet)
 	bullet.global_position = origin
-	bullet.velocity = direction * pistol_speed
+	bullet.velocity = direction * speed
 	return bullet
 
 func movement_speed_scale() -> float:
@@ -342,26 +401,99 @@ func _apply_loadout() -> void:
 	var multiplier := GameProgress.speed_multiplier()
 	move_speed = _base_move_speed * multiplier
 	run_speed = _base_run_speed * multiplier
+	var new_max := float(GameProgress.max_health())
+	if _base_max_health > 0.0:
+		new_max = _base_max_health + float(GameProgress.health_bonus())
+	var was_full := health >= max_health - 0.01
+	max_health = new_max
+	if was_full:
+		health = max_health
+	else:
+		health = minf(health, max_health)
+	if _health_bar:
+		_health_bar.set_health(health, max_health)
+	_ensure_selection()
+	_sync_weapon_visual()
 
-func _setup_pistol_visual() -> void:
-	if not GameProgress.has_pistol:
+
+func _ensure_selection() -> void:
+	if GameProgress.owns_weapon(GameProgress.selected_weapon):
 		return
+	var owned := GameProgress.owned_weapons()
+	var next: GameProgress.WeaponId = owned[0] if not owned.is_empty() else GameProgress.WeaponId.NONE
+	if GameProgress.selected_weapon == next:
+		return
+	GameProgress.selected_weapon = next
+
+
+func _sync_weapon_visual() -> void:
 	var host: Node3D = visual if visual else self
-	if host.get_node_or_null("PistolMesh") != null:
+	if host == null:
+		return
+	_ensure_weapon_mesh(host, "PistolMesh", Vector3(0.07, 0.12, 0.28), Vector3(0.22, 1.05, -0.18), Color(0.12, 0.12, 0.12))
+	_ensure_weapon_mesh(host, "ShotgunMesh", Vector3(0.09, 0.1, 0.62), Vector3(0.24, 1.02, -0.28), Color(0.28, 0.18, 0.1))
+	_ensure_weapon_mesh(host, "AkMesh", Vector3(0.08, 0.1, 0.72), Vector3(0.26, 1.04, -0.32), Color(0.16, 0.18, 0.12))
+	var show_name := ""
+	match GameProgress.selected_weapon:
+		GameProgress.WeaponId.PISTOL:
+			show_name = "PistolMesh"
+		GameProgress.WeaponId.SHOTGUN:
+			show_name = "ShotgunMesh"
+		GameProgress.WeaponId.AK:
+			show_name = "AkMesh"
+		GameProgress.WeaponId.NONE:
+			show_name = ""
+		_:
+			show_name = ""
+	for mesh_name in ["PistolMesh", "ShotgunMesh", "AkMesh"]:
+		var mesh := host.get_node_or_null(mesh_name) as Node3D
+		if mesh:
+			mesh.visible = mesh_name == show_name and GameProgress.owns_weapon(GameProgress.selected_weapon)
+
+
+func _ensure_weapon_mesh(host: Node3D, mesh_name: String, size: Vector3, at: Vector3, color: Color) -> void:
+	if host.get_node_or_null(mesh_name) != null:
 		return
 	var mesh := MeshInstance3D.new()
-	mesh.name = "PistolMesh"
+	mesh.name = mesh_name
 	var box := BoxMesh.new()
-	box.size = Vector3(0.07, 0.12, 0.28)
+	box.size = size
 	mesh.mesh = box
-	mesh.position = Vector3(0.22, 1.05, -0.18)
+	mesh.position = at
 	mesh.rotation_degrees = Vector3(8.0, 0.0, 8.0)
 	var mat := StandardMaterial3D.new()
-	mat.albedo_color = Color(0.12, 0.12, 0.12, 1.0)
-	mat.metallic = 0.7
-	mat.roughness = 0.35
+	mat.albedo_color = color
+	mat.metallic = 0.65
+	mat.roughness = 0.38
 	mesh.material_override = mat
+	mesh.visible = false
 	host.add_child(mesh)
+
+
+func _poll_weapon_input() -> void:
+	if not _alive or _input_locked:
+		return
+	if Input.is_action_just_pressed("slot_1"):
+		GameProgress.select_weapon(GameProgress.WeaponId.PISTOL)
+	elif Input.is_action_just_pressed("slot_2"):
+		GameProgress.select_weapon(GameProgress.WeaponId.SHOTGUN)
+	elif Input.is_action_just_pressed("slot_3"):
+		GameProgress.select_weapon(GameProgress.WeaponId.AK)
+	if Input.is_action_just_pressed("reload"):
+		GameProgress.reload_weapon(GameProgress.selected_weapon)
+
+
+func _unhandled_input(event: InputEvent) -> void:
+	if not _alive or _input_locked:
+		return
+	if event is InputEventMouseButton and event.pressed:
+		var button := event as InputEventMouseButton
+		if button.button_index == MOUSE_BUTTON_WHEEL_UP:
+			GameProgress.cycle_weapon(-1)
+			get_viewport().set_input_as_handled()
+		elif button.button_index == MOUSE_BUTTON_WHEEL_DOWN:
+			GameProgress.cycle_weapon(1)
+			get_viewport().set_input_as_handled()
 
 ## Tests and screenshot tools can pin the aim point without a real cursor.
 func set_aim_world_override(point: Vector3) -> void:

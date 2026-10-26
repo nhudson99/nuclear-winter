@@ -39,12 +39,12 @@ func _build() -> void:
 	world_env.name = "WorldEnvironment"
 	var env := Environment.new()
 	env.background_mode = Environment.BG_COLOR
-	# Dim ambient (10% energy) so the map is faintly readable with the
+	# Dim ambient (9% energy) so the map is faintly readable with the
 	# flashlight off. The sun stays dark; hold RMB for the beam.
 	env.background_color = Color(0.0, 0.0, 0.0)
 	env.ambient_light_source = Environment.AMBIENT_SOURCE_COLOR
 	env.ambient_light_color = Color(0.55, 0.60, 0.58)
-	env.ambient_light_energy = 0.10
+	env.ambient_light_energy = 0.09
 	env.reflected_light_source = Environment.REFLECTION_SOURCE_DISABLED
 	world_env.environment = env
 	main.add_child(world_env)

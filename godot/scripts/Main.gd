@@ -12,10 +12,11 @@ enum GameState { LOADING, PLAYING, WON, LOST }
 const LOADING_SCREEN := preload("res://scenes/LoadingScreen.tscn")
 const ARISTOCRAT_SCREEN := preload("res://scenes/AristocratScreen.tscn")
 const TOUCH_CONTROLS := preload("res://scripts/TouchControls.gd")
+const HOTBAR_SCRIPT := preload("res://scripts/Hotbar.gd")
 ## 50% more zoom onto the player than the original 20 m ortho height.
 const PLAY_CAMERA_SIZE := 20.0 / 1.5
-## 10% ambient so rooms are faintly readable with the flashlight off.
-const DARK_AMBIENT_ENERGY := 0.10
+## About 9% ambient (was 0.10) so rooms stay faintly readable with the flashlight off.
+const DARK_AMBIENT_ENERGY := 0.09
 const SLIME_SCENE_PATH := "res://scenes/Slime.tscn"
 const MAX_LIVING_SLIMES := 16
 const SLIME_SPLIT_SPREAD := 0.6
@@ -219,10 +220,14 @@ func _arrival_position(layout: Dictionary, arrival_cell) -> Vector3:
 			if room.get("cell") == spec.get("cell"):
 				center = room.get("center", marker)
 				break
-		var inward := center - marker
-		inward.y = 0.0
-		if inward.length() > 0.4:
-			marker += inward.normalized() * minf(inward.length() * 0.55, 3.2)
+		var to_center := center - marker
+		to_center.y = 0.0
+		# Step off to the side of the lip. Moving toward the room centre walks
+		# down a centred flight and lands inside the 1.35m stair trigger.
+		var side := Vector3(to_center.z, 0.0, -to_center.x)
+		if side.length() < 0.05:
+			side = Vector3(1.0, 0.0, 0.0)
+		marker += side.normalized() * 2.2
 		marker.y = 0.05
 		return marker
 	return layout.get("start", Vector3.ZERO)
@@ -552,6 +557,10 @@ func _setup_hud() -> void:
 	_objective_label.add_theme_color_override("font_outline_color", Color(0, 0, 0, 1))
 	_objective_label.add_theme_constant_override("outline_size", 6)
 	layer.add_child(_objective_label)
+
+	var hotbar: Control = HOTBAR_SCRIPT.new()
+	hotbar.name = "Hotbar"
+	layer.add_child(hotbar)
 
 	var touch: Node = TOUCH_CONTROLS.new()
 	touch.name = "TouchControls"

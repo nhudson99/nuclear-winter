@@ -835,8 +835,268 @@ func _spawn_room(
 			continue
 		open_doorway(room, side)
 
+	_center_stair_flight(room, type_name)
 	_build_room_collision(room)
 	return room
+
+
+## Both flights are authored in a corner the capsule cannot walk onto. Shift
+## them to the room centre. Down flights also turn around so the top step
+## meets the lip, and the floor slab stops covering the well.
+func _center_stair_flight(room: Node3D, type_name: String) -> void:
+	if not is_stair_type(type_name):
+		return
+	var flight := _stair_nodes(room, true)
+	if flight.is_empty():
+		return
+	var well := _stair_nodes(room, false)
+	if type_name == LevelRules.TYPE_STAIR_DOWN:
+		_seat_down_flight(flight, well)
+	var treads := _nodes_with_prefix(flight, "StairTread_")
+	var center := _average_xz(treads)
+	var shift := Vector3(-center.x, 0.0, -center.z)
+	for node in flight:
+		node.position += shift
+	for node in well:
+		node.position += shift
+	if type_name == LevelRules.TYPE_STAIR_DOWN:
+		_open_down_approach(well)
+		_rebuild_down_floor(room, well)
+
+
+func _stair_nodes(room: Node3D, flight_pieces: bool) -> Array[Node3D]:
+	var found: Array[Node3D] = []
+	_collect_stair_nodes(room, flight_pieces, found)
+	return found
+
+
+## Room modules wrap the flight under a glTF root, so a direct-child scan misses
+## every tread and the flight stays in the corner.
+func _collect_stair_nodes(node: Node, flight_pieces: bool, found: Array[Node3D]) -> void:
+	for child in node.get_children():
+		if child is Node3D:
+			var label := String(child.name)
+			var is_flight := (
+				label.begins_with("StairTread_")
+				or label.begins_with("NoCol_StairNose_")
+				or label.begins_with("StairPost_")
+				or label.begins_with("StairRail_")
+				or label == "StairNewel"
+				or label == "StairUse"
+				or label == "Landing"
+				or label == "LandingBack"
+				or label.begins_with("NoCol_Hatch")
+			)
+			var is_well := label.begins_with("Well")
+			if flight_pieces and is_flight:
+				found.append(child as Node3D)
+			elif not flight_pieces and is_well:
+				found.append(child as Node3D)
+		_collect_stair_nodes(child, flight_pieces, found)
+
+
+func _nodes_with_prefix(nodes: Array[Node3D], prefix: String) -> Array[Node3D]:
+	var found: Array[Node3D] = []
+	for node in nodes:
+		if String(node.name).begins_with(prefix):
+			found.append(node)
+	return found
+
+
+func _node_named(nodes: Array[Node3D], node_name: String) -> Node3D:
+	for node in nodes:
+		if String(node.name) == node_name:
+			return node
+	return null
+
+
+func _average_xz(nodes: Array[Node3D]) -> Vector3:
+	if nodes.is_empty():
+		return Vector3.ZERO
+	var total := Vector3.ZERO
+	for node in nodes:
+		total += node.position
+	return total / float(nodes.size())
+
+
+func _extreme_y(nodes: Array[Node3D], highest: bool) -> Node3D:
+	var best: Node3D = nodes[0]
+	for node in nodes:
+		if highest and node.position.y > best.position.y:
+			best = node
+		elif not highest and node.position.y < best.position.y:
+			best = node
+	return best
+
+
+func _half_extent_z(node: Node3D) -> float:
+	if node is MeshInstance3D:
+		var mesh := (node as MeshInstance3D).mesh
+		if mesh:
+			return absf(mesh.get_aabb().size.z) * 0.5
+	return 0.16
+
+
+## The down flight is built with its low end at the lip, so the steps climb
+## into the back wall. Mirror it and seat the top step against the lip.
+func _seat_down_flight(flight: Array[Node3D], well: Array[Node3D]) -> void:
+	var lip := _node_named(well, "WellLip")
+	var treads := _nodes_with_prefix(flight, "StairTread_")
+	if lip == null or treads.size() < 2:
+		return
+	var low := _extreme_y(treads, false)
+	var high := _extreme_y(treads, true)
+	if absf(high.position.z - lip.position.z) > absf(low.position.z - lip.position.z):
+		var pivot := (low.position.z + high.position.z) * 0.5
+		for node in flight:
+			var at := node.position
+			at.z = pivot * 2.0 - at.z
+			node.position = at
+		high = _extreme_y(treads, true)
+	var dir := signf(lip.position.z - high.position.z)
+	if absf(dir) < 0.01:
+		dir = 1.0
+	var desired := lip.position.z - dir * (_half_extent_z(lip) + _half_extent_z(high))
+	var delta := desired - high.position.z
+	for node in flight:
+		node.position.z += delta
+
+
+func _open_down_approach(well: Array[Node3D]) -> void:
+	var lip := _node_named(well, "WellLip")
+	if lip == null:
+		return
+	var best: Node3D = null
+	var best_dist := INF
+	for node in well:
+		if not String(node.name).begins_with("WellWall_"):
+			continue
+		var flat := node.position - lip.position
+		flat.y = 0.0
+		var dist := flat.length()
+		if dist < best_dist:
+			best_dist = dist
+			best = node
+	if best:
+		best.name = "NoCol_WellApproach"
+
+
+func _rebuild_down_floor(room: Node3D, well: Array[Node3D]) -> void:
+	var hole := _well_hole(room, well)
+	if hole.size.x < 0.4 or hole.size.y < 0.4:
+		return
+	var material: Material = null
+	var source := find_child_by_name(room, "Floor") as MeshInstance3D
+	if source != null and source.mesh != null and source.mesh.get_surface_count() > 0:
+		material = source.mesh.surface_get_material(0)
+	for floor_name in ["Floor", "Floor_NW", "Floor_NStrip"]:
+		var old := find_child_by_name(room, floor_name)
+		if old:
+			old.free()
+	_clear_debris_in_hole(room, hole)
+	var half := TILE * 0.5
+	var x0 := hole.position.x
+	var z0 := hole.position.y
+	var x1 := x0 + hole.size.x
+	var z1 := z0 + hole.size.y
+	_add_floor_slab(room, "Floor", material, -half, half, -half, z0)
+	_add_floor_slab(room, "Floor_N", material, -half, half, z1, half)
+	_add_floor_slab(room, "Floor_W", material, -half, x0, z0, z1)
+	_add_floor_slab(room, "Floor_E", material, x1, half, z0, z1)
+
+
+func _well_hole(room: Node3D, well: Array[Node3D]) -> Rect2:
+	var walls: Array[MeshInstance3D] = []
+	for node in well:
+		var label := String(node.name)
+		if node is MeshInstance3D and (label.begins_with("WellWall_") or label == "NoCol_WellApproach"):
+			walls.append(node as MeshInstance3D)
+	if walls.size() < 4:
+		return Rect2()
+	var center := Vector3.ZERO
+	for wall in walls:
+		center += wall.position
+	center /= float(walls.size())
+	var min_x := -TILE * 0.5
+	var max_x := TILE * 0.5
+	var min_z := -TILE * 0.5
+	var max_z := TILE * 0.5
+	for wall in walls:
+		var box: Dictionary = _mesh_room_box(wall, room)
+		var at: Vector3 = box["center"]
+		var size: Vector3 = box["size"]
+		if absf(at.x - center.x) >= absf(at.z - center.z):
+			if at.x >= center.x:
+				max_x = at.x - size.x * 0.5
+			else:
+				min_x = at.x + size.x * 0.5
+		else:
+			if at.z >= center.z:
+				max_z = at.z - size.z * 0.5
+			else:
+				min_z = at.z + size.z * 0.5
+	var lip := _node_named(well, "WellLip")
+	if lip:
+		var inward := center - lip.position
+		inward.y = 0.0
+		if inward.length() > 0.1:
+			if absf(inward.x) > absf(inward.z):
+				if inward.x > 0.0:
+					min_x += 0.35
+				else:
+					max_x -= 0.35
+			else:
+				if inward.z > 0.0:
+					min_z += 0.35
+				else:
+					max_z -= 0.35
+	if max_x - min_x < 0.4 or max_z - min_z < 0.4:
+		return Rect2()
+	return Rect2(min_x, min_z, max_x - min_x, max_z - min_z)
+
+
+func _add_floor_slab(
+	room: Node3D,
+	slab_name: String,
+	material: Material,
+	x0: float,
+	x1: float,
+	z0: float,
+	z1: float
+) -> void:
+	if x1 - x0 < 0.05 or z1 - z0 < 0.05:
+		return
+	var mesh_instance := MeshInstance3D.new()
+	mesh_instance.name = slab_name
+	var box := BoxMesh.new()
+	box.size = Vector3(x1 - x0, 0.1, z1 - z0)
+	mesh_instance.mesh = box
+	mesh_instance.position = Vector3((x0 + x1) * 0.5, -0.05, (z0 + z1) * 0.5)
+	if material:
+		mesh_instance.material_override = material
+	else:
+		var mat := StandardMaterial3D.new()
+		mat.albedo_color = Color(0.28, 0.28, 0.26)
+		mat.roughness = 0.9
+		mesh_instance.material_override = mat
+	room.add_child(mesh_instance)
+
+
+func _clear_debris_in_hole(room: Node3D, hole: Rect2) -> void:
+	var doomed: Array[Node] = []
+	_collect_debris_in_hole(room, hole, doomed)
+	for node in doomed:
+		node.free()
+
+
+func _collect_debris_in_hole(node: Node, hole: Rect2, doomed: Array[Node]) -> void:
+	if node is MeshInstance3D and String(node.name).begins_with("NoCol_Debris"):
+		var at := (node as Node3D).position
+		if hole.has_point(Vector2(at.x, at.z)):
+			doomed.append(node)
+			return
+	for child in node.get_children():
+		_collect_debris_in_hole(child, hole, doomed)
 
 
 ## Deletes the doorway filler on one side, turning it into a walkable opening.
@@ -1499,9 +1759,9 @@ func _add_pipe_segment(parent: Node3D, a: Vector3, b: Vector3, heat: float, inde
 	mat.albedo_color = Color(0.42, 0.28, 0.16).lerp(Color(0.55, 0.32, 0.18), heat)
 	mat.metallic = 0.55
 	mat.roughness = 0.42
-	mat.emission_enabled = true
-	mat.emission = Color(1.0, 0.46, 0.12)
-	mat.emission_energy_multiplier = lerpf(0.15, 2.4, heat)
+	# Steam pipes stay dull metal. The valve paints them when it shuts; they
+	# do not glow orange while the main is live.
+	mat.emission_enabled = false
 	mesh.material_override = mat
 	parent.add_child(mesh)
 
