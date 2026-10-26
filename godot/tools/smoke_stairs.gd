@@ -23,6 +23,10 @@ func _run() -> void:
 	main.park_monsters()
 	var player: CharacterBody3D = main.get_node("Player")
 
+	var up_room := _room_ending(main, "stairwell_up")
+	var up_centered := _flight_centered(up_room)
+	print("stair_up_centered=", up_centered)
+
 	var locked_floor: int = main.get_active_floor()
 	await _walk_flight(main, player, _room_ending(main, "stairwell_up"), true)
 	var stayed_locked: bool = main.get_active_floor() == locked_floor
@@ -39,11 +43,30 @@ func _run() -> void:
 	var settled: bool = main.get_active_floor() == 1
 	print("stair_no_bounce=", settled, " floor=", main.get_active_floor())
 
-	await _walk_flight(main, player, _room_ending(main, "stairwell_down"), false)
+	var down_room := _room_ending(main, "stairwell_down")
+	var down_centered := _flight_centered(down_room)
+	var down_open := not _floor_covers_mid(down_room)
+	var down_descends := _flight_descends(down_room)
+	print(
+		"stair_down_centered=", down_centered,
+		" stair_down_open=", down_open,
+		" stair_down_descends=", down_descends
+	)
+
+	await _walk_flight(main, player, down_room, false)
 	var descended: bool = main.get_active_floor() == 0
 	print("stair_walk_down=", descended, " floor=", main.get_active_floor())
 
-	var ok: bool = stayed_locked and climbed and settled and descended
+	var ok: bool = (
+		stayed_locked
+		and climbed
+		and settled
+		and descended
+		and up_centered
+		and down_centered
+		and down_open
+		and down_descends
+	)
 	print("stair_walk_ok=", ok)
 	main.queue_free()
 	OS.set_environment("NW_LEVEL", "")
@@ -87,6 +110,8 @@ func _walk_flight(main: Node, player: CharacterBody3D, room: Node3D, ascending: 
 
 
 func _flight(room: Node3D) -> Dictionary:
+	if room == null:
+		return {}
 	var treads: Array[MeshInstance3D] = []
 	_collect_treads(room, treads)
 	if treads.size() < 2:
@@ -134,6 +159,57 @@ func _release_walk() -> void:
 	Input.action_release("move_right")
 	Input.action_release("move_up")
 	Input.action_release("move_down")
+
+
+func _flight_centered(room: Node3D) -> bool:
+	if room == null:
+		return false
+	var flight := _flight(room)
+	if flight.is_empty():
+		return false
+	var mid: Vector3 = (flight["low"] + flight["high"]) * 0.5
+	var flat := mid - room.global_position
+	flat.y = 0.0
+	return flat.length() < 1.5
+
+
+func _flight_descends(room: Node3D) -> bool:
+	var flight := _flight(room)
+	if flight.is_empty():
+		return false
+	var low: Vector3 = flight["low"]
+	var high: Vector3 = flight["high"]
+	return high.y > low.y + 0.8 and high.y < 0.45 and low.y < -0.8
+
+
+func _floor_covers_mid(room: Node3D) -> bool:
+	var flight := _flight(room)
+	if flight.is_empty():
+		return true
+	var mid: Vector3 = (flight["low"] + flight["high"]) * 0.5
+	return _floor_covers(room, mid)
+
+
+func _floor_covers(room: Node3D, point: Vector3) -> bool:
+	var floors: Array[MeshInstance3D] = []
+	_collect_floors(room, floors)
+	for mesh in floors:
+		if mesh.mesh == null:
+			continue
+		var xf := mesh.global_transform
+		var bounds := mesh.mesh.get_aabb()
+		var center := xf * bounds.get_center()
+		var half := (xf.basis * bounds.size).abs() * 0.5
+		if absf(point.x - center.x) <= half.x and absf(point.z - center.z) <= half.z:
+			return true
+	return false
+
+
+func _collect_floors(node: Node, into: Array[MeshInstance3D]) -> void:
+	if node is MeshInstance3D and String(node.name).begins_with("Floor"):
+		into.append(node as MeshInstance3D)
+	for child in node.get_children():
+		_collect_floors(child, into)
 
 
 func _collect_treads(node: Node, into: Array[MeshInstance3D]) -> void:

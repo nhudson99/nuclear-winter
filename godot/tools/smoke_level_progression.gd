@@ -568,6 +568,18 @@ func _check_live_steam() -> bool:
 	if status_before != null:
 		before_mat = status_before.material_override as StandardMaterial3D
 	var started_orange := before_mat != null and before_mat.emission.r > before_mat.emission.g and before_mat.emission.r > 0.6
+	var live_pipe: MeshInstance3D = null
+	if pipes != null and pipes.get_child_count() > 0:
+		live_pipe = pipes.get_child(0) as MeshInstance3D
+	var live_pipe_mat: StandardMaterial3D = null
+	if live_pipe != null:
+		live_pipe_mat = live_pipe.material_override as StandardMaterial3D
+	var pipes_plain := (
+		live_pipe_mat != null
+		and not live_pipe_mat.emission_enabled
+		and pipes.get_child_count() > 0
+	)
+	print("pipes_not_orange=", pipes_plain)
 	print(
 		"panel_reach=", panel_reach,
 		" dist=", valve.interact_distance(player.global_position),
@@ -641,7 +653,7 @@ func _check_live_steam() -> bool:
 	await create_timer(0.05).timeout
 	OS.set_environment("NW_LEVEL", "")
 	OS.set_environment("NW_LEVEL_SEED", "")
-	return barrier_ok and placed_ok and blocked and shut and opened and track_open
+	return barrier_ok and placed_ok and blocked and shut and opened and track_open and pipes_plain
 
 
 func _reachable_without_locks(layout: Dictionary, goal: Vector2i) -> bool:

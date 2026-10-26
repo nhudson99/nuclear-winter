@@ -124,6 +124,8 @@ func _run() -> void:
 	print("melee_attack_ok=", melee_ok, " hp=", monster.health, " hit=", melee_hit)
 
 	gp.has_pistol = true
+	gp.pistol_loaded = 10
+	gp.selected_weapon = GameProgress.WeaponId.PISTOL
 	player._fire_cooldown = 0.0
 	var shot: Node3D = player.attack()
 	var weapon_ok: bool = shot != null and shot != monster and shot != player
