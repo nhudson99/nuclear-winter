@@ -167,6 +167,8 @@ func _run() -> void:
 		touch.set_mobile_combat(false)
 		var gp: Node = root.get_node("GameProgress")
 		gp.has_pistol = true
+		gp.pistol_loaded = 10
+		gp.selected_weapon = GameProgress.WeaponId.PISTOL
 		player._fire_cooldown = 0.0
 		monster.health = 100.0
 		monster.global_position = player.global_position + aim_dir * 3.0
