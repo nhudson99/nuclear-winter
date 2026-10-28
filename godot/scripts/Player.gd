@@ -481,6 +481,10 @@ func _poll_weapon_input() -> void:
 		GameProgress.select_weapon(GameProgress.WeaponId.AK)
 	if Input.is_action_just_pressed("reload"):
 		GameProgress.reload_weapon(GameProgress.selected_weapon)
+	elif _mobile_auto_reload():
+		# A phone has no R key. Refill only an empty magazine, so a partly
+		# spent one is not topped off between shots.
+		GameProgress.reload_weapon(GameProgress.selected_weapon)
 
 
 func _unhandled_input(event: InputEvent) -> void:
@@ -642,6 +646,18 @@ func _click_fire_blocked(touch: Node) -> bool:
 	if touch.has_method("blocks_click_fire") and bool(touch.blocks_click_fire()):
 		return true
 	return false
+
+
+func _mobile_auto_reload() -> bool:
+	var touch := _touch_controls()
+	if touch == null or not touch.has_method("uses_mobile_combat"):
+		return false
+	if not bool(touch.uses_mobile_combat()):
+		return false
+	var weapon := GameProgress.selected_weapon
+	if not GameProgress.owns_weapon(weapon):
+		return false
+	return GameProgress.loaded_ammo(weapon) <= 0 and GameProgress.reserve_ammo(weapon) > 0
 
 
 func _mobile_auto_attack(touch: Node) -> bool:

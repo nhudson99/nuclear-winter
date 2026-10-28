@@ -26,7 +26,8 @@ func refresh() -> void:
 		return
 	var gap := 8.0
 	var width := float(owned.size()) * SLOT_SIZE.x + float(owned.size() - 1) * gap
-	var height := SLOT_SIZE.y + 22.0
+	var hint_text := _reload_hint()
+	var height := SLOT_SIZE.y + (22.0 if hint_text != "" else 0.0)
 	set_anchors_preset(Control.PRESET_CENTER_BOTTOM)
 	offset_left = -width * 0.5
 	offset_right = width * 0.5
@@ -40,14 +41,25 @@ func refresh() -> void:
 	add_child(row)
 	for weapon in owned:
 		row.add_child(_make_slot(weapon))
-	var hint := Label.new()
-	hint.name = "ReloadHint"
-	hint.text = "R  RELOAD"
-	hint.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	hint.position = Vector2(0, SLOT_SIZE.y + 2.0)
-	hint.size = Vector2(width, 18)
-	UiStyle.apply_label(hint, 12, Color(0.85, 0.82, 0.7), Color(0, 0, 0), 3)
-	add_child(hint)
+	if hint_text != "":
+		var hint := Label.new()
+		hint.name = "ReloadHint"
+		hint.text = hint_text
+		hint.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+		hint.position = Vector2(0, SLOT_SIZE.y + 2.0)
+		hint.size = Vector2(width, 18)
+		UiStyle.apply_label(hint, 12, Color(0.85, 0.82, 0.7), Color(0, 0, 0), 3)
+		add_child(hint)
+
+
+func _reload_hint() -> String:
+	var host := get_parent()
+	while host != null:
+		var touch := host.get_node_or_null("TouchControls")
+		if touch != null and touch.has_method("uses_mobile_combat") and bool(touch.uses_mobile_combat()):
+			return ""
+		host = host.get_parent()
+	return "R  RELOAD"
 
 
 func slot_count() -> int:
