@@ -88,6 +88,9 @@ func _ready() -> void:
 	health = max_health
 	_anim = _find_animation_player(visual)
 	if _anim:
+		# The warden glTF names its cycles Walking / Running and has no idle
+		# or death clip. Rename and fill those in before the loop flags.
+		_adapt_imported_clips()
 		# The glTF importer leaves every clip one-shot; the locomotion cycles
 		# have to be told they loop.
 		for clip_name in LOOPING_CLIPS:
@@ -95,6 +98,10 @@ func _ready() -> void:
 				_anim.get_animation(clip_name).loop_mode = Animation.LOOP_LINEAR
 		_play("Idle", 1.0)
 	_setup_flashlight()
+	# The run cycle swings the arms through the spotlight. If the body casts
+	# shadows, those limbs stamp dark shapes down the beam. Walls and enemies
+	# still cast.
+	_stop_character_shadowing_the_beam()
 	_sync_weapon_visual()
 	_health_bar = HealthBar3D.new()
 	_health_bar.name = "HealthBar"
@@ -481,6 +488,10 @@ func _poll_weapon_input() -> void:
 		GameProgress.select_weapon(GameProgress.WeaponId.AK)
 	if Input.is_action_just_pressed("reload"):
 		GameProgress.reload_weapon(GameProgress.selected_weapon)
+	elif _mobile_auto_reload():
+		# A phone has no R key. Refill only an empty magazine, so a partly
+		# spent one is not topped off between shots.
+		GameProgress.reload_weapon(GameProgress.selected_weapon)
 
 
 func _unhandled_input(event: InputEvent) -> void:
@@ -644,6 +655,18 @@ func _click_fire_blocked(touch: Node) -> bool:
 	return false
 
 
+func _mobile_auto_reload() -> bool:
+	var touch := _touch_controls()
+	if touch == null or not touch.has_method("uses_mobile_combat"):
+		return false
+	if not bool(touch.uses_mobile_combat()):
+		return false
+	var weapon := GameProgress.selected_weapon
+	if not GameProgress.owns_weapon(weapon):
+		return false
+	return GameProgress.loaded_ammo(weapon) <= 0 and GameProgress.reserve_ammo(weapon) > 0
+
+
 func _mobile_auto_attack(touch: Node) -> bool:
 	if not _stick_is_aiming(touch):
 		return false
@@ -756,6 +779,20 @@ func _ensure_action_event(action: String, event: InputEvent) -> void:
 				return
 	InputMap.action_add_event(action, event)
 
+func _stop_character_shadowing_the_beam() -> void:
+	var character := visual.get_node_or_null("Character") if visual else null
+	if character == null:
+		return
+	_disable_shadow_cast(character)
+
+
+func _disable_shadow_cast(node: Node) -> void:
+	if node is GeometryInstance3D:
+		(node as GeometryInstance3D).cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	for child in node.get_children():
+		_disable_shadow_cast(child)
+
+
 func _setup_flashlight() -> void:
 	# Parent to the yawing model so the cone follows facing. glTF forward is
 	# -Z, which is also the default SpotLight3D beam direction.
@@ -786,6 +823,66 @@ func _setup_flashlight() -> void:
 	_flashlight_fill.position = Vector3(0.0, 1.1, 0.0)
 	host.add_child(_flashlight_fill)
 	set_flashlight_on(false)
+
+func _adapt_imported_clips() -> void:
+	if _anim == null:
+		return
+	_rename_clip("Walking", "Walk")
+	_rename_clip("Running", "Run")
+	if not _anim.has_animation("Idle"):
+		_add_held_frame("Idle", "Walk")
+	if not _anim.has_animation("Die"):
+		# air_squat drops through the first half, then stands back up.
+		_add_trimmed_clip("Die", "air_squat", 0.5)
+
+
+func _rename_clip(source: String, dest: String) -> void:
+	if _anim.has_animation(dest) or not _anim.has_animation(source):
+		return
+	var lib := _library_for(source)
+	if lib != null:
+		lib.rename_animation(source, dest)
+
+
+func _library_for(clip: String) -> AnimationLibrary:
+	for lib_name in _anim.get_animation_library_list():
+		var lib := _anim.get_animation_library(lib_name)
+		if lib != null and lib.has_animation(clip):
+			return lib
+	return null
+
+
+func _add_held_frame(dest: String, source: String) -> void:
+	if _anim.has_animation(dest) or not _anim.has_animation(source):
+		return
+	var held := (_anim.get_animation(source).duplicate(true)) as Animation
+	for track in held.get_track_count():
+		var count := held.track_get_key_count(track)
+		for index in range(count - 1, 0, -1):
+			held.track_remove_key(track, index)
+	held.length = 0.001
+	held.loop_mode = Animation.LOOP_LINEAR
+	var lib := _library_for(source)
+	if lib != null:
+		lib.add_animation(dest, held)
+
+
+func _add_trimmed_clip(dest: String, source: String, fraction: float) -> void:
+	if _anim.has_animation(dest) or not _anim.has_animation(source):
+		return
+	var fall := (_anim.get_animation(source).duplicate(true)) as Animation
+	var cut := fall.length * clampf(fraction, 0.05, 1.0)
+	for track in fall.get_track_count():
+		var count := fall.track_get_key_count(track)
+		for index in range(count - 1, -1, -1):
+			if fall.track_get_key_time(track, index) > cut + 0.0001:
+				fall.track_remove_key(track, index)
+	fall.length = cut
+	fall.loop_mode = Animation.LOOP_NONE
+	var lib := _library_for(source)
+	if lib != null:
+		lib.add_animation(dest, fall)
+
 
 func _find_animation_player(root: Node) -> AnimationPlayer:
 	if root == null:

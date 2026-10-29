@@ -11,7 +11,7 @@ func _initialize() -> void:
 	call_deferred("_build")
 
 func _build() -> void:
-	var player_path := "res://assets/characters/player_prisoner.glb"
+	var player_path := "res://assets/characters/Meshy_AI_Gulag_Winter_Warden_All_Animations.glb"
 	var monster_path := "res://assets/characters/enemy_monster.glb"
 	var slime_path := "res://assets/characters/enemy_slime.glb"
 	var tank_path := "res://assets/characters/enemy_tank.glb"
@@ -89,10 +89,17 @@ func _build() -> void:
 	player.add_child(col)
 	col.owner = main
 
-	var model: Node3D = (load(player_path) as PackedScene).instantiate()
+	# Flashlight and the gun boxes hang off Model, which faces -Z. The warden
+	# mesh faces +Z, so the instance is turned around under that node.
+	var model := Node3D.new()
 	model.name = "Model"
 	player.add_child(model)
 	model.owner = main
+	var character: Node3D = (load(player_path) as PackedScene).instantiate()
+	character.name = "Character"
+	character.rotation.y = PI
+	model.add_child(character)
+	character.owner = main
 
 	var monster := CharacterBody3D.new()
 	monster.name = "Monster"

@@ -10,7 +10,7 @@ godot --path godot
 ```
 
 - Room modules authored in Blender (`blender/build_rooms.py`) → `godot/assets/rooms/room_{bedroom,living_room,office,storage,stairwell_up,stairwell_down,boiler,pipe_gallery}.glb`
-- Player authored in Blender (`blender/build_prisoner.py`) → `godot/assets/characters/player_prisoner.glb`
+- Player mesh in the level is `godot/assets/characters/Meshy_AI_Gulag_Winter_Warden_All_Animations.glb` (Walking, Running, and an air squat). The older Blender prisoner (`blender/build_prisoner.py` → `godot/assets/characters/player_prisoner.glb`) is still in the repo.
 - Original monster authored in Blender (`blender/build_monster.py`) → `godot/assets/characters/enemy_monster.glb`
 - Slime enemy from [Poly Pizza](https://poly.pizza/m/6O6XUMssAW) (Charlie, CC-BY) is scaled and reoriented by `blender/prepare_slime.py` → `godot/assets/characters/enemy_slime.glb`
 - Tank authored in Blender (`blender/build_tank.py`) → `godot/assets/characters/enemy_tank.glb`
@@ -68,7 +68,7 @@ done
 ### Gameplay notes
 
 - **Lighting**: Level 1 has no sun. Ambient is 10% so you can pick a path with the flashlight off. Hold **RMB** or deflect the **right stick** to turn on the flashlight and aim the prisoner (and the cone); WASD / the **left stick** still strafes independently. Release to go dark again. The glowing objective is the other light; collecting it lights a green exit beacon.
-- **Touch**: during a level, the left stick moves (a full shove runs), the right stick aims the flashlight and the prisoner, and **USE** picks up or takes stairs. On a phone there is no attack button: while the right stick is aimed at a monster the prisoner swings, or fires if the pistol is owned. The left stick does not fire. Keyboard and mouse still work beside the sticks.
+- **Touch**: during a level, the left stick moves (a full shove runs), the right stick aims the flashlight and the prisoner, and **USE** picks up or takes stairs. On a phone there is no attack button and no reload key: while the right stick is aimed at a monster the prisoner swings, or fires the equipped gun. An empty magazine refills from reserve on its own; a partly spent magazine stays until it is empty. The left stick does not fire. Keyboard and mouse still work beside the sticks, and **R** still reloads on a keyboard.
 - **Camera**: the isometric view is zoomed 50% onto the player (ortho size 20 → 13.3).
 - **Objectives**: a level has `n + 1` objectives. Level 1 is the steam valve plus the glowing mission item. Level `n>1` adds `n-1` keys; each key unlocks the next locked-door wing. The mission item is in the last wing, behind a doorway blocked by steam. Follow the glowing pipes to the boiler and press **E** to shut the valve; that clears the steam. Then press **E** to collect a key or the mission item, and reach the exit doorway of the start room without dying.
 - **Alarm**: collecting the item halves every enemy's dwell timer and doubles its proximity detection radius, and turns on the green exit glow.
@@ -87,7 +87,9 @@ done
 
 ## Player character
 
-`blender/build_prisoner.py` authors the whole player headlessly — a bald prisoner in a worn jumpsuit and boots — and writes `godot/assets/characters/player_prisoner.glb` plus a `.blend` for inspection.
+The level instances `godot/assets/characters/Meshy_AI_Gulag_Winter_Warden_All_Animations.glb`. That mesh faces +Z, so it is turned 180° under the player. Its clips are `Walking`, `Running`, and `air_squat`; `Player.gd` maps those to `Walk`, `Run`, a held first frame named `Idle`, and the downward half of the squat named `Die`.
+
+`blender/build_prisoner.py` still authors the older bald prisoner (`godot/assets/characters/player_prisoner.glb`) for inspection. The notes below describe that mesh, not the warden used in game.
 
 - **Mesh**: 1.80 m tall, 3981 verts / 7696 tris, lofted from superellipse rings. The skull comes from measured width/depth profile tables rather than a deformed ellipsoid, so it has a jaw and a chin; nose, brows, eyes and ears are planted on numerically sampled surface points.
 - **Texture**: wear is authored as procedural noise shaders and then Cycles-baked to one 1024² colour atlas, because glTF cannot carry shader nodes. Grime is weighted by object-space height, so dirt collects on the boots and knees. Three materials (fabric, leather, skin) share the atlas.
@@ -130,7 +132,7 @@ Leftover web shell: title → boss CRT briefing → Pip-Boy map (returns to menu
 godot/                     Godot 4.4 game (menus + Level 1)
   assets/ui/               Title, aristocrat CRT, dialogue panel, Pip-Boy map
   assets/maps/ussr_mansion_map.glb
-  assets/characters/{player_prisoner,enemy_monster,enemy_slime,enemy_tank,enemy_widow,enemy_tarantula,enemy_toad}.glb
+  assets/characters/{Meshy_AI_Gulag_Winter_Warden_All_Animations,player_prisoner,enemy_monster,enemy_slime,enemy_tank,enemy_widow,enemy_tarantula,enemy_toad}.glb
   assets/props/{crate,wardrobe,couch}.glb
   scenes/{TitleScreen,AristocratScreen,GameMap,Main}.tscn
   scripts/{SceneFlow,GameProgress,LevelRules,MapGenerator,LockedDoor,Stairwell,TitleScreen,AristocratScreen,GameMap,ShopMenu,Main,Player,TouchControls,Monster,Tarantula,Toad,RoomWeb,WebField,PickupItem,ExitZone,Bullet}.gd

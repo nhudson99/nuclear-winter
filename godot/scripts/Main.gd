@@ -565,6 +565,10 @@ func _setup_hud() -> void:
 	var touch: Node = TOUCH_CONTROLS.new()
 	touch.name = "TouchControls"
 	add_child(touch)
+	# The hotbar's first refresh runs before the touch layer exists, so the
+	# phone hint (no R key) is decided on this second pass.
+	if hotbar.has_method("refresh"):
+		hotbar.refresh()
 
 func _on_item_collected() -> void:
 	if _state != GameState.PLAYING:

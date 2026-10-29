@@ -143,6 +143,9 @@ func _run() -> void:
 	var attack_ok := false
 	var stick_fire_ok := false
 	var gun_aim_ok := false
+	var auto_reload_ok := false
+	var partial_holds_ok := false
+	var desktop_reload_ok := false
 	if monsters.is_empty():
 		push_error("No monster to attack")
 	else:
@@ -213,6 +216,52 @@ func _run() -> void:
 			" dist=", gun_dist,
 			" dir=", gun_dir
 		)
+
+		# Empty magazine refills from reserve without R. A partial magazine does not.
+		touch.set_aim_stick(Vector2.ZERO)
+		touch.set_mobile_combat(true)
+		var hotbar = main.get_node_or_null("HUD/Hotbar")
+		gp.pistol_loaded = 4
+		gp.pistol_reserve = 12
+		gp.ammo_changed.emit()
+		if hotbar and hotbar.has_method("refresh"):
+			hotbar.refresh()
+		await physics_frame
+		await physics_frame
+		partial_holds_ok = gp.pistol_loaded == 4 and gp.pistol_reserve == 12
+		var hint_hidden: bool = hotbar != null and hotbar.get_node_or_null("ReloadHint") == null
+		gp.pistol_loaded = 0
+		gp.pistol_reserve = 12
+		await physics_frame
+		await physics_frame
+		auto_reload_ok = (
+			partial_holds_ok
+			and hint_hidden
+			and gp.pistol_loaded == GameProgress.PISTOL_MAG
+			and gp.pistol_reserve == 12 - GameProgress.PISTOL_MAG
+		)
+		touch.set_mobile_combat(false)
+		gp.pistol_loaded = 0
+		gp.pistol_reserve = 12
+		gp.ammo_changed.emit()
+		if hotbar and hotbar.has_method("refresh"):
+			hotbar.refresh()
+		await physics_frame
+		await physics_frame
+		desktop_reload_ok = (
+			gp.pistol_loaded == 0
+			and gp.pistol_reserve == 12
+			and hotbar != null
+			and hotbar.get_node_or_null("ReloadHint") != null
+			and hotbar.get_node_or_null("ReloadHint").text == "R  RELOAD"
+		)
+		print(
+			"auto_reload_ok=", auto_reload_ok,
+			" partial=", partial_holds_ok,
+			" hint_hidden=", hint_hidden,
+			" loaded=", gp.pistol_loaded,
+			" desktop=", desktop_reload_ok
+		)
 	touch.set_aim_stick(Vector2.ZERO)
 	touch.set_move_stick(Vector2.ZERO)
 
@@ -246,6 +295,9 @@ func _run() -> void:
 		and attack_ok
 		and stick_fire_ok
 		and gun_aim_ok
+		and auto_reload_ok
+		and partial_holds_ok
+		and desktop_reload_ok
 		and interact_ok
 		and buttons_ok
 	)
