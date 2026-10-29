@@ -2,7 +2,7 @@
 
 [ext_resource type="Script" path="res://scripts/Main.gd" id="1_mwfav"]
 [ext_resource type="Script" path="res://scripts/Player.gd" id="2_3p2gp"]
-[ext_resource type="PackedScene" path="res://assets/characters/player_prisoner.glb" id="3_cvmbd"]
+[ext_resource type="PackedScene" path="res://assets/characters/Meshy_AI_Gulag_Winter_Warden_All_Animations.glb" id="3_cvmbd"]
 [ext_resource type="Script" path="res://scripts/Monster.gd" id="4_ft6cd"]
 [ext_resource type="PackedScene" path="res://assets/characters/enemy_monster.glb" id="5_bb450"]
 [ext_resource type="PackedScene" path="res://assets/characters/enemy_slime.glb" id="6_nfivy"]
@@ -76,7 +76,10 @@ script = ExtResource("2_3p2gp")
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.8, 0)
 shape = SubResource("CapsuleShape3D_e2s0e")
 
-[node name="Model" type="Node3D" parent="Player" instance=ExtResource("3_cvmbd")]
+[node name="Model" type="Node3D" parent="Player"]
+
+[node name="Character" parent="Player/Model" instance=ExtResource("3_cvmbd")]
+transform = Transform3D(-1, 0, 0, 0, 1, 0, 0, 0, -1, 0, 0, 0)
 
 [node name="Monster" type="CharacterBody3D" parent="."]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.05, -12)

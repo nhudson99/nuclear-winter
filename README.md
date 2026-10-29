@@ -10,7 +10,7 @@ godot --path godot
 ```
 
 - Room modules authored in Blender (`blender/build_rooms.py`) → `godot/assets/rooms/room_{bedroom,living_room,office,storage,stairwell_up,stairwell_down,boiler,pipe_gallery}.glb`
-- Player authored in Blender (`blender/build_prisoner.py`) → `godot/assets/characters/player_prisoner.glb`
+- Player mesh in the level is `godot/assets/characters/Meshy_AI_Gulag_Winter_Warden_All_Animations.glb` (Walking, Running, and an air squat). The older Blender prisoner (`blender/build_prisoner.py` → `godot/assets/characters/player_prisoner.glb`) is still in the repo.
 - Original monster authored in Blender (`blender/build_monster.py`) → `godot/assets/characters/enemy_monster.glb`
 - Slime enemy from [Poly Pizza](https://poly.pizza/m/6O6XUMssAW) (Charlie, CC-BY) is scaled and reoriented by `blender/prepare_slime.py` → `godot/assets/characters/enemy_slime.glb`
 - Tank authored in Blender (`blender/build_tank.py`) → `godot/assets/characters/enemy_tank.glb`
@@ -87,7 +87,9 @@ done
 
 ## Player character
 
-`blender/build_prisoner.py` authors the whole player headlessly — a bald prisoner in a worn jumpsuit and boots — and writes `godot/assets/characters/player_prisoner.glb` plus a `.blend` for inspection.
+The level instances `godot/assets/characters/Meshy_AI_Gulag_Winter_Warden_All_Animations.glb`. That mesh faces +Z, so it is turned 180° under the player. Its clips are `Walking`, `Running`, and `air_squat`; `Player.gd` maps those to `Walk`, `Run`, a held first frame named `Idle`, and the downward half of the squat named `Die`.
+
+`blender/build_prisoner.py` still authors the older bald prisoner (`godot/assets/characters/player_prisoner.glb`) for inspection. The notes below describe that mesh, not the warden used in game.
 
 - **Mesh**: 1.80 m tall, 3981 verts / 7696 tris, lofted from superellipse rings. The skull comes from measured width/depth profile tables rather than a deformed ellipsoid, so it has a jaw and a chin; nose, brows, eyes and ears are planted on numerically sampled surface points.
 - **Texture**: wear is authored as procedural noise shaders and then Cycles-baked to one 1024² colour atlas, because glTF cannot carry shader nodes. Grime is weighted by object-space height, so dirt collects on the boots and knees. Three materials (fabric, leather, skin) share the atlas.
@@ -130,7 +132,7 @@ Leftover web shell: title → boss CRT briefing → Pip-Boy map (returns to menu
 godot/                     Godot 4.4 game (menus + Level 1)
   assets/ui/               Title, aristocrat CRT, dialogue panel, Pip-Boy map
   assets/maps/ussr_mansion_map.glb
-  assets/characters/{player_prisoner,enemy_monster,enemy_slime,enemy_tank,enemy_widow,enemy_tarantula,enemy_toad}.glb
+  assets/characters/{Meshy_AI_Gulag_Winter_Warden_All_Animations,player_prisoner,enemy_monster,enemy_slime,enemy_tank,enemy_widow,enemy_tarantula,enemy_toad}.glb
   assets/props/{crate,wardrobe,couch}.glb
   scenes/{TitleScreen,AristocratScreen,GameMap,Main}.tscn
   scripts/{SceneFlow,GameProgress,LevelRules,MapGenerator,LockedDoor,Stairwell,TitleScreen,AristocratScreen,GameMap,ShopMenu,Main,Player,TouchControls,Monster,Tarantula,Toad,RoomWeb,WebField,PickupItem,ExitZone,Bullet}.gd
