@@ -1,0 +1,20 @@
+LICENSE - Pripyat Apartment Asset Pack
+Copyright (c) 2026 the creator of this pack (see the store page you bought it from).
+
+By purchasing or downloading this pack you receive a non-exclusive, worldwide,
+perpetual license to use it under these terms.
+
+YOU MAY
+- Use the assets in an unlimited number of personal and commercial projects:
+  games, apps, films, animations, renders, prototypes.
+- Modify, recolor, combine and adapt the assets for those projects.
+
+YOU MAY NOT
+- Resell, redistribute, share or give away the assets themselves, original or
+  modified, on their own or as part of another asset pack, library, template
+  or marketplace listing (paid or free).
+- Claim the assets as your own original creation.
+
+Credit is appreciated but not required.
+
+THE ASSETS ARE PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND.
