@@ -50,6 +50,7 @@ func _run() -> void:
 		and flashlight.spot_angle > 10.0
 	)
 	var rmb_ok := _flashlight_uses_rmb()
+	var no_self_shadow := _character_does_not_cast_shadow(player.get_node_or_null("Model/Character"))
 	print(
 		"dark_env_ok=", env_ok,
 		" sun_off_ok=", sun_ok,
@@ -57,7 +58,8 @@ func _run() -> void:
 		" parented_ok=", parented,
 		" starts_off=", starts_off,
 		" beam_ok=", beam_ok,
-		" rmb_ok=", rmb_ok
+		" rmb_ok=", rmb_ok,
+		" no_self_shadow=", no_self_shadow
 	)
 
 	Input.action_press("flashlight")
@@ -122,6 +124,7 @@ func _run() -> void:
 		and starts_off
 		and beam_ok
 		and rmb_ok
+		and no_self_shadow
 		and held_on
 		and released_off
 		and aim_ok
@@ -132,6 +135,26 @@ func _run() -> void:
 	)
 	print("flashlight_smoke_ok=", all_ok)
 	quit(0 if all_ok else 1)
+
+
+func _character_does_not_cast_shadow(root: Node) -> bool:
+	if root == null:
+		return false
+	var meshes: Array[GeometryInstance3D] = []
+	_collect_geometry(root, meshes)
+	if meshes.is_empty():
+		return false
+	for mesh in meshes:
+		if mesh.cast_shadow != GeometryInstance3D.SHADOW_CASTING_SETTING_OFF:
+			return false
+	return true
+
+
+func _collect_geometry(node: Node, meshes: Array[GeometryInstance3D]) -> void:
+	if node is GeometryInstance3D:
+		meshes.append(node)
+	for child in node.get_children():
+		_collect_geometry(child, meshes)
 
 
 func _flashlight_uses_rmb() -> bool:

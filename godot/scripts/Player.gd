@@ -98,6 +98,10 @@ func _ready() -> void:
 				_anim.get_animation(clip_name).loop_mode = Animation.LOOP_LINEAR
 		_play("Idle", 1.0)
 	_setup_flashlight()
+	# The run cycle swings the arms through the spotlight. If the body casts
+	# shadows, those limbs stamp dark shapes down the beam. Walls and enemies
+	# still cast.
+	_stop_character_shadowing_the_beam()
 	_sync_weapon_visual()
 	_health_bar = HealthBar3D.new()
 	_health_bar.name = "HealthBar"
@@ -774,6 +778,20 @@ func _ensure_action_event(action: String, event: InputEvent) -> void:
 			if (existing as InputEventMouseButton).button_index == (event as InputEventMouseButton).button_index:
 				return
 	InputMap.action_add_event(action, event)
+
+func _stop_character_shadowing_the_beam() -> void:
+	var character := visual.get_node_or_null("Character") if visual else null
+	if character == null:
+		return
+	_disable_shadow_cast(character)
+
+
+func _disable_shadow_cast(node: Node) -> void:
+	if node is GeometryInstance3D:
+		(node as GeometryInstance3D).cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	for child in node.get_children():
+		_disable_shadow_cast(child)
+
 
 func _setup_flashlight() -> void:
 	# Parent to the yawing model so the cone follows facing. glTF forward is
