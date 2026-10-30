@@ -1,0 +1,14 @@
+[gd_scene load_steps=2 format=3]
+
+[ext_resource type="PackedScene" path="res://assets/rooms/room_storage_decorated.glb" id="1_room"]
+
+[node name="Storage_Decorated" type="Node3D"]
+
+[node name="Room" parent="." instance=ExtResource("1_room")]
+
+[node name="PreviewLight" type="OmniLight3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 2.1, 0)
+light_color = Color(1, 0.88, 0.62, 1)
+light_energy = 1.4
+omni_range = 9.0
+shadow_enabled = true
