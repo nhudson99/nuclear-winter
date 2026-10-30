@@ -9,7 +9,7 @@ Post-fallout USSR game. The **full Godot flow** is title → fat aristocrat brie
 godot --path godot
 ```
 
-- Room modules authored in Blender (`blender/build_rooms.py`) → `godot/assets/rooms/room_{bedroom,living_room,office,storage,stairwell_up,stairwell_down,boiler,pipe_gallery}.glb`
+- Room modules authored in Blender (`blender/build_rooms.py`) → `godot/assets/rooms/room_{bedroom,living_room,office,storage,stairwell_up,stairwell_down,boiler,pipe_gallery}.glb`. Shell topology stays procedural; furniture and floor/wall PBR maps come from `blender/PripyatApartment_FBX_PBR/` (Pripyat Apartment pack — project license, do not redistribute the pack alone).
 - Player mesh in the level is `godot/assets/characters/Meshy_AI_Gulag_Winter_Warden_All_Animations.glb` (Walking, Running, and an air squat). The older Blender prisoner (`blender/build_prisoner.py` → `godot/assets/characters/player_prisoner.glb`) is still in the repo.
 - Original monster authored in Blender (`blender/build_monster.py`) → `godot/assets/characters/enemy_monster.glb`
 - Slime enemy from [Poly Pizza](https://poly.pizza/m/6O6XUMssAW) (Charlie, CC-BY) is scaled and reoriented by `blender/prepare_slime.py` → `godot/assets/characters/enemy_slime.glb`
@@ -40,6 +40,7 @@ godot --path godot
 
 ```bash
 # Requires Blender 4.2+ (the Cloud Agent environment pins 4.5.13 LTS)
+# build_rooms.py also needs blender/PripyatApartment_FBX_PBR/ present
 blender --background --python blender/build_rooms.py
 blender --background --python blender/build_monster.py
 blender --background --python blender/build_tank.py
@@ -108,7 +109,7 @@ npm run android:apk
 adb install -r releases/nuclear-winter.apk
 ```
 
-Copy `releases/nuclear-winter.apk` onto the phone and open it. Android will ask you to allow installs from unknown sources. The package id is `com.nuclearwinter.game`. The phone stays in landscape. The APK includes the arm64-v8a build, which covers current phones. A checked-in copy of that APK is the file to download if you do not want to rebuild it.
+Copy `releases/nuclear-winter.apk` onto the phone and open it. Android will ask you to allow installs from unknown sources. The package id is `com.nuclearwinter.game`. The phone stays in landscape. The APK includes the arm64-v8a build, which covers current phones. Prebuilt APKs are attached to [GitHub Releases](https://github.com/nhudson99/nuclear-winter/releases) (the file is too large to keep in git).
 
 ```bash
 # Preview renders (views | head | turntable | anim <Clip> | poses <Clip> <angle> <frames...>)
@@ -146,6 +147,8 @@ godot/                     Godot 4.4 game (menus + Level 1)
   tools/smoke_level_progression.gd
   tools/smoke_touch_controls.gd
 blender/
+  build_rooms.py          # tileable rooms; dresses shells with Pripyat props
+  PripyatApartment_FBX_PBR/  # Soviet apartment PBR pack used by build_rooms.py
   build_mansion_map.py
   build_prisoner.py
   render_prisoner.py

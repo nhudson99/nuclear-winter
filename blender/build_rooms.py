@@ -9,6 +9,10 @@ grid. Each doorway ships with a `Plug_<side>` filler block: the generator
 deletes the plug where two rooms meet and keeps it where a room faces the
 outside, which seals the map edge without needing per-room wall variants.
 
+Furniture and shell materials come from blender/PripyatApartment_FBX_PBR/
+(Pripyat Apartment pack). Shell topology stays procedural so the MapGenerator
+naming contract is unchanged.
+
 Naming contract consumed by godot/scripts/MapGenerator.gd:
   Floor              - room floor slab
   Wall_<side>_A/_B   - wall runs either side of the doorway
@@ -26,11 +30,19 @@ import math
 from pathlib import Path
 
 import bpy
+from mathutils import Vector
 
-OUT_DIR = Path("/workspace/godot/assets/rooms")
-BLEND_OUT = Path("/workspace/blender/procedural_rooms.blend")
-PNG_OUT = Path("/opt/cursor/artifacts/blender_procedural_rooms.png")
-PNG_STEAM = Path("/opt/cursor/artifacts/blender_steam_rooms.png")
+ROOT = Path(__file__).resolve().parent.parent
+PACK_ROOT = Path(__file__).resolve().parent / "PripyatApartment_FBX_PBR"
+OUT_DIR = ROOT / "godot" / "assets" / "rooms"
+BLEND_OUT = ROOT / "blender" / "procedural_rooms.blend"
+_ARTIFACTS = Path("/opt/cursor/artifacts")
+if _ARTIFACTS.is_dir():
+    PNG_OUT = _ARTIFACTS / "blender_procedural_rooms.png"
+    PNG_STEAM = _ARTIFACTS / "blender_steam_rooms.png"
+else:
+    PNG_OUT = ROOT / "blender" / "blender_procedural_rooms.png"
+    PNG_STEAM = ROOT / "blender" / "blender_steam_rooms.png"
 
 TILE = 12.0  # grid pitch; must match MapGenerator.TILE
 HALF = TILE * 0.5
@@ -44,6 +56,8 @@ SIDES = ("N", "S", "E", "W")
 # reachable no matter which neighbours the generator attaches.
 CLEAR = DOOR_W * 0.5 + 0.6
 
+_PROP_SERIAL = 0
+
 
 def clear_scene() -> None:
     bpy.ops.object.select_all(action="SELECT")
@@ -52,6 +66,8 @@ def clear_scene() -> None:
         bpy.data.meshes.remove(mesh)
     for material in list(bpy.data.materials):
         bpy.data.materials.remove(material)
+    for image in list(bpy.data.images):
+        bpy.data.images.remove(image)
     for light in list(bpy.data.lights):
         bpy.data.lights.remove(light)
     for camera in list(bpy.data.cameras):
@@ -160,6 +176,183 @@ def make_root(name: str):
 
 
 # --------------------------------------------------------------------------- #
+# Pripyat pack helpers
+# --------------------------------------------------------------------------- #
+
+
+def _asset_stem(asset_name: str) -> str:
+    return asset_name[3:] if asset_name.startswith("SM_") else asset_name
+
+
+def _pack_asset_dir(category: str, asset_name: str) -> Path:
+    path = PACK_ROOT / category / asset_name
+    if not path.is_dir():
+        raise FileNotFoundError(f"Missing pack asset folder: {path}")
+    return path
+
+
+def _load_image(path: Path):
+    image = bpy.data.images.load(str(path), check_existing=True)
+    return image
+
+
+def pbr_shell_mat(name: str, category: str, asset_name: str, tile_m: float = 2.0):
+    """PBR material for procedural shell cubes, tiled in object metres."""
+    folder = _pack_asset_dir(category, asset_name)
+    stem = _asset_stem(asset_name)
+    material = bpy.data.materials.new(name=name)
+    material.use_nodes = True
+    nodes = material.node_tree.nodes
+    links = material.node_tree.links
+    bsdf = nodes.get("Principled BSDF")
+    tex_coord = nodes.new("ShaderNodeTexCoord")
+    mapping = nodes.new("ShaderNodeMapping")
+    mapping.inputs["Scale"].default_value = (1.0 / tile_m, 1.0 / tile_m, 1.0 / tile_m)
+    links.new(tex_coord.outputs["Object"], mapping.inputs["Vector"])
+
+    def link_map(suffix: str, colorspace: str, bsdf_input: str, non_color: bool = False):
+        path = folder / f"T_{stem}_{suffix}.png"
+        if not path.is_file():
+            return
+        image = _load_image(path)
+        image.colorspace_settings.name = colorspace
+        tex = nodes.new("ShaderNodeTexImage")
+        tex.image = image
+        links.new(mapping.outputs["Vector"], tex.inputs["Vector"])
+        if non_color and bsdf_input == "Normal":
+            normal = nodes.new("ShaderNodeNormalMap")
+            links.new(tex.outputs["Color"], normal.inputs["Color"])
+            links.new(normal.outputs["Normal"], bsdf.inputs["Normal"])
+        else:
+            links.new(tex.outputs["Color"], bsdf.inputs[bsdf_input])
+
+    link_map("BaseColor", "sRGB", "Base Color")
+    link_map("Roughness", "Non-Color", "Roughness")
+    link_map("Metallic", "Non-Color", "Metallic")
+    link_map("Normal", "Non-Color", "Normal", non_color=True)
+    return material
+
+
+def _world_bounds(obj: bpy.types.Object) -> tuple[Vector, Vector]:
+    mins = Vector((1e9, 1e9, 1e9))
+    maxs = Vector((-1e9, -1e9, -1e9))
+    for corner in obj.bound_box:
+        world = obj.matrix_world @ Vector(corner)
+        for i in range(3):
+            mins[i] = min(mins[i], world[i])
+            maxs[i] = max(maxs[i], world[i])
+    return mins, maxs
+
+
+def _fix_glass_material(material: bpy.types.Material, green: bool = False) -> None:
+    if material is None or not material.use_nodes:
+        return
+    bsdf = material.node_tree.nodes.get("Principled BSDF")
+    if bsdf is None:
+        return
+    color = (0.45, 0.60, 0.48, 1.0) if green else (0.70, 0.72, 0.70, 1.0)
+    alpha = 0.40 if green else 0.20
+    bsdf.inputs["Base Color"].default_value = color
+    bsdf.inputs["Roughness"].default_value = 0.08
+    if "Alpha" in bsdf.inputs:
+        bsdf.inputs["Alpha"].default_value = alpha
+    if "Transmission Weight" in bsdf.inputs:
+        bsdf.inputs["Transmission Weight"].default_value = 1.0
+    elif "Transmission" in bsdf.inputs:
+        bsdf.inputs["Transmission"].default_value = 1.0
+    material.blend_method = "HASHED"
+    if hasattr(material, "shadow_method"):
+        material.shadow_method = "HASHED"
+
+
+def place_prop(
+    category: str,
+    asset_name: str,
+    loc_xy,
+    parent,
+    yaw_deg: float = 0.0,
+    collide: bool = True,
+    name: str | None = None,
+    z: float | None = None,
+    scale: float = 1.0,
+):
+    """Import a Pripyat FBX prop, plant it, and parent it under the room root."""
+    global _PROP_SERIAL
+    folder = _pack_asset_dir(category, asset_name)
+    fbx_path = folder / f"{asset_name}.fbx"
+    if not fbx_path.is_file():
+        raise FileNotFoundError(f"Missing FBX: {fbx_path}")
+
+    before = set(bpy.data.objects)
+    bpy.ops.import_scene.fbx(filepath=str(fbx_path), automatic_bone_orientation=False)
+    imported = [obj for obj in bpy.data.objects if obj not in before]
+    meshes = [obj for obj in imported if obj.type == "MESH"]
+    if not meshes:
+        raise RuntimeError(f"No mesh in {fbx_path}")
+
+    _PROP_SERIAL += 1
+    label = name or asset_name.replace("SM_", "")
+    if not collide and not label.startswith("NoCol_"):
+        label = f"NoCol_{label}"
+    unique = f"{label}_{_PROP_SERIAL}"
+
+    bpy.ops.object.empty_add(type="PLAIN_AXES", location=(0.0, 0.0, 0.0))
+    holder = bpy.context.active_object
+    holder.name = unique
+
+    for obj in imported:
+        if obj.parent is None and obj != holder:
+            obj.parent = holder
+
+    for obj in meshes:
+        for slot in obj.material_slots:
+            mat_name = slot.material.name if slot.material else ""
+            if "Glass" in mat_name:
+                _fix_glass_material(slot.material, green="Green" in mat_name)
+
+    bpy.context.view_layer.update()
+    mins = Vector((1e9, 1e9, 1e9))
+    maxs = Vector((-1e9, -1e9, -1e9))
+    for obj in meshes:
+        obj_min, obj_max = _world_bounds(obj)
+        for i in range(3):
+            mins[i] = min(mins[i], obj_min[i])
+            maxs[i] = max(maxs[i], obj_max[i])
+
+    if scale != 1.0:
+        holder.scale = (scale, scale, scale)
+        bpy.context.view_layer.update()
+        mins = Vector((1e9, 1e9, 1e9))
+        maxs = Vector((-1e9, -1e9, -1e9))
+        for obj in meshes:
+            obj_min, obj_max = _world_bounds(obj)
+            for i in range(3):
+                mins[i] = min(mins[i], obj_min[i])
+                maxs[i] = max(maxs[i], obj_max[i])
+
+    # Centre on X/Y of the asset, plant Z on the floor unless overridden.
+    holder.location.x = -0.5 * (mins.x + maxs.x)
+    holder.location.y = -0.5 * (mins.y + maxs.y)
+    holder.location.z = -mins.z
+    bpy.context.view_layer.update()
+
+    if yaw_deg:
+        holder.rotation_euler[2] = math.radians(yaw_deg)
+        bpy.context.view_layer.update()
+
+    x, y = loc_xy
+    target_z = 0.0 if z is None else z
+    holder.location.x += x
+    holder.location.y += y
+    holder.location.z += target_z
+    bpy.context.view_layer.update()
+
+    if parent is not None:
+        attach(holder, parent)
+    return holder
+
+
+# --------------------------------------------------------------------------- #
 # Shared room shell
 # --------------------------------------------------------------------------- #
 
@@ -207,28 +400,6 @@ def build_shell(name: str, floor_mat, wall_mat, plug_mat):
     return root
 
 
-def add_wall_grime(root, grime_mat, patches) -> None:
-    """Flat decals floated just off the plaster to suggest damp and fallout burn."""
-    inset = HALF - WALL_T - 0.02
-    for index, (side, along, height, width, tall) in enumerate(patches):
-        if side in ("N", "S"):
-            y = inset if side == "N" else -inset
-            size = (width, 0.02, tall)
-            loc = (along, y, height)
-        else:
-            x = inset if side == "E" else -inset
-            size = (0.02, width, tall)
-            loc = (x, along, height)
-        cube(f"NoCol_Grime_{index}", loc, size, grime_mat, root)
-
-
-def add_floor_debris(root, debris_mat, spots) -> None:
-    """Flat rubble decals. The middle cross of the tile has to stay clear of
-    props so every doorway is reachable, so it gets dressed rather than filled."""
-    for index, (x, y, width, depth) in enumerate(spots):
-        cube(f"NoCol_Debris_{index}", (x, y, 0.012), (width, depth, 0.02), debris_mat, root)
-
-
 def add_empty(name: str, loc, parent) -> None:
     bpy.ops.object.empty_add(type="PLAIN_AXES", location=loc)
     obj = bpy.context.active_object
@@ -245,81 +416,78 @@ def add_ceiling_lamp(root, shade_mat, bulb_mat, loc=(0.0, 0.0)) -> None:
     cylinder("NoCol_LampBulb", (x, y, 2.02), 0.13, 0.14, bulb_mat, root, verts=10)
 
 
+def shell_mats(floor_asset: str, wall_asset: str, prefix: str):
+    floor = pbr_shell_mat(f"{prefix}Floor", "Stairwell_Architecture", floor_asset)
+    wall = pbr_shell_mat(f"{prefix}Wall", "Stairwell_Architecture", wall_asset)
+    return floor, wall
+
+
 # --------------------------------------------------------------------------- #
 # Bedroom
 # --------------------------------------------------------------------------- #
 
 
 def build_bedroom():
-    parquet = mat("BedroomFloor", (0.33, 0.24, 0.17), 0.8)
-    plaster = mat("BedroomWall", (0.38, 0.44, 0.40), 0.85)
-    grime = mat("BedroomGrime", (0.23, 0.26, 0.23), 0.95)
-    iron = mat("BedIron", (0.30, 0.31, 0.33), 0.45)
-    linen = mat("BedLinen", (0.62, 0.59, 0.51), 0.9)
-    blanket = mat("BedBlanket", (0.45, 0.17, 0.15), 0.9)
-    wood = mat("BedroomWood", (0.32, 0.22, 0.14), 0.7)
-    brass = mat("BedroomBrass", (0.50, 0.40, 0.18), 0.4)
-    debris = mat("BedroomDebris", (0.24, 0.19, 0.14), 0.95)
+    floor, wall = shell_mats("SM_Floor_Parquet_2m", "SM_Wall_Wallpaper_A", "Bedroom")
+    steel = mat("BedroomSteel", (0.30, 0.31, 0.33), 0.45)
     bulb = emissive("BedroomBulb", (1.0, 0.88, 0.62), 1.6)
 
-    root = build_shell("Bedroom", parquet, plaster, plaster)
-    add_wall_grime(
+    root = build_shell("Bedroom", floor, wall, wall)
+
+    # West wall bed, head toward north.
+    place_prop("Bedroom", "SM_Bed_Double_Wooden", (-4.2, 3.1), root, yaw_deg=0.0, name="Bed")
+    place_prop("Bedroom", "SM_Nightstand", (-4.9, 1.55), root, yaw_deg=90.0, name="Nightstand")
+    place_prop(
+        "Bedroom",
+        "SM_AlarmClock_TwinBell",
+        (-4.9, 1.55),
         root,
-        grime,
-        [
-            ("N", 3.6, 1.7, 1.6, 1.1),
-            ("W", -3.4, 0.9, 2.2, 1.4),
-            ("E", 2.0, 1.9, 1.3, 0.7),
-        ],
+        yaw_deg=90.0,
+        collide=False,
+        name="AlarmClock",
+        z=0.72,
+    )
+    place_prop("Bedroom", "SM_Dresser_Mirror", (4.4, -3.8), root, yaw_deg=-90.0, name="Dresser")
+    place_prop("Bedroom", "SM_CoatRack_Standing", (4.6, 4.6), root, yaw_deg=180.0, name="CoatRack")
+    place_prop("Bedroom", "SM_Suitcase_Old", (-4.5, -4.6), root, yaw_deg=25.0, name="Suitcase")
+    place_prop(
+        "Bedroom",
+        "SM_Suitcase_Open",
+        (-3.2, -4.8),
+        root,
+        yaw_deg=-15.0,
+        collide=False,
+        name="SuitcaseOpen",
+    )
+    place_prop(
+        "Bedroom",
+        "SM_IroningBoard",
+        (3.2, 4.9),
+        root,
+        yaw_deg=90.0,
+        collide=False,
+        name="IroningBoard",
+    )
+    place_prop(
+        "Abandonment",
+        "SM_Wallpaper_Strips",
+        (-5.2, -2.2),
+        root,
+        yaw_deg=90.0,
+        collide=False,
+        name="WallpaperStrips",
+    )
+    place_prop(
+        "Abandonment",
+        "SM_Debris_Pile",
+        (1.8, -4.6),
+        root,
+        yaw_deg=40.0,
+        collide=False,
+        name="Debris",
     )
 
-    # Iron bed along the west wall, head to the north.
-    bed_x, bed_y = -4.5, 2.9
-    cube("BedFrame", (bed_x, bed_y, 0.32), (1.34, 2.16, 0.22), iron, root)
-    cube("BedMattress", (bed_x, bed_y - 0.05, 0.48), (1.24, 2.0, 0.16), linen, root)
-    cube("BedBlanket", (bed_x, bed_y - 0.5, 0.58), (1.26, 1.1, 0.1), blanket, root)
-    cube("BedPillow", (bed_x, bed_y + 0.76, 0.6), (1.0, 0.46, 0.14), linen, root)
-    cube("BedHeadboard", (bed_x, bed_y + 1.1, 0.72), (1.34, 0.08, 1.0), iron, root)
-    cube("BedFootboard", (bed_x, bed_y - 1.1, 0.5), (1.34, 0.08, 0.56), iron, root)
-    for index, dx in enumerate((-0.44, 0.0, 0.44)):
-        cube(f"BedBar_{index}", (bed_x + dx, bed_y + 1.1, 0.95), (0.06, 0.1, 0.5), iron, root)
-    for index, (dx, dy) in enumerate(((-0.6, -1.0), (0.6, -1.0), (-0.6, 1.0), (0.6, 1.0))):
-        cube(f"BedLeg_{index}", (bed_x + dx, bed_y + dy, 0.11), (0.1, 0.1, 0.22), iron, root)
-
-    # Nightstand with a stub of candle.
-    cube("Nightstand", (-4.9, 1.3, 0.32), (0.64, 0.6, 0.64), wood, root)
-    cylinder("NoCol_Candle", (-4.9, 1.3, 0.74), 0.05, 0.2, linen, root, verts=8)
-    cylinder("NoCol_CandleFlame", (-4.9, 1.3, 0.87), 0.04, 0.08, bulb, root, verts=8)
-
-    # Wardrobe against the north wall, east of the doorway.
-    cube("Wardrobe", (3.5, 5.2, 1.05), (1.3, 0.6, 2.1), wood, root)
-    cube("WardrobeDoorL", (3.17, 4.88, 1.02), (0.58, 0.05, 1.86), plaster, root)
-    cube("WardrobeDoorR", (3.83, 4.88, 1.02), (0.58, 0.05, 1.86), plaster, root)
-    cube("NoCol_WardrobeHandleL", (3.42, 4.83, 1.02), (0.05, 0.06, 0.16), brass, root)
-    cube("NoCol_WardrobeHandleR", (3.58, 4.83, 1.02), (0.05, 0.06, 0.16), brass, root)
-
-    # Chest of drawers in the south-east corner.
-    cube("Dresser", (4.6, -3.6, 0.45), (1.0, 1.8, 0.9), wood, root)
-    for index, dy in enumerate((-0.55, 0.0, 0.55)):
-        cube(f"NoCol_DresserDrawer_{index}", (4.08, -3.6 + dy, 0.45), (0.05, 0.5, 0.24), brass, root)
-
-    # Rug and a toppled stool in the south-west quarter.
-    cube("NoCol_Rug", (-3.4, -3.4, 0.01), (3.4, 2.8, 0.03), blanket, root)
-    cube("Stool", (-2.2, -4.9, 0.42), (0.5, 0.5, 0.1), wood, root)
-    for index, (dx, dy) in enumerate(((-0.18, -0.18), (0.18, -0.18), (-0.18, 0.18), (0.18, 0.18))):
-        cube(f"StoolLeg_{index}", (-2.2 + dx, -4.9 + dy, 0.19), (0.07, 0.07, 0.38), wood, root)
-
-    add_floor_debris(
-        root,
-        debris,
-        [(-1.0, 0.7, 1.9, 1.2), (1.5, -1.3, 1.1, 0.8), (0.4, 2.5, 1.4, 0.9)],
-    )
-
-    # Wall radio: state broadcasts never stopped.
-    cube("NoCol_Radio", (5.5, 2.2, 1.62), (0.16, 0.7, 0.44), wood, root)
-    cube("NoCol_RadioGrille", (5.39, 2.2, 1.62), (0.03, 0.5, 0.3), iron, root)
-
-    add_ceiling_lamp(root, iron, bulb)
+    add_ceiling_lamp(root, steel, bulb)
     return root
 
 
@@ -329,260 +497,312 @@ def build_bedroom():
 
 
 def build_living_room():
-    boards = mat("LivingFloor", (0.36, 0.27, 0.18), 0.8)
-    plaster = mat("LivingWall", (0.48, 0.40, 0.25), 0.85)
-    grime = mat("LivingGrime", (0.28, 0.23, 0.15), 0.95)
-    fabric = mat("CouchFabric", (0.31, 0.34, 0.37), 0.9)
-    cushion = mat("CouchCushion", (0.40, 0.35, 0.29), 0.9)
-    wood = mat("LivingWood", (0.32, 0.22, 0.13), 0.7)
+    floor, wall = shell_mats("SM_Floor_Parquet_2m", "SM_Wall_Wallpaper_B", "Living")
     steel = mat("LivingSteel", (0.33, 0.34, 0.36), 0.4)
-    brass = mat("LivingBrass", (0.50, 0.40, 0.18), 0.4)
-    red = mat("LivingRed", (0.46, 0.14, 0.13), 0.8)
-    screen = emissive("TvScreen", (0.36, 0.66, 0.46), 1.0)
     bulb = emissive("LivingBulb", (1.0, 0.86, 0.58), 1.6)
-    debris = mat("LivingDebris", (0.26, 0.20, 0.14), 0.95)
 
-    root = build_shell("LivingRoom", boards, plaster, plaster)
-    add_wall_grime(
+    root = build_shell("LivingRoom", floor, wall, wall)
+
+    place_prop("LivingRoom", "SM_SofaBed", (-4.7, 3.2), root, yaw_deg=90.0, name="Sofa")
+    place_prop("LivingRoom", "SM_CoffeeTable", (-3.2, 3.2), root, yaw_deg=90.0, name="CoffeeTable")
+    place_prop(
+        "Kitchen",
+        "SM_Samovar_Electric",
+        (-3.2, 3.5),
         root,
-        grime,
-        [
-            ("S", -3.8, 1.5, 2.0, 1.3),
-            ("E", -2.6, 1.0, 2.4, 1.5),
-            ("N", 2.4, 1.8, 1.2, 0.8),
-        ],
+        yaw_deg=0.0,
+        collide=False,
+        name="Samovar",
+        z=0.55,
+    )
+    place_prop("LivingRoom", "SM_Armchair_Upholstered", (4.2, -3.2), root, yaw_deg=-90.0, name="Armchair")
+    place_prop("LivingRoom", "SM_FloorLamp", (2.8, -4.8), root, yaw_deg=20.0, name="FloorLamp")
+    place_prop("LivingRoom", "SM_WallUnit_Wardrobe", (3.4, 5.1), root, yaw_deg=180.0, name="WallUnit")
+    place_prop(
+        "LivingRoom",
+        "SM_WallUnit_Shelves",
+        (-3.6, 5.15),
+        root,
+        yaw_deg=180.0,
+        name="WallShelves",
+    )
+    place_prop(
+        "LivingRoom",
+        "SM_Rug_Floor",
+        (-3.0, -3.2),
+        root,
+        yaw_deg=15.0,
+        collide=False,
+        name="Rug",
+    )
+    place_prop(
+        "LivingRoom",
+        "SM_Radiogram",
+        (5.0, 2.4),
+        root,
+        yaw_deg=-90.0,
+        collide=False,
+        name="Radiogram",
+    )
+    place_prop(
+        "LivingRoom",
+        "SM_PhotoFrames_Set",
+        (5.35, -0.4),
+        root,
+        yaw_deg=-90.0,
+        collide=False,
+        name="PhotoFrames",
+        z=1.2,
+    )
+    place_prop(
+        "LivingRoom",
+        "SM_Chandelier_3Arm",
+        (0.0, 0.0),
+        root,
+        yaw_deg=0.0,
+        collide=False,
+        name="Chandelier",
+        z=1.55,
+    )
+    place_prop(
+        "Abandonment",
+        "SM_Newspaper_Stack",
+        (-4.6, -4.6),
+        root,
+        yaw_deg=30.0,
+        collide=False,
+        name="Newspapers",
     )
 
-    # Couch, table and television arranged across the northern half.
-    couch_x, couch_y = -5.0, 3.0
-    cube("CouchBase", (couch_x, couch_y, 0.28), (0.92, 2.2, 0.36), fabric, root)
-    cube("CouchCushionN", (couch_x + 0.06, couch_y + 0.52, 0.5), (0.8, 0.98, 0.16), cushion, root)
-    cube("CouchCushionS", (couch_x + 0.06, couch_y - 0.52, 0.5), (0.8, 0.98, 0.16), cushion, root)
-    cube("CouchBack", (couch_x - 0.34, couch_y, 0.84), (0.22, 2.2, 0.92), fabric, root)
-    cube("CouchArmN", (couch_x, couch_y + 1.16, 0.56), (0.92, 0.2, 0.72), fabric, root)
-    cube("CouchArmS", (couch_x, couch_y - 1.16, 0.56), (0.92, 0.2, 0.72), fabric, root)
-    cube("NoCol_CouchPillow", (couch_x + 0.02, couch_y + 0.7, 0.72), (0.2, 0.42, 0.42), red, root)
-
-    cube("CoffeeTable", (-3.4, 3.0, 0.42), (0.9, 1.6, 0.08), wood, root)
-    for index, (dx, dy) in enumerate(((-0.35, -0.65), (0.35, -0.65), (-0.35, 0.65), (0.35, 0.65))):
-        cube(f"TableLeg_{index}", (-3.4 + dx, 3.0 + dy, 0.2), (0.08, 0.08, 0.4), wood, root)
-    # Samovar: the one appliance nobody left behind.
-    cylinder("Samovar", (-3.4, 3.3, 0.62), 0.22, 0.34, brass, root, verts=12)
-    cylinder("NoCol_SamovarNeck", (-3.4, 3.3, 0.84), 0.09, 0.14, brass, root, verts=8)
-    cube("NoCol_SamovarTap", (-3.2, 3.3, 0.58), (0.16, 0.05, 0.05), brass, root)
-
-    cube("TvStand", (-1.9, 3.0, 0.3), (0.7, 1.3, 0.6), wood, root)
-    cube("TvBody", (-1.9, 3.0, 0.95), (0.66, 1.1, 0.72), steel, root)
-    cube("NoCol_TvScreen", (-2.25, 3.0, 0.98), (0.04, 0.86, 0.52), screen, root)
-    cube("NoCol_TvAntennaA", (-1.75, 2.8, 1.55), (0.03, 0.5, 0.03), steel, root, yaw=0.0)
-    cube("NoCol_TvAntennaB", (-1.75, 3.2, 1.55), (0.03, 0.5, 0.03), steel, root, yaw=0.0)
-
-    # Bookshelf on the north wall and a reading corner to the south-east.
-    cube("Bookshelf", (3.6, 5.3, 1.0), (1.9, 0.42, 2.0), wood, root)
-    for index, z in enumerate((0.45, 0.95, 1.45, 1.85)):
-        cube(f"NoCol_Books_{index}", (3.6, 5.22, z), (1.7, 0.3, 0.26), red if index % 2 else cushion, root)
-
-    cube("Armchair", (4.2, -3.0, 0.3), (1.0, 1.0, 0.36), fabric, root)
-    cube("ArmchairBack", (4.66, -3.0, 0.78), (0.2, 1.0, 0.8), fabric, root)
-    cube("ArmchairSeat", (4.16, -3.0, 0.52), (0.86, 0.86, 0.14), cushion, root)
-    cube("SideTable", (3.0, -4.4, 0.35), (0.6, 0.6, 0.7), wood, root)
-    cube("NoCol_Rug", (-3.2, -3.4, 0.01), (3.6, 3.0, 0.03), red, root)
-
-    cylinder("FloorLampPole", (1.9, -5.0, 0.75), 0.05, 1.5, steel, root, verts=8)
-    cylinder("NoCol_FloorLampShade", (1.9, -5.0, 1.6), 0.28, 0.3, cushion, root, verts=10)
-
-    add_floor_debris(
-        root,
-        debris,
-        [(0.9, 0.4, 2.1, 1.3), (-1.3, -1.5, 1.2, 0.9), (1.7, 1.9, 0.9, 0.7)],
-    )
-
-    # Framed portrait of a leader whose ministry no longer exists.
-    cube("NoCol_PortraitFrame", (5.52, -0.2, 1.75), (0.08, 1.0, 1.3), wood, root)
-    cube("NoCol_PortraitCanvas", (5.45, -0.2, 1.75), (0.03, 0.84, 1.14), grime, root)
-    cube("NoCol_PortraitStar", (5.41, -0.2, 1.75), (0.03, 0.34, 0.34), red, root, yaw=0.0)
-
-    add_ceiling_lamp(root, steel, bulb)
+    add_ceiling_lamp(root, steel, bulb, loc=(2.2, -1.6))
     return root
 
 
 # --------------------------------------------------------------------------- #
-# Office
+# Office (Soviet study — hallway + living props)
 # --------------------------------------------------------------------------- #
 
 
 def build_office():
-    lino = mat("OfficeFloor", (0.27, 0.29, 0.27), 0.8)
-    plaster = mat("OfficeWall", (0.32, 0.38, 0.33), 0.85)
-    grime = mat("OfficeGrime", (0.21, 0.25, 0.22), 0.95)
-    wood = mat("OfficeWood", (0.32, 0.22, 0.13), 0.7)
+    floor, wall = shell_mats("SM_Floor_Linoleum_2m", "SM_Wall_Wallpaper_A", "Office")
     steel = mat("OfficeSteel", (0.34, 0.35, 0.37), 0.4)
-    olive = mat("OfficeOlive", (0.29, 0.32, 0.24), 0.7)
-    paper = mat("OfficePaper", (0.66, 0.63, 0.53), 0.9)
-    red = mat("OfficeRed", (0.47, 0.14, 0.13), 0.8)
     bulb = emissive("OfficeBulb", (0.94, 0.96, 0.82), 1.8)
-    debris = mat("OfficeDebris", (0.20, 0.21, 0.19), 0.95)
 
-    root = build_shell("Office", lino, plaster, plaster)
-    add_wall_grime(
+    root = build_shell("Office", floor, wall, wall)
+
+    place_prop(
+        "LivingRoom",
+        "SM_DiningTable_Extendable",
+        (3.5, 3.4),
         root,
-        grime,
-        [
-            ("W", 2.6, 1.4, 2.2, 1.6),
-            ("S", 3.2, 1.2, 1.6, 1.0),
-            ("N", -3.0, 1.9, 1.8, 0.7),
-        ],
+        yaw_deg=0.0,
+        name="Desk",
     )
-
-    # Desk in the north-east quarter, facing south into the room.
-    desk_x, desk_y = 3.6, 3.4
-    cube("Desk", (desk_x, desk_y, 0.72), (2.1, 1.0, 0.08), wood, root)
-    cube("DeskPanel", (desk_x, desk_y + 0.44, 0.36), (2.1, 0.08, 0.68), wood, root)
-    for index, dx in enumerate((-0.95, 0.95)):
-        cube(f"DeskPedestal_{index}", (desk_x + dx, desk_y, 0.34), (0.14, 0.96, 0.68), wood, root)
-    cube("Typewriter", (desk_x - 0.4, desk_y + 0.05, 0.86), (0.5, 0.42, 0.2), steel, root)
-    cube("NoCol_TypewriterPaper", (desk_x - 0.4, desk_y + 0.05, 1.02), (0.3, 0.02, 0.26), paper, root)
-    cube("NoCol_DeskPapers", (desk_x + 0.55, desk_y - 0.1, 0.79), (0.6, 0.44, 0.06), paper, root)
-    cylinder("DeskLampPole", (desk_x + 0.9, desk_y + 0.3, 0.9), 0.03, 0.28, steel, root, verts=8)
-    cube("NoCol_DeskLampHood", (desk_x + 0.9, desk_y + 0.18, 1.06), (0.22, 0.3, 0.12), olive, root)
-    cylinder("NoCol_DeskLampBulb", (desk_x + 0.9, desk_y + 0.18, 0.99), 0.06, 0.06, bulb, root, verts=8)
-
-    cube("DeskChairSeat", (desk_x, desk_y - 1.15, 0.46), (0.56, 0.56, 0.1), olive, root)
-    cube("DeskChairBack", (desk_x, desk_y - 1.4, 0.78), (0.56, 0.1, 0.56), olive, root)
-    cylinder("DeskChairPost", (desk_x, desk_y - 1.15, 0.2), 0.06, 0.4, steel, root, verts=8)
-    cylinder("DeskChairBase", (desk_x, desk_y - 1.15, 0.03), 0.3, 0.06, steel, root, verts=10)
-
-    # Filing cabinets against the north wall, west of the doorway.
-    for index, x in enumerate((-4.9, -3.7, -2.5)):
-        cube(f"FileCabinet_{index}", (x, 5.28, 0.68), (1.06, 0.5, 1.36), steel, root)
-        for drawer, z in enumerate((0.28, 0.68, 1.08)):
-            cube(
-                f"NoCol_FileHandle_{index}_{drawer}",
-                (x, 5.0, z),
-                (0.3, 0.06, 0.05),
-                olive,
-                root,
-            )
-
-    # Binder shelf on the west wall.
-    cube("BinderShelf", (-5.28, -2.8, 0.95), (0.44, 2.6, 1.9), steel, root)
-    for index, z in enumerate((0.4, 0.9, 1.4, 1.8)):
-        cube(f"NoCol_Binders_{index}", (-5.2, -2.8, z), (0.32, 2.4, 0.26), red if index % 2 else paper, root)
-
-    # Situation map and a plaque nobody dusts any more.
-    cube("NoCol_MapBoard", (5.5, -2.6, 1.6), (0.1, 2.4, 1.5), wood, root)
-    cube("NoCol_MapPaper", (5.42, -2.6, 1.6), (0.03, 2.2, 1.32), paper, root)
-    cube("NoCol_MapPin", (5.38, -2.0, 1.8), (0.03, 0.12, 0.12), red, root)
-    cube("NoCol_Plaque", (2.6, 5.68, 1.9), (0.5, 0.04, 0.5), red, root)
-
-    # Files that went everywhere when the evacuation order came through.
-    add_floor_debris(
+    place_prop(
+        "LivingRoom",
+        "SM_DiningChair_Upholstered",
+        (3.5, 2.2),
         root,
-        debris,
-        [(-0.7, 0.9, 1.7, 1.1), (1.3, -1.7, 1.4, 1.0), (-1.7, -0.5, 0.9, 0.8)],
+        yaw_deg=0.0,
+        name="DeskChair",
     )
-    cube("NoCol_LooseForms_A", (0.9, 1.4, 0.02), (0.5, 0.36, 0.02), paper, root)
-    cube("NoCol_LooseForms_B", (-1.4, -1.9, 0.02), (0.42, 0.3, 0.02), paper, root)
-
-    # Requisition forms that outlived the ministry.
-    cube("PaperStack", (-3.6, -3.4, 0.3), (1.2, 1.2, 0.6), paper, root)
-    cube("PaperStackTop", (-3.5, -3.3, 0.68), (0.9, 0.9, 0.18), paper, root)
-    cube("WasteBin", (1.9, -4.9, 0.24), (0.42, 0.42, 0.48), steel, root)
-    cube("NoCol_BinPaper", (1.9, -4.9, 0.52), (0.34, 0.34, 0.12), paper, root)
+    place_prop(
+        "LivingRoom",
+        "SM_SewingMachine",
+        (3.2, 3.5),
+        root,
+        yaw_deg=180.0,
+        collide=False,
+        name="SewingMachine",
+        z=0.78,
+    )
+    place_prop(
+        "LivingRoom",
+        "SM_WallUnit_Shelves",
+        (-4.6, 5.1),
+        root,
+        yaw_deg=180.0,
+        name="BinderShelf",
+    )
+    place_prop(
+        "Hallway",
+        "SM_Telephone_Wall",
+        (5.45, -2.4),
+        root,
+        yaw_deg=-90.0,
+        collide=False,
+        name="Telephone",
+        z=1.2,
+    )
+    place_prop(
+        "Hallway",
+        "SM_LightSwitch_Socket",
+        (-5.45, 2.0),
+        root,
+        yaw_deg=90.0,
+        collide=False,
+        name="LightSwitch",
+        z=1.15,
+    )
+    place_prop(
+        "Hallway",
+        "SM_ElectricMeter_Panel",
+        (-5.45, -3.4),
+        root,
+        yaw_deg=90.0,
+        collide=False,
+        name="ElectricMeter",
+        z=1.4,
+    )
+    place_prop(
+        "Abandonment",
+        "SM_Newspaper_Stack",
+        (-3.6, -4.0),
+        root,
+        yaw_deg=-20.0,
+        name="PaperStack",
+    )
+    place_prop(
+        "Abandonment",
+        "SM_PhotoAlbum",
+        (4.6, -4.6),
+        root,
+        yaw_deg=40.0,
+        collide=False,
+        name="PhotoAlbum",
+    )
+    place_prop(
+        "Abandonment",
+        "SM_Drawer_Fallen",
+        (-4.4, -2.2),
+        root,
+        yaw_deg=70.0,
+        collide=False,
+        name="FallenDrawer",
+    )
+    place_prop(
+        "LivingRoom",
+        "SM_FloorLamp",
+        (1.8, -5.0),
+        root,
+        yaw_deg=-30.0,
+        name="FloorLamp",
+    )
 
     add_ceiling_lamp(root, steel, bulb)
     return root
 
 
 # --------------------------------------------------------------------------- #
-# Storage room
+# Storage
 # --------------------------------------------------------------------------- #
 
 
 def build_storage():
-    concrete = mat("StorageFloor", (0.30, 0.30, 0.28), 0.9)
-    plaster = mat("StorageWall", (0.35, 0.34, 0.32), 0.9)
-    grime = mat("StorageGrime", (0.22, 0.21, 0.18), 0.95)
+    floor, wall = shell_mats("SM_Floor_Linoleum_2m", "SM_Wall_Wallpaper_B", "Storage")
     steel = mat("StorageSteel", (0.34, 0.35, 0.37), 0.4)
     rust = mat("StorageRust", (0.42, 0.24, 0.14), 0.85)
-    wood = mat("StorageWood", (0.40, 0.29, 0.17), 0.75)
-    sack = mat("StorageSack", (0.46, 0.41, 0.30), 0.9)
-    olive = mat("StorageOlive", (0.29, 0.32, 0.24), 0.7)
-    hazard = mat("StorageHazard", (0.58, 0.49, 0.13), 0.7)
     bulb = emissive("StorageBulb", (0.96, 0.93, 0.76), 1.5)
-    debris = mat("StorageDebris", (0.21, 0.20, 0.18), 0.95)
 
-    root = build_shell("Storage", concrete, plaster, plaster)
-    add_wall_grime(
+    root = build_shell("Storage", floor, wall, wall)
+
+    place_prop(
+        "Kitchen",
+        "SM_KitchenCabinet_Base",
+        (-4.8, 3.6),
         root,
-        grime,
-        [
-            ("S", -2.4, 1.1, 2.6, 1.8),
-            ("N", 4.0, 1.5, 1.6, 1.2),
-            ("W", 3.4, 0.8, 1.8, 1.2),
-        ],
+        yaw_deg=90.0,
+        name="CabinetBaseA",
+    )
+    place_prop(
+        "Kitchen",
+        "SM_KitchenCabinet_Base",
+        (-4.8, 4.7),
+        root,
+        yaw_deg=90.0,
+        name="CabinetBaseB",
+    )
+    place_prop(
+        "Kitchen",
+        "SM_KitchenCabinet_Wall",
+        (4.9, 3.8),
+        root,
+        yaw_deg=-90.0,
+        name="CabinetWall",
+        z=1.0,
+    )
+    place_prop(
+        "Kitchen",
+        "SM_Canisters_Set",
+        (-4.6, -3.2),
+        root,
+        yaw_deg=20.0,
+        name="Canisters",
+    )
+    place_prop(
+        "Kitchen",
+        "SM_CannedFood_Set",
+        (-3.4, -4.6),
+        root,
+        yaw_deg=-10.0,
+        collide=False,
+        name="CannedFood",
+    )
+    place_prop(
+        "Kitchen",
+        "SM_Pot_Enamel_Set",
+        (3.6, -4.4),
+        root,
+        yaw_deg=45.0,
+        collide=False,
+        name="Pots",
+    )
+    place_prop(
+        "Abandonment",
+        "SM_Chair_Broken",
+        (4.4, -3.0),
+        root,
+        yaw_deg=-35.0,
+        name="BrokenChair",
+    )
+    place_prop(
+        "Abandonment",
+        "SM_Debris_Pile",
+        (3.8, 4.6),
+        root,
+        yaw_deg=80.0,
+        collide=False,
+        name="Debris",
+    )
+    place_prop(
+        "Abandonment",
+        "SM_GasMask",
+        (-2.2, -5.0),
+        root,
+        yaw_deg=15.0,
+        collide=False,
+        name="GasMask",
+    )
+    place_prop(
+        "Abandonment",
+        "SM_GlassShards",
+        (1.6, -4.8),
+        root,
+        yaw_deg=0.0,
+        collide=False,
+        name="GlassShards",
+    )
+    place_prop(
+        "Bedroom",
+        "SM_Suitcase_Old",
+        (4.8, 2.2),
+        root,
+        yaw_deg=90.0,
+        name="Suitcase",
     )
 
-    # Shelving racks flanking the north half.
-    for rack_index, rack_x in enumerate((-5.1, 5.1)):
-        cube(f"RackBack_{rack_index}", (rack_x, 3.2, 1.05), (0.12, 3.4, 2.1), steel, root)
-        for post_index, dy in enumerate((-1.6, 1.6)):
-            cube(
-                f"RackPost_{rack_index}_{post_index}",
-                (rack_x + (0.34 if rack_x < 0 else -0.34), 3.2 + dy, 1.05),
-                (0.1, 0.1, 2.1),
-                steel,
-                root,
-            )
-        for shelf_index, z in enumerate((0.4, 0.95, 1.5, 2.0)):
-            cube(
-                f"RackShelf_{rack_index}_{shelf_index}",
-                (rack_x + (0.24 if rack_x < 0 else -0.24), 3.2, z),
-                (0.62, 3.3, 0.06),
-                steel,
-                root,
-            )
-        for box_index, (dy, box_z) in enumerate(((-1.0, 0.62), (0.3, 0.62), (1.1, 1.17), (-0.6, 1.72))):
-            cube(
-                f"RackBox_{rack_index}_{box_index}",
-                (rack_x + (0.24 if rack_x < 0 else -0.24), 3.2 + dy, box_z),
-                (0.5, 0.7, 0.38),
-                wood if box_index % 2 else olive,
-                root,
-            )
-
-    # Crate stack in the south-west corner.
-    crate_positions = ((-4.4, -3.0, 0.45), (-3.3, -3.4, 0.45), (-4.4, -3.0, 1.35), (-4.0, -4.6, 0.45))
-    for index, (x, y, z) in enumerate(crate_positions):
-        cube(f"Crate_{index}", (x, y, z), (0.9, 0.9, 0.9), wood, root)
-        cube(f"NoCol_CrateStrapA_{index}", (x, y, z + 0.3), (0.94, 0.94, 0.06), steel, root)
-        cube(f"NoCol_CrateStrapB_{index}", (x, y, z - 0.3), (0.94, 0.94, 0.06), steel, root)
-
-    # Fuel drums in the south-east corner.
-    for index, (x, y) in enumerate(((3.4, -3.2), (4.5, -3.6), (3.9, -4.7))):
-        cylinder(f"Drum_{index}", (x, y, 0.44), 0.42, 0.88, rust, root, verts=14)
-        cylinder(f"NoCol_DrumRib_{index}", (x, y, 0.62), 0.44, 0.06, steel, root, verts=14)
-        cylinder(f"NoCol_DrumLid_{index}", (x, y, 0.88), 0.42, 0.04, hazard, root, verts=14)
-
-    # Grain sacks and jerry cans along the south wall.
-    for index, (x, y) in enumerate(((-1.9, -5.1), (-1.0, -5.3))):
-        cylinder(f"Sack_{index}", (x, y, 0.3), 0.36, 0.6, sack, root, verts=10)
-    for index, x in enumerate((2.0, 2.5)):
-        cube(f"JerryCan_{index}", (x, -5.3, 0.24), (0.3, 0.18, 0.48), olive, root)
-        cube(f"NoCol_JerryHandle_{index}", (x, -5.3, 0.5), (0.2, 0.05, 0.05), steel, root)
-
-    add_floor_debris(
-        root,
-        debris,
-        [(0.7, 0.3, 2.3, 1.4), (-1.5, 1.5, 1.2, 0.9), (1.5, -1.9, 1.0, 0.8)],
-    )
-    cube("NoCol_SpilledGrain", (-1.2, -2.1, 0.02), (0.9, 0.7, 0.02), sack, root)
-
-    # Service pipes bolted along the north wall.
     for index, z in enumerate((1.95, 2.15)):
         cube(f"NoCol_Pipe_{index}", (0.0, 5.55, z), (11.2, 0.16, 0.16), rust if index else steel, root)
-    for index, x in enumerate((-4.0, 0.0, 4.0)):
-        cube(f"NoCol_PipeBracket_{index}", (x, 5.66, 2.05), (0.26, 0.1, 0.44), steel, root)
 
     add_ceiling_lamp(root, steel, bulb)
     return root
@@ -594,10 +814,10 @@ def build_storage():
 
 
 def _stair_materials():
+    floor, wall = shell_mats("SM_Floor_Linoleum_2m", "SM_Wall_Wallpaper_A", "Stair")
     return {
-        "floor": mat("StairFloor", (0.28, 0.28, 0.26), 0.9),
-        "wall": mat("StairWall", (0.30, 0.34, 0.31), 0.85),
-        "grime": mat("StairGrime", (0.20, 0.22, 0.19), 0.95),
+        "floor": floor,
+        "wall": wall,
         "steel": mat("StairSteel", (0.34, 0.35, 0.37), 0.4),
         "rust": mat("StairRust", (0.42, 0.24, 0.14), 0.85),
         "wood": mat("StairWood", (0.34, 0.24, 0.15), 0.75),
@@ -607,7 +827,6 @@ def _stair_materials():
         "sign": mat("StairSign", (0.47, 0.14, 0.13), 0.7),
         "bulb": emissive("StairBulb", (0.96, 0.90, 0.70), 1.6),
         "glow": emissive("StairGlow", (0.55, 0.82, 0.45), 2.2),
-        "debris": mat("StairDebris", (0.21, 0.20, 0.18), 0.95),
     }
 
 
@@ -644,17 +863,7 @@ def _add_stair_flight(root, mats, start_z: float, rise: float, run: float, steps
 def build_stairwell_up():
     mats = _stair_materials()
     root = build_shell("StairwellUp", mats["floor"], mats["wall"], mats["wall"])
-    add_wall_grime(
-        root,
-        mats["grime"],
-        [
-            ("N", -3.8, 1.6, 1.6, 1.0),
-            ("S", 3.0, 1.1, 1.8, 1.4),
-            ("E", -2.4, 1.8, 1.6, 0.8),
-        ],
-    )
 
-    # Northwest corner, north of the west doorway so the tile cross stays clear.
     _add_stair_flight(root, mats, start_z=0.0, rise=0.22, run=0.32, steps=8, x=-4.35, y0=1.7)
     cube("Landing", (-4.35, 4.66, 1.87), (1.9, 1.2, 0.12), mats["olive"], root)
     cube("LandingBack", (-4.35, 5.22, 2.15), (1.9, 0.12, 0.7), mats["steel"], root)
@@ -662,26 +871,73 @@ def build_stairwell_up():
     cube("NoCol_HatchGlow", (-4.35, 4.66, 2.28), (1.2, 0.7, 0.04), mats["glow"], root)
     cube("NoCol_UpSign", (-5.52, 3.4, 1.7), (0.04, 0.7, 0.5), mats["sign"], root)
     cube("NoCol_UpArrow", (-5.48, 3.4, 1.78), (0.03, 0.18, 0.28), mats["hazard"], root)
-
     cube("StairNewel", (-5.2, 1.7, 0.55), (0.16, 0.16, 1.1), mats["rail"], root)
-    cube("CoatHookRail", (5.2, -3.4, 1.3), (0.08, 1.8, 0.08), mats["steel"], root)
-    for index, y in enumerate((-4.1, -3.4, -2.7)):
-        cube(f"NoCol_CoatHook_{index}", (5.05, y, 1.3), (0.16, 0.04, 0.04), mats["rust"], root)
 
-    cube("Bench", (3.8, -4.6, 0.28), (1.8, 0.55, 0.5), mats["wood"], root)
-    cube("FireBucket", (4.8, -3.6, 0.28), (0.36, 0.36, 0.5), mats["sign"], root)
-    cube("Extinguisher", (5.2, 4.6, 0.7), (0.18, 0.18, 0.7), mats["sign"], root)
-    cube("NoCol_ExtinguisherCap", (5.2, 4.6, 1.1), (0.14, 0.14, 0.12), mats["steel"], root)
+    place_prop(
+        "Stairwell_Architecture",
+        "SM_Mailboxes_Block",
+        (4.6, 4.8),
+        root,
+        yaw_deg=180.0,
+        name="Mailboxes",
+    )
+    place_prop(
+        "Hallway",
+        "SM_CoatRack_Wall",
+        (5.35, -3.2),
+        root,
+        yaw_deg=-90.0,
+        collide=False,
+        name="CoatRack",
+        z=1.1,
+    )
+    place_prop(
+        "Hallway",
+        "SM_Doormat",
+        (3.6, -4.9),
+        root,
+        yaw_deg=0.0,
+        collide=False,
+        name="Doormat",
+    )
+    place_prop(
+        "Stairwell_Architecture",
+        "SM_CeilingLamp_Bare",
+        (1.6, -1.2),
+        root,
+        yaw_deg=0.0,
+        collide=False,
+        name="CeilingLamp",
+        z=1.7,
+    )
+    place_prop(
+        "Stairwell_Architecture",
+        "SM_Elevator_Door",
+        (5.25, 1.8),
+        root,
+        yaw_deg=-90.0,
+        collide=False,
+        name="ElevatorDoor",
+    )
+    place_prop(
+        "Abandonment",
+        "SM_Debris_Pile",
+        (2.4, 4.6),
+        root,
+        yaw_deg=50.0,
+        collide=False,
+        name="Debris",
+    )
 
     for index, z in enumerate((1.9, 2.12)):
-        cube(f"NoCol_StairPipe_{index}", (1.4, 5.55, z), (6.8, 0.14, 0.14), mats["rust"] if index else mats["steel"], root)
+        cube(
+            f"NoCol_StairPipe_{index}",
+            (1.4, 5.55, z),
+            (6.8, 0.14, 0.14),
+            mats["rust"] if index else mats["steel"],
+            root,
+        )
 
-    add_floor_debris(
-        root,
-        mats["debris"],
-        [(1.2, 0.2, 1.8, 1.1), (0.4, -2.2, 1.2, 0.8), (2.4, 2.0, 1.0, 0.7)],
-    )
-    add_ceiling_lamp(root, mats["steel"], mats["bulb"], loc=(1.6, -1.2))
     add_empty("StairUse", (-4.35, 4.55, 2.1), root)
     return root
 
@@ -696,17 +952,6 @@ def build_stairwell_down():
     for side in SIDES:
         build_wall(root, side, mats["wall"], mats["wall"])
 
-    add_wall_grime(
-        root,
-        mats["grime"],
-        [
-            ("W", 3.6, 1.5, 1.6, 1.2),
-            ("E", 2.2, 1.2, 1.8, 1.1),
-            ("S", -3.0, 1.8, 1.4, 0.8),
-        ],
-    )
-
-    # Well occupies x=-5.2..-2.0, y=1.75..4.85, north of the west doorway.
     cube("WellWall_N", (-3.6, 4.93, -0.9), (3.2, 0.16, 1.8), mats["steel"], root)
     cube("WellWall_S", (-3.6, 1.67, -0.9), (3.2, 0.16, 1.8), mats["steel"], root)
     cube("WellWall_W", (-5.12, 3.3, -0.9), (0.16, 3.1, 1.8), mats["steel"], root)
@@ -721,19 +966,52 @@ def build_stairwell_down():
 
     cube("NoCol_DownSign", (5.52, 0.4, 1.7), (0.04, 0.7, 0.5), mats["sign"], root)
     cube("NoCol_DownArrow", (5.48, 0.4, 1.55), (0.03, 0.18, 0.28), mats["hazard"], root)
-    cube("ToolCrate", (4.4, -4.4, 0.4), (0.9, 0.9, 0.8), mats["wood"], root)
-    cube("NoCol_CrateStrap", (4.4, -4.4, 0.62), (0.94, 0.94, 0.06), mats["steel"], root)
-    cube("CableSpool", (3.6, 4.7, 0.42), (0.9, 0.9, 0.84), mats["olive"], root)
-    cube("NoCol_SpoolHub", (3.6, 4.7, 0.42), (0.2, 0.95, 0.2), mats["steel"], root)
-    cube("Locker", (5.15, -2.6, 0.95), (0.5, 1.1, 1.9), mats["steel"], root)
-    cube("NoCol_LockerHandle", (4.88, -2.6, 0.95), (0.06, 0.16, 0.08), mats["hazard"], root)
 
-    add_floor_debris(
+    place_prop(
+        "Hallway",
+        "SM_ShoeCabinet",
+        (4.6, -4.2),
         root,
-        mats["debris"],
-        [(1.6, 1.4, 1.6, 1.0), (2.2, -1.8, 1.3, 0.9), (0.6, -0.8, 1.1, 0.7)],
+        yaw_deg=-90.0,
+        name="ShoeCabinet",
     )
-    add_ceiling_lamp(root, mats["steel"], mats["bulb"], loc=(2.2, -1.4))
+    place_prop(
+        "Stairwell_Architecture",
+        "SM_Mailboxes_Block",
+        (4.8, 4.6),
+        root,
+        yaw_deg=180.0,
+        name="Mailboxes",
+    )
+    place_prop(
+        "Stairwell_Architecture",
+        "SM_CeilingLamp_Bare",
+        (2.2, -1.4),
+        root,
+        yaw_deg=0.0,
+        collide=False,
+        name="CeilingLamp",
+        z=1.7,
+    )
+    place_prop(
+        "Abandonment",
+        "SM_Debris_Pile",
+        (2.0, 4.4),
+        root,
+        yaw_deg=-25.0,
+        collide=False,
+        name="Debris",
+    )
+    place_prop(
+        "Abandonment",
+        "SM_GasMask",
+        (3.4, -2.8),
+        root,
+        yaw_deg=60.0,
+        collide=False,
+        name="GasMask",
+    )
+
     add_empty("StairUse", (-3.6, 1.9, 0.9), root)
     return root
 
@@ -746,9 +1024,8 @@ def build_stairwell_down():
 def build_boiler():
     """Heating plant. The wheel named ValveWheel is what the player turns;
     ValveUse is the standing spot Godot searches for."""
-    concrete = mat("BoilerFloor", (0.26, 0.26, 0.25), 0.92)
+    floor = pbr_shell_mat("BoilerFloor", "Stairwell_Architecture", "SM_Floor_Linoleum_2m")
     plaster = mat("BoilerWall", (0.34, 0.32, 0.30), 0.9)
-    grime = mat("BoilerGrime", (0.18, 0.17, 0.16), 0.95)
     steel = mat("BoilerSteel", (0.34, 0.35, 0.37), 0.35)
     rust = mat("BoilerRust", (0.45, 0.24, 0.13), 0.8)
     soot = mat("BoilerSoot", (0.12, 0.11, 0.10), 0.95)
@@ -757,20 +1034,9 @@ def build_boiler():
     heat = emissive("BoilerHeat", (1.0, 0.42, 0.12), 1.4)
     lamp = emissive("BoilerLamp", (1.0, 0.22, 0.12), 2.4)
     bulb = emissive("BoilerBulb", (1.0, 0.84, 0.55), 1.5)
-    debris = mat("BoilerDebris", (0.20, 0.18, 0.16), 0.95)
 
-    root = build_shell("Boiler", concrete, plaster, plaster)
-    add_wall_grime(
-        root,
-        grime,
-        [
-            ("N", -3.6, 1.3, 1.8, 1.4),
-            ("E", 3.2, 1.6, 2.0, 1.1),
-            ("S", -2.2, 0.9, 2.2, 1.3),
-        ],
-    )
+    root = build_shell("Boiler", floor, plaster, plaster)
 
-    # Northwest corner, clear of the doorway cross.
     tank = (-4.05, 3.75)
     cylinder_along("BoilerTank", (*tank, 0.78), 0.62, 2.3, rust, root, axis="Y", verts=16)
     cylinder_along("BoilerTankBandA", (tank[0], tank[1] - 0.7, 0.78), 0.66, 0.08, steel, root, axis="Y", verts=16)
@@ -779,8 +1045,6 @@ def build_boiler():
         cube(f"BoilerLeg_{index}", (tank[0], tank[1] + dy, 0.16), (0.9, 0.16, 0.32), steel, root)
     cube("BoilerSoot", (tank[0], tank[1], 0.22), (1.5, 2.5, 0.04), soot, root)
 
-    # Riser and a horizontal gate valve. The wheel's axis is vertical so a
-    # yaw in Godot reads as turning it.
     riser = (-3.15, 3.75)
     cube("ValveRiser", (*riser, 1.05), (0.16, 0.16, 1.5), steel, root)
     cube("ValveBody", (*riser, 1.55), (0.28, 0.28, 0.22), rust, root)
@@ -792,31 +1056,56 @@ def build_boiler():
         attach(part, wheel)
     cube("NoCol_ValveLamp", (riser[0], riser[1], 1.28), (0.1, 0.1, 0.1), lamp, root)
 
-    # Standing spot south of the wheel, still in the corner, not in the cross.
     add_empty("ValveUse", (-2.35, 2.55, 1.0), root)
 
-    # Hookup that meets the procedural pipe run at the ceiling centre.
     pipe_seg("BoilerHeader", (*riser, 2.02), (0.0, 0.0, 2.02), 0.07, rust, root)
     pipe_seg("BoilerHeaderB", (riser[0], riser[1], 1.78), (*riser, 2.02), 0.06, steel, root)
     pipe_seg("BoilerReturn", (tank[0], tank[1], 1.35), (*riser, 1.55), 0.06, rust, root)
 
-    # Coal bin and a gauge board in the other corners.
-    cube("CoalBin", (4.35, -4.15, 0.4), (1.3, 1.1, 0.8), steel, root)
-    cube("NoCol_Coal", (4.35, -4.15, 0.86), (1.1, 0.9, 0.16), soot, root)
     cube("GaugeBoard", (-4.7, -3.6, 1.35), (0.12, 1.4, 0.9), steel, root)
     cylinder("NoCol_Gauge_0", (-4.58, -3.95, 1.5), 0.16, 0.06, hazard, root, verts=12)
     cylinder("NoCol_Gauge_1", (-4.58, -3.25, 1.5), 0.16, 0.06, heat, root, verts=12)
     cube("NoCol_GaugeNeedle", (-4.54, -3.25, 1.5), (0.03, 0.04, 0.18), red, root)
-
     cube("ToolChest", (4.4, 3.5, 0.38), (0.9, 0.55, 0.76), red, root)
     cube("NoCol_ChestHandle", (4.4, 3.2, 0.55), (0.4, 0.05, 0.06), steel, root)
     cube("NoCol_HazardStripe", (4.6, -2.3, 1.15), (0.06, 0.9, 0.16), hazard, root)
 
-    add_floor_debris(
+    place_prop(
+        "Kitchen",
+        "SM_GasWaterHeater",
+        (4.5, -4.4),
         root,
-        debris,
-        [(1.4, 1.6, 1.6, 1.0), (0.6, -1.8, 1.2, 0.8), (-1.2, 1.1, 0.9, 0.7)],
+        yaw_deg=-90.0,
+        name="GasWaterHeater",
     )
+    place_prop(
+        "Abandonment",
+        "SM_Debris_Pile",
+        (2.2, 4.6),
+        root,
+        yaw_deg=35.0,
+        collide=False,
+        name="Debris",
+    )
+    place_prop(
+        "Abandonment",
+        "SM_GasMask",
+        (-4.6, -4.6),
+        root,
+        yaw_deg=-40.0,
+        collide=False,
+        name="GasMask",
+    )
+    place_prop(
+        "Abandonment",
+        "SM_Newspaper_Stack",
+        (3.2, -4.8),
+        root,
+        yaw_deg=10.0,
+        collide=False,
+        name="Newspapers",
+    )
+
     add_ceiling_lamp(root, steel, bulb, loc=(1.8, -1.4))
     return root
 
@@ -839,7 +1128,7 @@ def _side_pipe_runs(root, material, x: float, z: float, name: str) -> None:
 
 
 def build_pipe_gallery():
-    concrete = mat("PipeFloor", (0.24, 0.25, 0.24), 0.92)
+    floor = pbr_shell_mat("PipeFloor", "Stairwell_Architecture", "SM_Floor_Linoleum_2m")
     plaster = mat("PipeWall", (0.30, 0.32, 0.31), 0.9)
     grime = mat("PipeGrime", (0.16, 0.18, 0.17), 0.95)
     steel = mat("PipeSteel", (0.36, 0.37, 0.38), 0.32)
@@ -848,18 +1137,8 @@ def build_pipe_gallery():
     red = mat("PipeRed", (0.48, 0.12, 0.10), 0.55)
     heat = emissive("PipeHeat", (1.0, 0.48, 0.16), 1.1)
     bulb = emissive("PipeBulb", (0.95, 0.90, 0.72), 1.4)
-    debris = mat("PipeDebris", (0.18, 0.18, 0.17), 0.95)
 
-    root = build_shell("PipeGallery", concrete, plaster, plaster)
-    add_wall_grime(
-        root,
-        grime,
-        [
-            ("W", 2.8, 1.2, 2.0, 1.5),
-            ("E", -2.4, 1.5, 1.8, 1.2),
-            ("S", 3.4, 1.7, 1.4, 0.8),
-        ],
-    )
+    root = build_shell("PipeGallery", floor, plaster, plaster)
 
     for z, material, tag in ((1.72, rust, "Low"), (2.02, steel, "High")):
         _wall_pipe_runs(root, material, 5.42, z, f"North{tag}")
@@ -867,8 +1146,6 @@ def build_pipe_gallery():
         _side_pipe_runs(root, material, 5.42, z, f"East{tag}")
         _side_pipe_runs(root, material, -5.42, z, f"West{tag}")
 
-    # Brackets and a corner manifold. The doorway cross stays empty so the
-    # generator can blast steam through whichever wall it chooses.
     for index, (x, y) in enumerate(((-4.2, 5.55), (-2.4, 5.55), (2.4, 5.55), (4.2, 5.55))):
         cube(f"NoCol_BracketN_{index}", (x, y, 1.87), (0.1, 0.16, 0.5), steel, root)
     for index, (x, y) in enumerate(((5.55, -4.0), (5.55, -2.3), (5.55, 2.3), (5.55, 4.0))):
@@ -890,11 +1167,35 @@ def build_pipe_gallery():
     cube("DripTray", (-4.3, 3.4, 0.06), (1.2, 0.8, 0.08), steel, root)
     cube("NoCol_Drip", (-4.3, 3.4, 0.12), (0.7, 0.45, 0.02), grime, root)
 
-    add_floor_debris(
+    place_prop(
+        "Abandonment",
+        "SM_Debris_Pile",
+        (2.6, 4.5),
         root,
-        debris,
-        [(1.1, 0.8, 1.8, 1.1), (-0.8, -1.4, 1.2, 0.8), (0.4, 2.2, 1.0, 0.7)],
+        yaw_deg=-55.0,
+        collide=False,
+        name="Debris",
     )
+    place_prop(
+        "Abandonment",
+        "SM_Wallpaper_Strips",
+        (-5.2, 2.6),
+        root,
+        yaw_deg=90.0,
+        collide=False,
+        name="WallpaperStrips",
+    )
+    place_prop(
+        "Abandonment",
+        "SM_GasMask_Pile",
+        (-4.4, 4.6),
+        root,
+        yaw_deg=25.0,
+        collide=False,
+        name="GasMaskPile",
+        scale=0.7,
+    )
+
     add_ceiling_lamp(root, steel, bulb, loc=(-1.6, 1.2))
     return root
 
@@ -996,7 +1297,6 @@ def build_preview() -> None:
 
     bpy.ops.wm.save_as_mainfile(filepath=str(BLEND_OUT))
 
-    # Cycles on CPU: cloud agents have no GPU/EGL for Eevee.
     scene.render.engine = "CYCLES"
     scene.cycles.device = "CPU"
     scene.cycles.samples = 28
@@ -1059,6 +1359,8 @@ def render_steam_closeup() -> None:
 
 
 def main() -> None:
+    if not PACK_ROOT.is_dir():
+        raise FileNotFoundError(f"Pripyat pack missing at {PACK_ROOT}")
     OUT_DIR.mkdir(parents=True, exist_ok=True)
     BLEND_OUT.parent.mkdir(parents=True, exist_ok=True)
     PNG_OUT.parent.mkdir(parents=True, exist_ok=True)
@@ -1073,8 +1375,9 @@ def main() -> None:
         export_room(root, glb_path)
         print(f"Wrote {glb_path}")
 
-    render_steam_closeup()
-    build_preview()
+    # Last room scene is left in the blend for inspection; full multi-room
+    # preview / Cycles shots are opt-in via build_preview() / render_steam_closeup().
+    bpy.ops.wm.save_as_mainfile(filepath=str(BLEND_OUT))
     print(f"Wrote {BLEND_OUT}")
 
 

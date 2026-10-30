@@ -1,5 +1,6 @@
 node_modules/
 dist/
+.tools/
 .DS_Store
 *.log
 .idea/
@@ -12,3 +13,6 @@ local.properties
 .gradle/
 build/
 app/build/
+# Built APK — publish via GitHub Releases (over GitHub's 100MB git limit)
+releases/*.apk
+releases/*.apk.idsig
