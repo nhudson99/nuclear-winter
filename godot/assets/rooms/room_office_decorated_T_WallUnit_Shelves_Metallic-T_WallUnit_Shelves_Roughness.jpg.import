@@ -1,0 +1,37 @@
+[remap]
+
+importer="texture"
+type="CompressedTexture2D"
+uid="uid://bg0i3yjb514gf"
+path="res://.godot/imported/room_office_decorated_T_WallUnit_Shelves_Metallic-T_WallUnit_Shelves_Roughness.jpg-fea293c9031a5468083283ec0ee16276.ctex"
+metadata={
+"vram_texture": false
+}
+generator_parameters={
+"md5": "ff56279c917395749904747f33981077"
+}
+
+[deps]
+
+source_file="res://assets/rooms/room_office_decorated_T_WallUnit_Shelves_Metallic-T_WallUnit_Shelves_Roughness.jpg"
+dest_files=["res://.godot/imported/room_office_decorated_T_WallUnit_Shelves_Metallic-T_WallUnit_Shelves_Roughness.jpg-fea293c9031a5468083283ec0ee16276.ctex"]
+
+[params]
+
+compress/mode=0
+compress/high_quality=false
+compress/lossy_quality=0.7
+compress/hdr_compression=1
+compress/normal_map=0
+compress/channel_pack=0
+mipmaps/generate=true
+mipmaps/limit=-1
+roughness/mode=0
+roughness/src_normal=""
+process/fix_alpha_border=true
+process/premult_alpha=false
+process/normal_map_invert_y=false
+process/hdr_as_srgb=false
+process/hdr_clamp_exposure=false
+process/size_limit=0
+detect_3d/compress_to=1

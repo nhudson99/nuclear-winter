@@ -1,0 +1,37 @@
+[remap]
+
+importer="texture"
+type="CompressedTexture2D"
+uid="uid://blgjg8heguiys"
+path="res://.godot/imported/room_bedroom_decorated_T_CoatRack_Standing_Metallic-T_CoatRack_Standing_Roughness.jpg-fca70c7fa736fb1d84e7ce53403225bc.ctex"
+metadata={
+"vram_texture": false
+}
+generator_parameters={
+"md5": "ec3320e09e80107b5c85118aca487b9b"
+}
+
+[deps]
+
+source_file="res://assets/rooms/room_bedroom_decorated_T_CoatRack_Standing_Metallic-T_CoatRack_Standing_Roughness.jpg"
+dest_files=["res://.godot/imported/room_bedroom_decorated_T_CoatRack_Standing_Metallic-T_CoatRack_Standing_Roughness.jpg-fca70c7fa736fb1d84e7ce53403225bc.ctex"]
+
+[params]
+
+compress/mode=0
+compress/high_quality=false
+compress/lossy_quality=0.7
+compress/hdr_compression=1
+compress/normal_map=0
+compress/channel_pack=0
+mipmaps/generate=true
+mipmaps/limit=-1
+roughness/mode=0
+roughness/src_normal=""
+process/fix_alpha_border=true
+process/premult_alpha=false
+process/normal_map_invert_y=false
+process/hdr_as_srgb=false
+process/hdr_clamp_exposure=false
+process/size_limit=0
+detect_3d/compress_to=1
