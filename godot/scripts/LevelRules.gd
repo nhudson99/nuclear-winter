@@ -155,6 +155,21 @@ static func floor_has_down_stair(level: int, floor: int) -> bool:
 	return floor > 0 and floor < floor_count(level)
 
 
+## Floors adjacent to `floor` (0-based, same index the HUD shows as floor+1).
+## Standing on floor 1 preloads floor 2. Standing on floor 2 preloads 1 and 3.
+static func neighbor_floors(level: int, floor: int) -> Array[int]:
+	var count := floor_count(level)
+	if count <= 1:
+		return []
+	var index := clampi(floor, 0, count - 1)
+	var out: Array[int] = []
+	if index - 1 >= 0:
+		out.append(index - 1)
+	if index + 1 < count:
+		out.append(index + 1)
+	return out
+
+
 ## Higher levels scatter the roster instead of parking each kind on a fixed cell.
 static func randomize_monster_spawns(level: int) -> bool:
 	return clamp_level(level) >= 2
