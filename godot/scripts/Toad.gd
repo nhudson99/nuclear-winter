@@ -177,6 +177,7 @@ func _try_swallow_item() -> void:
 		return
 	if item.swallow():
 		_swallowed = item
+		_play_clip(action_clip, 1.0)
 
 
 func _regurgitate() -> void:

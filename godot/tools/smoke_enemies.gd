@@ -47,8 +47,8 @@ func _run() -> void:
 		and is_equal_approx(slime.move_speed, 3.9)
 		and slime.move_speed > monster.move_speed
 		and slime.touch_damage < 80.0
-		and slime.idle_clip == "idle"
-		and slime.walk_clip == "moving"
+		and slime.idle_clip == "Idle"
+		and slime.walk_clip == "Move"
 	)
 	print(
 		"slime_stats_ok=", slime_stats_ok,
@@ -62,6 +62,7 @@ func _run() -> void:
 		and tank.move_speed < monster.move_speed
 		and is_equal_approx(tank.touch_damage, 100.0)
 		and tank.walk_clip == "Walk"
+		and tank.attack_clip == "Smash"
 	)
 	print(
 		"tank_stats_ok=", tank_stats_ok,
@@ -76,12 +77,13 @@ func _run() -> void:
 	if slime_anim:
 		for clip_name in slime_anim.get_animation_list():
 			slime_clips.append(clip_name)
-	var slime_anim_ok := (
+	var slime_mesh: Node3D = slime.get_node_or_null("MonsterMesh/Character") as Node3D if slime != null else null
+	var slime_anim_ok: bool = (
 		slime_anim != null
-		and slime_clips.has("idle")
-		and slime_clips.has("moving")
-		and slime_clips.has("death")
-		and slime_clips.has("attack")
+		and slime_mesh != null
+		and is_equal_approx(absf(slime_mesh.rotation.y), PI)
+		and slime_clips.has("Idle")
+		and slime_clips.has("Move")
 	)
 	print("slime_anim_ok=", slime_anim_ok, " clips=", slime_clips)
 
@@ -92,11 +94,14 @@ func _run() -> void:
 	if tank_anim:
 		for clip_name in tank_anim.get_animation_list():
 			tank_clips.append(clip_name)
-	var tank_anim_ok := (
+	var tank_mesh: Node3D = tank.get_node_or_null("MonsterMesh/Character") as Node3D if tank != null else null
+	var tank_anim_ok: bool = (
 		tank_anim != null
+		and tank_mesh != null
+		and is_equal_approx(absf(tank_mesh.rotation.y), PI)
 		and tank_clips.has("Idle")
 		and tank_clips.has("Walk")
-		and tank_clips.has("Die")
+		and tank_clips.has("Smash")
 	)
 	print("tank_anim_ok=", tank_anim_ok, " clips=", tank_clips)
 

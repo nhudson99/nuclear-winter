@@ -7,6 +7,9 @@ extends "res://scripts/Monster.gd"
 
 @export var weave_duration: float = 30.0
 @export var web_move_bonus: float = 0.25
+## Looping clip played in place while the room web grows. Empty keeps the
+## procedural spin used by the older unrigged mesh.
+@export var weave_clip: String = ""
 
 var _weaving: bool = false
 var _weave_elapsed: float = 0.0
@@ -19,6 +22,9 @@ var _travel_room_id: String = ""
 func _ready() -> void:
 	super._ready()
 	add_to_group("tarantula")
+	var anim := get_animation_player()
+	if anim != null and weave_clip != "" and anim.has_animation(weave_clip):
+		anim.get_animation(weave_clip).loop_mode = Animation.LOOP_LINEAR
 
 
 func is_weaving() -> bool:
@@ -154,7 +160,10 @@ func _start_weave_at_current_room() -> bool:
 	_spawn_growing_web()
 	velocity.x = 0.0
 	velocity.z = 0.0
-	_animate_walk(_walk_phase, 0.0)
+	if weave_clip.is_empty():
+		_animate_walk(_walk_phase, 0.0)
+	else:
+		_play_clip(weave_clip, 1.0)
 	return true
 
 
@@ -162,10 +171,13 @@ func _tick_weave(delta: float) -> void:
 	velocity.x = 0.0
 	velocity.z = 0.0
 	_weave_elapsed += delta
-	if visual:
-		visual.rotation.y += delta * 0.7
-		visual.position.y = 0.03 * absf(sin(_weave_elapsed * 4.0))
-	_animate_walk(_walk_phase, 0.15)
+	if weave_clip.is_empty():
+		if visual:
+			visual.rotation.y += delta * 0.7
+			visual.position.y = 0.03 * absf(sin(_weave_elapsed * 4.0))
+		_animate_walk(_walk_phase, 0.15)
+	else:
+		_play_clip(weave_clip, 1.0)
 	if _growing_web and is_instance_valid(_growing_web):
 		_growing_web.set_progress(get_weave_progress())
 	if _weave_elapsed >= weave_duration:

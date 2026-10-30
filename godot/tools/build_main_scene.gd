@@ -13,11 +13,13 @@ func _initialize() -> void:
 func _build() -> void:
 	var player_path := "res://assets/characters/Meshy_AI_Gulag_Winter_Warden_All_Animations.glb"
 	var monster_path := "res://assets/characters/enemy_monster.glb"
-	var slime_path := "res://assets/characters/enemy_slime.glb"
-	var tank_path := "res://assets/characters/enemy_tank.glb"
-	var tarantula_path := "res://assets/characters/enemy_tarantula.glb"
+	# Rigged exports. The static SovietSlime.glb / SovietTankMan.glb in blender/
+	# have no clips; these are the animated twins.
+	var slime_path := "res://assets/characters/SovietSlime.glb"
+	var tank_path := "res://assets/characters/SovietTankMan.glb"
+	var tarantula_path := "res://assets/characters/Tarantula.glb"
 	var widow_path := "res://assets/characters/enemy_widow.glb"
-	var toad_path := "res://assets/characters/enemy_toad.glb"
+	var toad_path := "res://assets/characters/Toad.glb"
 
 	for path in [player_path, monster_path, slime_path, tank_path, tarantula_path, widow_path, toad_path]:
 		if not ResourceLoader.exists(path):
@@ -126,6 +128,8 @@ func _build() -> void:
 	monster.add_child(monster_mesh)
 	monster_mesh.owner = main
 
+	# SovietSlime rests at ~0.62 m tall and 1.9 m long. The capsule stays narrow
+	# enough that a fully grown (2x) slime still clears the 2.6 m doorway.
 	_add_enemy(
 		main,
 		"Slime",
@@ -136,25 +140,23 @@ func _build() -> void:
 			"touch_damage": 35.0,
 			"proximity_radius": 2.4,
 			"detect_range": 12.0,
-			"health_bar_height": 1.35,
-			"touch_radius": 0.7,
-			"eye_height": 0.65,
+			"health_bar_height": 0.9,
+			"touch_radius": 0.95,
+			"eye_height": 0.45,
 			"section_dwell_time": 16.0,
-			"idle_clip": "idle",
-			"walk_clip": "moving",
-			"hit_clip": "hit",
-			"death_clip": "death",
-			"attack_clip": "attack",
-			"walk_cycle_metres": 1.1,
+			"idle_clip": "Idle",
+			"walk_clip": "Move",
+			"walk_cycle_metres": 2.6,
 			"grow_and_split": true,
 			"grow_duration": 30.0,
 			"grow_scale_target": 2.0,
 		},
-		0.36,
-		0.85,
-		0.48
+		0.55,
+		1.15,
+		0.58
 	)
 	_save_packed_subtree(main.get_node("Slime"), "res://scenes/Slime.tscn")
+	# SovietTankMan is 1.7 m tall. Walk loops; Smash plays on touch.
 	_add_enemy(
 		main,
 		"Tank",
@@ -166,19 +168,21 @@ func _build() -> void:
 			"touch_damage": 100.0,
 			"proximity_radius": 4.2,
 			"detect_range": 14.0,
-			"health_bar_height": 2.55,
-			"touch_radius": 1.25,
-			"eye_height": 1.72,
+			"health_bar_height": 1.95,
+			"touch_radius": 1.0,
+			"eye_height": 1.52,
 			"section_dwell_time": 40.0,
 			"idle_clip": "Idle",
 			"walk_clip": "Walk",
-			"death_clip": "Die",
-			"walk_cycle_metres": 1.9,
+			"attack_clip": "Smash",
+			"walk_cycle_metres": 2.5,
 		},
-		0.58,
-		1.45,
-		0.95
+		0.62,
+		1.7,
+		0.85
 	)
+	# Native leg span is 3.28 m, wider than the 2.6 m doorway. 0.67 brings the
+	# span to ~2.2 m and the height to ~1.14 m. Walk / Bite / WebWeave.
 	_add_enemy(
 		main,
 		"Tarantula",
@@ -190,21 +194,23 @@ func _build() -> void:
 			"touch_damage": 50.0,
 			"proximity_radius": 3.2,
 			"detect_range": 14.0,
-			"health_bar_height": 1.15,
-			"touch_radius": 0.85,
-			"eye_height": 0.42,
+			"health_bar_height": 1.3,
+			"touch_radius": 1.05,
+			"eye_height": 0.55,
 			"section_dwell_time": 30.0,
 			"idle_clip": "Idle",
 			"walk_clip": "Walk",
-			"death_clip": "Die",
-			"walk_cycle_metres": 1.2,
+			"attack_clip": "Bite",
+			"walk_cycle_metres": 2.4,
 			"weave_duration": 30.0,
 			"web_move_bonus": 0.25,
+			"weave_clip": "WebWeave",
 		},
-		0.42,
+		0.5,
+		1.1,
 		0.55,
-		0.32,
-		"res://scripts/Tarantula.gd"
+		"res://scripts/Tarantula.gd",
+		0.67
 	)
 	_add_enemy(
 		main,
@@ -228,8 +234,12 @@ func _build() -> void:
 		},
 		0.32,
 		1.55,
-		0.88
+		0.88,
+		"res://scripts/Monster.gd",
+		1.0,
+		0.0
 	)
+	# Toad is 1.7 m tall. JumpForward is the hop; Eat plays when it swallows.
 	_add_enemy(
 		main,
 		"Toad",
@@ -241,19 +251,19 @@ func _build() -> void:
 			"touch_damage": 0.0,
 			"proximity_radius": 0.1,
 			"detect_range": 0.1,
-			"health_bar_height": 1.05,
-			"touch_radius": 0.7,
-			"eye_height": 0.48,
+			"health_bar_height": 1.95,
+			"touch_radius": 0.9,
+			"eye_height": 1.15,
 			"section_dwell_time": 10.0,
 			"idle_clip": "Idle",
-			"walk_clip": "Walk",
-			"death_clip": "Die",
-			"walk_cycle_metres": 1.0,
+			"walk_clip": "JumpForward",
+			"action_clip": "Eat",
+			"walk_cycle_metres": 2.5,
 			"search_duration": 10.0,
 		},
-		0.38,
-		0.55,
-		0.30,
+		0.72,
+		1.7,
+		0.85,
 		"res://scripts/Toad.gd"
 	)
 
@@ -316,7 +326,9 @@ func _add_enemy(
 	capsule_r: float,
 	capsule_h: float,
 	capsule_y: float,
-	script_path: String = "res://scripts/Monster.gd"
+	script_path: String = "res://scripts/Monster.gd",
+	mesh_scale: float = 1.0,
+	mesh_yaw: float = PI
 ) -> void:
 	var body := CharacterBody3D.new()
 	body.name = node_name
@@ -339,18 +351,25 @@ func _add_enemy(
 	body.add_child(col)
 	col.owner = main
 
+	# Monster.gd aims MonsterMesh so its -Z follows travel. A mesh that faces
+	# +Z (the new rigs) is turned 180°; the widow already faces -Z, so her
+	# yaw stays 0.
+	var visual := Node3D.new()
+	visual.name = "MonsterMesh"
+	body.add_child(visual)
+	visual.owner = main
 	var mesh: Node3D = (load(glb_path) as PackedScene).instantiate()
-	mesh.name = "MonsterMesh"
-	mesh.rotation.y = PI
-	body.add_child(mesh)
+	mesh.name = "Character"
+	mesh.rotation.y = mesh_yaw
+	mesh.scale = Vector3.ONE * mesh_scale
+	visual.add_child(mesh)
 	mesh.owner = main
 
 
 func _save_packed_subtree(root: Node, path: String) -> void:
 	var parent := root.get_parent()
 	root.owner = null
-	for child in root.get_children():
-		child.owner = root
+	_set_owner_recursive(root, root)
 	var packed := PackedScene.new()
 	if packed.pack(root) != OK:
 		push_error("Failed to pack %s" % path)
@@ -362,6 +381,14 @@ func _save_packed_subtree(root: Node, path: String) -> void:
 		quit(1)
 		return
 	root.owner = parent
-	for child in root.get_children():
-		child.owner = parent
+	_set_owner_recursive(root, parent)
 	print("Wrote ", path)
+
+
+func _set_owner_recursive(node: Node, owner: Node) -> void:
+	for child in node.get_children():
+		child.owner = owner
+		# Children of an instanced GLB stay owned by that instance. Claiming
+		# them here inlines the whole mesh into the packed scene.
+		if child.scene_file_path.is_empty():
+			_set_owner_recursive(child, owner)
