@@ -4,7 +4,7 @@
 [ext_resource type="Script" path="res://scripts/Player.gd" id="2_3p2gp"]
 [ext_resource type="PackedScene" path="res://assets/characters/Meshy_AI_Gulag_Winter_Warden_All_Animations.glb" id="3_cvmbd"]
 [ext_resource type="Script" path="res://scripts/Monster.gd" id="4_ft6cd"]
-[ext_resource type="PackedScene" path="res://assets/characters/enemy_monster.glb" id="5_bb450"]
+[ext_resource type="PackedScene" path="res://assets/characters/IrradiatedHare.glb" id="5_bb450"]
 [ext_resource type="PackedScene" path="res://assets/characters/enemy_slime.glb" id="6_nfivy"]
 [ext_resource type="PackedScene" path="res://assets/characters/enemy_tank.glb" id="7_1nqs0"]
 [ext_resource type="Script" path="res://scripts/Tarantula.gd" id="8_1iba3"]
@@ -19,7 +19,7 @@
 background_mode = 1
 ambient_light_source = 2
 ambient_light_color = Color(0.55, 0.6, 0.58, 1)
-ambient_light_energy = 0.1
+ambient_light_energy = 0.09
 reflected_light_source = 1
 
 [sub_resource type="CapsuleShape3D" id="CapsuleShape3D_e2s0e"]
@@ -27,8 +27,7 @@ radius = 0.3
 height = 1.6
 
 [sub_resource type="CapsuleShape3D" id="CapsuleShape3D_gsxep"]
-radius = 0.42
-height = 1.35
+height = 1.55
 
 [sub_resource type="CapsuleShape3D" id="CapsuleShape3D_1a61f"]
 radius = 0.36
@@ -78,20 +77,26 @@ shape = SubResource("CapsuleShape3D_e2s0e")
 
 [node name="Model" type="Node3D" parent="Player"]
 
-[node name="Character" parent="Player/Model" instance=ExtResource("3_cvmbd")]
-transform = Transform3D(-1, 0, 0, 0, 1, 0, 0, 0, -1, 0, 0, 0)
+[node name="Character" type="Node3D" parent="Player/Model" instance=ExtResource("3_cvmbd")]
+transform = Transform3D(-1, 0, -8.74228e-08, 0, 1, 0, 8.74228e-08, 0, -1, 0, 0, 0)
 
 [node name="Monster" type="CharacterBody3D" parent="."]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.05, -12)
 collision_layer = 4
 script = ExtResource("4_ft6cd")
+eye_height = 1.45
+health_bar_height = 2.05
+facing_yaw_offset = 0.0
+idle_clip = "Idle"
+walk_clip = "Walk"
+attack_clip = "Attack"
+walk_cycle_metres = 1.45
 
 [node name="CollisionShape3D" type="CollisionShape3D" parent="Monster"]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 1, 0)
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.78, 0)
 shape = SubResource("CapsuleShape3D_gsxep")
 
 [node name="MonsterMesh" type="Node3D" parent="Monster" instance=ExtResource("5_bb450")]
-transform = Transform3D(-1, 0, -8.74228e-08, 0, 1, 0, 8.74228e-08, 0, -1, 0, 0, 0)
 
 [node name="Slime" type="CharacterBody3D" parent="."]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.05, -12)
@@ -213,7 +218,6 @@ idle_clip = "Idle"
 walk_clip = "Walk"
 death_clip = "Die"
 walk_cycle_metres = 1.0
-search_duration = 10.0
 
 [node name="CollisionShape3D" type="CollisionShape3D" parent="Toad"]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.3, 0)

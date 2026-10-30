@@ -51,6 +51,12 @@ WALL_T = 0.28
 DOOR_W = 2.6
 DOOR_H = 2.1
 SIDES = ("N", "S", "E", "W")
+# Floor and wallpaper maps in the pack are authored for a 2 m repeat.
+# glTF cannot carry Blender's object-space mapping, so shell meshes get a
+# UV map where one unit is this many metres.
+SHELL_TILE_M = 2.0
+# Pack furniture already reads at the right proportion. Rooms want it larger.
+PROP_VISUAL_SCALE = 1.5
 
 # Keeping props out of the middle cross of the tile leaves every doorway
 # reachable no matter which neighbours the generator attaches.
@@ -116,7 +122,37 @@ def cube(name: str, loc, size, material, parent=None, yaw: float = 0.0):
     obj.data.materials.append(material)
     if parent is not None:
         obj.parent = parent
+    apply_metre_uvs(obj)
     return obj
+
+
+def apply_metre_uvs(obj: bpy.types.Object, tile_m: float = SHELL_TILE_M) -> None:
+    """Planar UVs in world metres so a shell map repeats every `tile_m`.
+
+    Adjacent wall and floor pieces share one continuous pattern because the
+    coordinates are world-space, not the default cube unwrap.
+    """
+    mesh = obj.data
+    if mesh is None or not hasattr(mesh, "polygons"):
+        return
+    if not mesh.uv_layers:
+        mesh.uv_layers.new(name="UVMap")
+    uv_layer = mesh.uv_layers.active
+    bpy.context.view_layer.update()
+    world = obj.matrix_world
+    normal_matrix = world.to_3x3()
+    for poly in mesh.polygons:
+        normal = (normal_matrix @ poly.normal).normalized()
+        ax, ay, az = abs(normal.x), abs(normal.y), abs(normal.z)
+        if ax >= ay and ax >= az:
+            u_axis, v_axis = 1, 2
+        elif ay >= ax and ay >= az:
+            u_axis, v_axis = 0, 2
+        else:
+            u_axis, v_axis = 0, 1
+        for loop_index in poly.loop_indices:
+            co = world @ mesh.vertices[mesh.loops[loop_index].vertex_index].co
+            uv_layer.data[loop_index].uv = (co[u_axis] / tile_m, co[v_axis] / tile_m)
 
 
 def cylinder(name: str, loc, radius: float, depth: float, material, parent=None, verts: int = 12):
@@ -149,6 +185,7 @@ def cylinder_along(
     obj.data.materials.append(material)
     if parent is not None:
         obj.parent = parent
+    apply_metre_uvs(obj)
     return obj
 
 
@@ -196,8 +233,15 @@ def _load_image(path: Path):
     return image
 
 
-def pbr_shell_mat(name: str, category: str, asset_name: str, tile_m: float = 2.0):
-    """PBR material for procedural shell cubes, tiled in object metres."""
+def pbr_shell_mat(name: str, category: str, asset_name: str):
+    """PBR material for procedural shell meshes.
+
+    Density is written into the mesh UV by `apply_metre_uvs` (one UV unit =
+    SHELL_TILE_M metres). Sampling that UV map, rather than object coordinates,
+    is what survives glTF export. An object-space Mapping node used to become
+    a 0.5 texture transform on the cube's 0–1 unwrap, which magnified the
+    wallpaper and the floor.
+    """
     folder = _pack_asset_dir(category, asset_name)
     stem = _asset_stem(asset_name)
     material = bpy.data.materials.new(name=name)
@@ -206,9 +250,6 @@ def pbr_shell_mat(name: str, category: str, asset_name: str, tile_m: float = 2.0
     links = material.node_tree.links
     bsdf = nodes.get("Principled BSDF")
     tex_coord = nodes.new("ShaderNodeTexCoord")
-    mapping = nodes.new("ShaderNodeMapping")
-    mapping.inputs["Scale"].default_value = (1.0 / tile_m, 1.0 / tile_m, 1.0 / tile_m)
-    links.new(tex_coord.outputs["Object"], mapping.inputs["Vector"])
 
     def link_map(suffix: str, colorspace: str, bsdf_input: str, non_color: bool = False):
         path = folder / f"T_{stem}_{suffix}.png"
@@ -218,7 +259,8 @@ def pbr_shell_mat(name: str, category: str, asset_name: str, tile_m: float = 2.0
         image.colorspace_settings.name = colorspace
         tex = nodes.new("ShaderNodeTexImage")
         tex.image = image
-        links.new(mapping.outputs["Vector"], tex.inputs["Vector"])
+        tex.extension = "REPEAT"
+        links.new(tex_coord.outputs["UV"], tex.inputs["Vector"])
         if non_color and bsdf_input == "Normal":
             normal = nodes.new("ShaderNodeNormalMap")
             links.new(tex.outputs["Color"], normal.inputs["Color"])
@@ -278,6 +320,7 @@ def place_prop(
 ):
     """Import a Pripyat FBX prop, plant it, and parent it under the room root."""
     global _PROP_SERIAL
+    scale *= PROP_VISUAL_SCALE
     folder = _pack_asset_dir(category, asset_name)
     fbx_path = folder / f"{asset_name}.fbx"
     if not fbx_path.is_file():

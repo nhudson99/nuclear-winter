@@ -12,7 +12,7 @@ func _initialize() -> void:
 
 func _build() -> void:
 	var player_path := "res://assets/characters/Meshy_AI_Gulag_Winter_Warden_All_Animations.glb"
-	var monster_path := "res://assets/characters/enemy_monster.glb"
+	var monster_path := "res://assets/characters/IrradiatedHare.glb"
 	var slime_path := "res://assets/characters/enemy_slime.glb"
 	var tank_path := "res://assets/characters/enemy_tank.glb"
 	var tarantula_path := "res://assets/characters/enemy_tarantula.glb"
@@ -107,22 +107,33 @@ func _build() -> void:
 	monster.collision_layer = 4
 	monster.collision_mask = 1
 	monster.position = Vector3(0.0, 0.05, -MapGenerator.TILE)
+	# Irradiated hare: ~1.7 m, clips are Walk and Attack. Idle is the held
+	# first walk frame (see Monster._ensure_idle_clip).
+	monster.set("idle_clip", "Idle")
+	monster.set("walk_clip", "Walk")
+	monster.set("attack_clip", "Attack")
+	monster.set("walk_cycle_metres", 1.45)
+	# This GLB faces +Z. The other enemies rest on -Z and keep the default PI offset.
+	monster.set("facing_yaw_offset", 0.0)
+	monster.set("eye_height", 1.45)
+	monster.set("health_bar_height", 2.05)
 	main.add_child(monster)
 	monster.owner = main
 
 	var mcol := CollisionShape3D.new()
 	mcol.name = "CollisionShape3D"
 	var mcapsule := CapsuleShape3D.new()
-	mcapsule.radius = 0.42
-	mcapsule.height = 1.35
+	# Feet sit on the body origin. The mesh is about 1.7 m tall and 1.1 m wide.
+	mcapsule.radius = 0.5
+	mcapsule.height = 1.55
 	mcol.shape = mcapsule
-	mcol.position = Vector3(0, 1.0, 0)
+	mcol.position = Vector3(0, 0.78, 0)
 	monster.add_child(mcol)
 	mcol.owner = main
 
 	var monster_mesh: Node3D = (load(monster_path) as PackedScene).instantiate()
 	monster_mesh.name = "MonsterMesh"
-	monster_mesh.rotation.y = PI
+	# Faces +Z already, which is toward the player spawn at a higher Z.
 	monster.add_child(monster_mesh)
 	monster_mesh.owner = main
 

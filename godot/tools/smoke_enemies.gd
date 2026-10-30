@@ -100,10 +100,36 @@ func _run() -> void:
 	)
 	print("tank_anim_ok=", tank_anim_ok, " clips=", tank_clips)
 
+	var hare_anim: AnimationPlayer = null
+	if monster and monster.has_method("get_animation_player"):
+		hare_anim = monster.get_animation_player()
+	var hare_clips := PackedStringArray()
+	if hare_anim:
+		for clip_name in hare_anim.get_animation_list():
+			hare_clips.append(clip_name)
+	var hare_anim_ok: bool = (
+		monster != null
+		and hare_anim != null
+		and monster.idle_clip == "Idle"
+		and monster.walk_clip == "Walk"
+		and monster.attack_clip == "Attack"
+		and hare_clips.has("Idle")
+		and hare_clips.has("Walk")
+		and hare_clips.has("Attack")
+	)
+	print("hare_anim_ok=", hare_anim_ok, " clips=", hare_clips)
+
 	# Slime should actually be playing a locomotion or idle clip after configure.
 	await physics_frame
 	var slime_playing: bool = slime_anim != null and slime_anim.is_playing()
 	print("slime_playing_ok=", slime_playing, " clip=", slime_anim.current_animation if slime_anim else "")
+	var hare_clip := String(hare_anim.current_animation) if hare_anim else ""
+	var hare_playing: bool = (
+		hare_anim != null
+		and hare_anim.is_playing()
+		and (hare_clip == "Idle" or hare_clip == "Walk")
+	)
+	print("hare_playing_ok=", hare_playing, " clip=", hare_clip)
 
 	var grouped := (
 		monster.is_in_group("monster")
@@ -187,6 +213,8 @@ func _run() -> void:
 		and tank_stats_ok
 		and slime_anim_ok
 		and tank_anim_ok
+		and hare_anim_ok
+		and hare_playing
 		and slime_playing
 		and grouped
 		and mid_ok
