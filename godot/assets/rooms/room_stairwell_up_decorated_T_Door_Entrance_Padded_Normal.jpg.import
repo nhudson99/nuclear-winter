@@ -1,0 +1,37 @@
+[remap]
+
+importer="texture"
+type="CompressedTexture2D"
+uid="uid://cf4q2q7n85i2k"
+path="res://.godot/imported/room_stairwell_up_decorated_T_Door_Entrance_Padded_Normal.jpg-5bc3117b30d4df8b260774001392d7c4.ctex"
+metadata={
+"vram_texture": false
+}
+generator_parameters={
+"md5": "fce96bee9b7b16954b041264b5426887"
+}
+
+[deps]
+
+source_file="res://assets/rooms/room_stairwell_up_decorated_T_Door_Entrance_Padded_Normal.jpg"
+dest_files=["res://.godot/imported/room_stairwell_up_decorated_T_Door_Entrance_Padded_Normal.jpg-5bc3117b30d4df8b260774001392d7c4.ctex"]
+
+[params]
+
+compress/mode=0
+compress/high_quality=false
+compress/lossy_quality=0.7
+compress/hdr_compression=1
+compress/normal_map=0
+compress/channel_pack=0
+mipmaps/generate=true
+mipmaps/limit=-1
+roughness/mode=0
+roughness/src_normal=""
+process/fix_alpha_border=true
+process/premult_alpha=false
+process/normal_map_invert_y=false
+process/hdr_as_srgb=false
+process/hdr_clamp_exposure=false
+process/size_limit=0
+detect_3d/compress_to=1

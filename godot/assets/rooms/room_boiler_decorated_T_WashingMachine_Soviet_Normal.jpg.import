@@ -1,0 +1,37 @@
+[remap]
+
+importer="texture"
+type="CompressedTexture2D"
+uid="uid://cvna43cf3qapb"
+path="res://.godot/imported/room_boiler_decorated_T_WashingMachine_Soviet_Normal.jpg-cdd5585501821a26a7d317b8fe440194.ctex"
+metadata={
+"vram_texture": false
+}
+generator_parameters={
+"md5": "140f77be6e0df12a0c926b68577e280b"
+}
+
+[deps]
+
+source_file="res://assets/rooms/room_boiler_decorated_T_WashingMachine_Soviet_Normal.jpg"
+dest_files=["res://.godot/imported/room_boiler_decorated_T_WashingMachine_Soviet_Normal.jpg-cdd5585501821a26a7d317b8fe440194.ctex"]
+
+[params]
+
+compress/mode=0
+compress/high_quality=false
+compress/lossy_quality=0.7
+compress/hdr_compression=1
+compress/normal_map=0
+compress/channel_pack=0
+mipmaps/generate=true
+mipmaps/limit=-1
+roughness/mode=0
+roughness/src_normal=""
+process/fix_alpha_border=true
+process/premult_alpha=false
+process/normal_map_invert_y=false
+process/hdr_as_srgb=false
+process/hdr_clamp_exposure=false
+process/size_limit=0
+detect_3d/compress_to=1

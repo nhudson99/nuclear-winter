@@ -27,6 +27,19 @@ const WORLD_LAYER := 1
 const MIN_SHAPE_EDGE := 0.05
 ## Blender prefixes decoration that should never grow a collider.
 const NO_COLLISION_PREFIX := "NoCol_"
+## Floor tiles, wallpaper and trim sit a few millimetres off the shell and are
+## most of a decorated tile's triangles. They stay out of the flashlight shadow
+## pass so that dressing is not redrawn onto the floor and walls. Furniture
+## still casts.
+const SHELL_DRESSING_PREFIXES: Array[String] = [
+	"NoCol_FloorTile",
+	"NoCol_Wallpaper",
+	"NoCol_Baseboard",
+	"NoCol_DebrisTile",
+	"NoCol_FloorRug",
+	"NoCol_WallRug",
+	"NoCol_Doormat",
+]
 ## Radius around the player spawn that must stay free of floor decals.
 const SPAWN_CLEAR_RADIUS := 1.15
 ## Room floor slab thickness from the Blender modules.
@@ -48,15 +61,17 @@ const STEAM_ROOM_TYPES: Array[String] = [TYPE_BOILER, TYPE_PIPE_GALLERY]
 const STEAM_PIPE_Y := 1.82
 const STEAM_PIPE_RADIUS := 0.065
 
+## Pripyat-dressed tiles. The plain room_*.glb modules stay beside them so the
+## Blender rebuild path and the preview diff still have the undecorated shells.
 const ROOM_SCENES := {
-	"bedroom": "res://assets/rooms/room_bedroom.glb",
-	"living_room": "res://assets/rooms/room_living_room.glb",
-	"office": "res://assets/rooms/room_office.glb",
-	"storage": "res://assets/rooms/room_storage.glb",
-	"stairwell_up": "res://assets/rooms/room_stairwell_up.glb",
-	"stairwell_down": "res://assets/rooms/room_stairwell_down.glb",
-	"boiler": "res://assets/rooms/room_boiler.glb",
-	"pipe_gallery": "res://assets/rooms/room_pipe_gallery.glb",
+	"bedroom": "res://assets/rooms/room_bedroom_decorated.glb",
+	"living_room": "res://assets/rooms/room_living_room_decorated.glb",
+	"office": "res://assets/rooms/room_office_decorated.glb",
+	"storage": "res://assets/rooms/room_storage_decorated.glb",
+	"stairwell_up": "res://assets/rooms/room_stairwell_up_decorated.glb",
+	"stairwell_down": "res://assets/rooms/room_stairwell_down_decorated.glb",
+	"boiler": "res://assets/rooms/room_boiler_decorated.glb",
+	"pipe_gallery": "res://assets/rooms/room_pipe_gallery_decorated.glb",
 }
 
 const ROOM_LABELS := {
@@ -837,6 +852,7 @@ func _spawn_room(
 
 	_center_stair_flight(room, type_name)
 	_build_room_collision(room)
+	_silence_shell_dressing_shadows(room)
 	return room
 
 
@@ -1138,6 +1154,19 @@ func _collect_spawn_debris(node: Node, origin: Vector3, doomed: Array[Node]) -> 
 			doomed.append(node)
 	for child in node.get_children():
 		_collect_spawn_debris(child, origin, doomed)
+
+
+## See SHELL_DRESSING_PREFIXES. Runs after the stair flight is posed, so
+## dressing that survives the down-stair floor rebuild is included.
+func _silence_shell_dressing_shadows(node: Node) -> void:
+	var label := String(node.name)
+	if node is GeometryInstance3D:
+		for prefix in SHELL_DRESSING_PREFIXES:
+			if label.begins_with(prefix):
+				(node as GeometryInstance3D).cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+				break
+	for child in node.get_children():
+		_silence_shell_dressing_shadows(child)
 
 
 ## One static body per room with a box per mesh. The Blender modules are built

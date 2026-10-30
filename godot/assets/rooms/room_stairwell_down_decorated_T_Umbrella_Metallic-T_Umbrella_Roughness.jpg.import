@@ -1,0 +1,37 @@
+[remap]
+
+importer="texture"
+type="CompressedTexture2D"
+uid="uid://bhrrd4uupwnfe"
+path="res://.godot/imported/room_stairwell_down_decorated_T_Umbrella_Metallic-T_Umbrella_Roughness.jpg-69c816330d582d283d4557312726eedd.ctex"
+metadata={
+"vram_texture": false
+}
+generator_parameters={
+"md5": "6bbaabf0089f216007ef071bccdc1475"
+}
+
+[deps]
+
+source_file="res://assets/rooms/room_stairwell_down_decorated_T_Umbrella_Metallic-T_Umbrella_Roughness.jpg"
+dest_files=["res://.godot/imported/room_stairwell_down_decorated_T_Umbrella_Metallic-T_Umbrella_Roughness.jpg-69c816330d582d283d4557312726eedd.ctex"]
+
+[params]
+
+compress/mode=0
+compress/high_quality=false
+compress/lossy_quality=0.7
+compress/hdr_compression=1
+compress/normal_map=0
+compress/channel_pack=0
+mipmaps/generate=true
+mipmaps/limit=-1
+roughness/mode=0
+roughness/src_normal=""
+process/fix_alpha_border=true
+process/premult_alpha=false
+process/normal_map_invert_y=false
+process/hdr_as_srgb=false
+process/hdr_clamp_exposure=false
+process/size_limit=0
+detect_3d/compress_to=1

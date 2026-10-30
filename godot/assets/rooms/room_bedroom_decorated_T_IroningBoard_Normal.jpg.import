@@ -1,0 +1,37 @@
+[remap]
+
+importer="texture"
+type="CompressedTexture2D"
+uid="uid://btj5uqvokrjw7"
+path="res://.godot/imported/room_bedroom_decorated_T_IroningBoard_Normal.jpg-746680071ad28266b20c701d8222f38f.ctex"
+metadata={
+"vram_texture": false
+}
+generator_parameters={
+"md5": "225f41a4ad1329fe7e066d7900c27b07"
+}
+
+[deps]
+
+source_file="res://assets/rooms/room_bedroom_decorated_T_IroningBoard_Normal.jpg"
+dest_files=["res://.godot/imported/room_bedroom_decorated_T_IroningBoard_Normal.jpg-746680071ad28266b20c701d8222f38f.ctex"]
+
+[params]
+
+compress/mode=0
+compress/high_quality=false
+compress/lossy_quality=0.7
+compress/hdr_compression=1
+compress/normal_map=0
+compress/channel_pack=0
+mipmaps/generate=true
+mipmaps/limit=-1
+roughness/mode=0
+roughness/src_normal=""
+process/fix_alpha_border=true
+process/premult_alpha=false
+process/normal_map_invert_y=false
+process/hdr_as_srgb=false
+process/hdr_clamp_exposure=false
+process/size_limit=0
+detect_3d/compress_to=1

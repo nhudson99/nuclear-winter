@@ -1,0 +1,37 @@
+[remap]
+
+importer="texture"
+type="CompressedTexture2D"
+uid="uid://dp0g3lgpcopmt"
+path="res://.godot/imported/room_bedroom_decorated_T_Rug_Floor_Normal.jpg-77c980e8255d0add3d903e1f70c7fd49.ctex"
+metadata={
+"vram_texture": false
+}
+generator_parameters={
+"md5": "7f9a488b1474c712dd4850c0231c4778"
+}
+
+[deps]
+
+source_file="res://assets/rooms/room_bedroom_decorated_T_Rug_Floor_Normal.jpg"
+dest_files=["res://.godot/imported/room_bedroom_decorated_T_Rug_Floor_Normal.jpg-77c980e8255d0add3d903e1f70c7fd49.ctex"]
+
+[params]
+
+compress/mode=0
+compress/high_quality=false
+compress/lossy_quality=0.7
+compress/hdr_compression=1
+compress/normal_map=0
+compress/channel_pack=0
+mipmaps/generate=true
+mipmaps/limit=-1
+roughness/mode=0
+roughness/src_normal=""
+process/fix_alpha_border=true
+process/premult_alpha=false
+process/normal_map_invert_y=false
+process/hdr_as_srgb=false
+process/hdr_clamp_exposure=false
+process/size_limit=0
+detect_3d/compress_to=1
