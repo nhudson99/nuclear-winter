@@ -31,6 +31,8 @@ const NO_COLLISION_PREFIX := "NoCol_"
 const SPAWN_CLEAR_RADIUS := 1.15
 ## Room floor slab thickness from the Blender modules.
 const FLOOR_THICKNESS := 0.1
+## Wallpaper and floor maps repeat every 2 m. Matches build_rooms.SHELL_TILE_M.
+const SHELL_TILE_M := 2.0
 const GROUND_THICKNESS := 0.6
 const GROUND_MARGIN := TILE
 ## Unique-cell offset between stacked floors so zone keys never collide.
@@ -1072,7 +1074,14 @@ func _add_floor_slab(
 	box.size = Vector3(x1 - x0, 0.1, z1 - z0)
 	mesh_instance.mesh = box
 	mesh_instance.position = Vector3((x0 + x1) * 0.5, -0.05, (z0 + z1) * 0.5)
-	if material:
+	if material is StandardMaterial3D:
+		# The imported shell already stores metres in its UVs. A fresh box
+		# is 0–1 per face, so scale the copy to the same 2 m repeat.
+		var tiled := (material as StandardMaterial3D).duplicate() as StandardMaterial3D
+		tiled.uv1_scale = Vector3(box.size.x / SHELL_TILE_M, box.size.z / SHELL_TILE_M, 1.0)
+		tiled.uv1_offset = Vector3.ZERO
+		mesh_instance.material_override = tiled
+	elif material:
 		mesh_instance.material_override = material
 	else:
 		var mat := StandardMaterial3D.new()
