@@ -100,6 +100,27 @@ func _run() -> void:
 	)
 	print("tank_anim_ok=", tank_anim_ok, " clips=", tank_clips)
 
+	var hare_mesh := monster.get_node_or_null("MonsterMesh/Character") as Node3D
+	var hare_anim: AnimationPlayer = null
+	if monster and monster.has_method("get_animation_player"):
+		hare_anim = monster.get_animation_player()
+	var hare_clips := PackedStringArray()
+	if hare_anim:
+		for clip_name in hare_anim.get_animation_list():
+			hare_clips.append(clip_name)
+	var hare_anim_ok: bool = (
+		hare_mesh != null
+		and is_equal_approx(absf(hare_mesh.rotation.y), PI)
+		and monster.walk_clip == "Walk"
+		and monster.attack_clip == "Attack"
+		and monster.idle_clip == "Idle"
+		and hare_anim != null
+		and hare_clips.has("Walk")
+		and hare_clips.has("Attack")
+		and hare_clips.has("Idle")
+	)
+	print("hare_anim_ok=", hare_anim_ok, " clips=", hare_clips, " yaw=", hare_mesh.rotation.y if hare_mesh else 0.0)
+
 	# Slime should actually be playing a locomotion or idle clip after configure.
 	await physics_frame
 	var slime_playing: bool = slime_anim != null and slime_anim.is_playing()
@@ -187,6 +208,7 @@ func _run() -> void:
 		and tank_stats_ok
 		and slime_anim_ok
 		and tank_anim_ok
+		and hare_anim_ok
 		and slime_playing
 		and grouped
 		and mid_ok

@@ -783,12 +783,39 @@ func _setup_animations() -> void:
 	_anim = _find_animation_player(visual)
 	if _anim == null:
 		return
+	# Some imports ship a walk and an attack and no idle. Hold the walk's
+	# first frame so a standing hare does not keep looping its gait.
+	if idle_clip != "" and not _anim.has_animation(idle_clip) and _anim.has_animation(walk_clip):
+		_add_held_frame(idle_clip, walk_clip)
 	for clip_name in [idle_clip, walk_clip]:
 		if clip_name != "" and _anim.has_animation(clip_name):
 			_anim.get_animation(clip_name).loop_mode = Animation.LOOP_LINEAR
 	if not _anim.animation_finished.is_connected(_on_animation_finished):
 		_anim.animation_finished.connect(_on_animation_finished)
 	_play_clip(idle_clip, 1.0)
+
+
+func _library_for(clip: String) -> AnimationLibrary:
+	for lib_name in _anim.get_animation_library_list():
+		var lib := _anim.get_animation_library(lib_name)
+		if lib != null and lib.has_animation(clip):
+			return lib
+	return null
+
+
+func _add_held_frame(dest: String, source: String) -> void:
+	if _anim.has_animation(dest) or not _anim.has_animation(source):
+		return
+	var held := (_anim.get_animation(source).duplicate(true)) as Animation
+	for track in held.get_track_count():
+		var count := held.track_get_key_count(track)
+		for index in range(count - 1, 0, -1):
+			held.track_remove_key(track, index)
+	held.length = 0.001
+	held.loop_mode = Animation.LOOP_LINEAR
+	var lib := _library_for(source)
+	if lib != null:
+		lib.add_animation(dest, held)
 
 
 func _play_clip(clip: String, speed: float) -> void:
