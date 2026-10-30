@@ -36,6 +36,8 @@ enum AiMode { PATROL, CHASE, RETURN }
 @export var hit_clip: String = ""
 @export var death_clip: String = ""
 @export var attack_clip: String = ""
+## One-shot that idle/walk must not cut off (toad swallow, and similar).
+@export var action_clip: String = ""
 @export var walk_cycle_metres: float = 1.6
 ## When set, this enemy grows to `grow_scale_target` over `grow_duration`
 ## seconds (size and max health), then splits into two original-sized copies.
@@ -783,6 +785,10 @@ func _setup_animations() -> void:
 	_anim = _find_animation_player(visual)
 	if _anim == null:
 		return
+	# Rigged imports often ship a gait and no idle. Hold the gait's first
+	# frame so a standing enemy does not keep looping its walk.
+	if idle_clip != "" and not _anim.has_animation(idle_clip) and _anim.has_animation(walk_clip):
+		_add_held_frame(idle_clip, walk_clip)
 	for clip_name in [idle_clip, walk_clip]:
 		if clip_name != "" and _anim.has_animation(clip_name):
 			_anim.get_animation(clip_name).loop_mode = Animation.LOOP_LINEAR
@@ -791,12 +797,39 @@ func _setup_animations() -> void:
 	_play_clip(idle_clip, 1.0)
 
 
+func _library_for(clip: String) -> AnimationLibrary:
+	for lib_name in _anim.get_animation_library_list():
+		var lib := _anim.get_animation_library(lib_name)
+		if lib != null and lib.has_animation(clip):
+			return lib
+	return null
+
+
+func _add_held_frame(dest: String, source: String) -> void:
+	if _anim.has_animation(dest) or not _anim.has_animation(source):
+		return
+	var held := (_anim.get_animation(source).duplicate(true)) as Animation
+	for track in held.get_track_count():
+		var count := held.track_get_key_count(track)
+		for index in range(count - 1, 0, -1):
+			held.track_remove_key(track, index)
+	held.length = 0.001
+	held.loop_mode = Animation.LOOP_LINEAR
+	var lib := _library_for(source)
+	if lib != null:
+		lib.add_animation(dest, held)
+
+
+func _is_one_shot(clip: String) -> bool:
+	return clip != "" and (clip == hit_clip or clip == attack_clip or clip == action_clip)
+
+
 func _play_clip(clip: String, speed: float) -> void:
 	if _anim == null or clip.is_empty() or not _anim.has_animation(clip):
 		return
 	if _anim_locked and clip != death_clip:
 		return
-	if clip == hit_clip or clip == attack_clip:
+	if _is_one_shot(clip):
 		if _clip == clip:
 			return
 	elif _clip == clip:
@@ -840,7 +873,7 @@ func _animate_walk(phase: float, amount: float) -> void:
 				var cycle_seconds := _anim.get_animation(walk_clip).length
 				speed = clampf(move_speed * cycle_seconds / walk_cycle_metres, 0.4, 2.2)
 			_play_clip(walk_clip, speed)
-		elif _clip != hit_clip and _clip != attack_clip:
+		elif not _is_one_shot(_clip):
 			_play_clip(idle_clip, 1.0)
 		return
 	var swing := deg_to_rad(stride_angle_deg) * amount * sin(phase)

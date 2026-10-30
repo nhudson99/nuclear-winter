@@ -40,7 +40,17 @@ func _run() -> void:
 	print("toad_stats_ok=", toad_stats_ok, " hp=", toad.max_health if toad else -1.0)
 
 	var toad_anim: AnimationPlayer = toad.get_animation_player() if toad and toad.has_method("get_animation_player") else null
-	var toad_anim_ok := toad_anim != null and toad_anim.has_animation("Idle") and toad_anim.has_animation("Walk")
+	var toad_mesh: Node3D = toad.get_node_or_null("MonsterMesh/Character") as Node3D if toad != null else null
+	var toad_anim_ok: bool = (
+		toad_anim != null
+		and toad_mesh != null
+		and is_equal_approx(absf(toad_mesh.rotation.y), PI)
+		and toad.walk_clip == "JumpForward"
+		and toad.action_clip == "Eat"
+		and toad_anim.has_animation("Idle")
+		and toad_anim.has_animation("JumpForward")
+		and toad_anim.has_animation("Eat")
+	)
 	print("toad_anim_ok=", toad_anim_ok)
 
 	var layout: Dictionary = main.get_layout()

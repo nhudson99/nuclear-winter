@@ -53,7 +53,19 @@ func _run() -> void:
 	var widow_anim: AnimationPlayer = widow.get_animation_player() if widow and widow.has_method("get_animation_player") else null
 	var tara_anim: AnimationPlayer = tarantula.get_animation_player() if tarantula and tarantula.has_method("get_animation_player") else null
 	var widow_anim_ok := widow_anim != null and widow_anim.has_animation("Idle") and widow_anim.has_animation("Walk")
-	var tara_anim_ok := tara_anim != null and tara_anim.has_animation("Idle") and tara_anim.has_animation("Walk")
+	var tara_mesh: Node3D = tarantula.get_node_or_null("MonsterMesh/Character") as Node3D if tarantula != null else null
+	var tara_anim_ok: bool = (
+		tara_anim != null
+		and tara_mesh != null
+		and is_equal_approx(absf(tara_mesh.rotation.y), PI)
+		and is_equal_approx(tara_mesh.scale.x, 0.67)
+		and tara_anim.has_animation("Idle")
+		and tara_anim.has_animation("Walk")
+		and tara_anim.has_animation("Bite")
+		and tara_anim.has_animation("WebWeave")
+		and tarantula.attack_clip == "Bite"
+		and String(tarantula.get("weave_clip")) == "WebWeave"
+	)
 	print("widow_anim_ok=", widow_anim_ok, " tarantula_anim_ok=", tara_anim_ok)
 
 	var grouped := (

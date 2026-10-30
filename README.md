@@ -12,11 +12,11 @@ godot --path godot
 - Room modules authored in Blender (`blender/build_rooms.py`) → `godot/assets/rooms/room_{bedroom,living_room,office,storage,stairwell_up,stairwell_down,boiler,pipe_gallery}.glb`. Shell topology stays procedural; furniture and floor/wall PBR maps come from `blender/PripyatApartment_FBX_PBR/` (Pripyat Apartment pack — project license, do not redistribute the pack alone).
 - Player mesh in the level is `godot/assets/characters/Meshy_AI_Gulag_Winter_Warden_All_Animations.glb` (Walking, Running, and an air squat). The older Blender prisoner (`blender/build_prisoner.py` → `godot/assets/characters/player_prisoner.glb`) is still in the repo.
 - Original monster authored in Blender (`blender/build_monster.py`) → `godot/assets/characters/enemy_monster.glb`
-- Slime enemy from [Poly Pizza](https://poly.pizza/m/6O6XUMssAW) (Charlie, CC-BY) is scaled and reoriented by `blender/prepare_slime.py` → `godot/assets/characters/enemy_slime.glb`
-- Tank authored in Blender (`blender/build_tank.py`) → `godot/assets/characters/enemy_tank.glb`
+- Slime mesh is the rigged `godot/assets/characters/SovietSlime.glb` (`Move`; idle holds the first frame). The older Poly Pizza slime (`blender/prepare_slime.py` → `godot/assets/characters/enemy_slime.glb`) is still in the repo. Source files: `blender/SovietSlime.glb` and `blender/SovietSlime_animated.glb`.
+- Tank mesh is the rigged `godot/assets/characters/SovietTankMan.glb` (`Walk` and `Smash`). The older Blender brute (`blender/build_tank.py` → `godot/assets/characters/enemy_tank.glb`) is still in the repo. Source files: `blender/SovietTankMan.glb` and `blender/SovietTankMan_animated.glb`.
 - Widow authored in Blender (`blender/build_widow.py`) → `godot/assets/characters/enemy_widow.glb`
-- Tarantula authored in Blender (`blender/build_tarantula.py`) → `godot/assets/characters/enemy_tarantula.glb`
-- Toad authored in Blender (`blender/build_toad.py`) → `godot/assets/characters/enemy_toad.glb`
+- Tarantula mesh is the rigged `godot/assets/characters/Tarantula.glb` (`Walk`, `Bite`, `WebWeave`), scaled to 0.67 so the leg span fits a 2.6 m doorway. The older Blender spider (`blender/build_tarantula.py` → `godot/assets/characters/enemy_tarantula.glb`) is still in the repo. Source file: `blender/Tarantula_animated.glb`.
+- Toad mesh is the rigged `godot/assets/characters/Toad.glb` (`JumpForward` and `Eat`). The older Blender toad (`blender/build_toad.py` → `godot/assets/characters/enemy_toad.glb`) is still in the repo. Source file: `blender/Toad_animated.glb`.
 - Flow: `TitleScreen.tscn` → `AristocratScreen.tscn` → `GameMap.tscn` (click **LEVEL n** or **SHOP**) → `Main.tscn`
 - Levels scale from `GameProgress.current_level`. Level 1 is the current open nine-room layout with one slime and a free mission item. Higher levels add monsters in an easy → moderate → dangerous cycle (slime, hare, tank, tarantula, widow, toad), extra locked wings, and one key per locked door. The mission item is always in the last locked wing. From level 3 the wings are stacked as **floors** (max two wings per floor); stairwell rooms sit behind the next locked door and only the current floor is instantiated.
 - Level 1: `godot/scenes/Main.tscn` (10% ambient so rooms are faintly readable, hold RMB or the right stick to aim the flashlight, isometric camera zoomed 50% onto the player, wall/prop collision, WASD or the left stick to walk, E / USE to pick up objectives, LMB to swing or fire, on a phone aim the right stick at an enemy to attack, escape through the outer doorway, enemies on the monster track, health bars)
@@ -78,11 +78,11 @@ done
 - **Doorways**: every adjacent room is linked by an open wall gap; player and enemies can walk through. Outward-facing walls are sealed.
 - **Enemies**: the roster grows with the level (`n` monsters, cycling slime → hare → tank → tarantula → widow → toad). They share the generated monster track (room centres through doorway centres). Locked doors omit their track edge until the matching key is collected. At a track intersection each rolls 0–99 and turns left (0–24), right (25–49), up (50–74) or down (75–99). When one detects the player (proximity, or FOV + line of sight) it path-follows the track toward them; 5 seconds after losing detection it returns to the main track. Sneak owned + Ctrl with the light off skips sight detection.
   - **Monster**: the original hunched stalker. 100 HP, lethal touch (100).
-  - **Slime**: Charlie's Poly Pizza slime, scaled to about a metre. Fast, 45 HP, 35 touch damage, plays `idle` / `moving` / `hit` / `attack` / `death`. Over 30 seconds it doubles in size and health, then splits into two original-sized slimes; each child repeats the cycle (capped at 16 living slimes).
-  - **Tank**: Left 4 Dead-style brute in jeans. Slow, 320 HP, lethal touch, hulking knuckle-dragger silhouette.
-  - **Tarantula**: medium spider. 100 HP, 50 touch damage. Spends 30 seconds webbing its current room, then moves to another unwebbed room. Finished silk cuts player speed by 75%; the tarantula itself is 25% faster on its web and will chase a seen player off it. Losing focus sends it to the nearest unwebbed room to spin a new one.
+  - **Slime**: Soviet slime, `Move`. Fast, 45 HP, 35 touch damage. Over 30 seconds it doubles in size and health, then splits into two original-sized slimes; each child repeats the cycle (capped at 16 living slimes).
+  - **Tank**: Soviet tank man, `Walk` / `Smash`. Slow, 320 HP, lethal touch.
+  - **Tarantula**: rigged spider, `Walk` / `Bite` / `WebWeave`, scaled to fit doorways. 100 HP, 50 touch damage. Spends 30 seconds webbing its current room, then moves to another unwebbed room. Finished silk cuts player speed by 75%; the tarantula itself is 25% faster on its web and will chase a seen player off it. Losing focus sends it to the nearest unwebbed room to spin a new one.
   - **Widow**: dangerous woman in a black mourning dress and veil, pale skin. 250 HP, lethal touch (100).
-  - **Toad**: easy, passive scavenger. 200 HP, no touch damage. Spends 10 seconds in each room looking for the mission item; if the item is there it swallows it and keeps it until it dies, then drops it.
+  - **Toad**: rigged scavenger, `JumpForward` / `Eat`. 200 HP, no touch damage. Spends 10 seconds in each room looking for the mission item; if the item is there it swallows it and keeps it until it dies, then drops it.
   - From level 2 the roster is scattered through the allowed wings instead of parking on the closest/furthest leftover cell.
 - **Health**: player starts at 100 HP with a billboard bar. Enemy bars stay hidden until the flashlight cone hits them (or they take damage).
 
@@ -133,7 +133,7 @@ Leftover web shell: title → boss CRT briefing → Pip-Boy map (returns to menu
 godot/                     Godot 4.4 game (menus + Level 1)
   assets/ui/               Title, aristocrat CRT, dialogue panel, Pip-Boy map
   assets/maps/ussr_mansion_map.glb
-  assets/characters/{Meshy_AI_Gulag_Winter_Warden_All_Animations,player_prisoner,enemy_monster,enemy_slime,enemy_tank,enemy_widow,enemy_tarantula,enemy_toad}.glb
+  assets/characters/{Meshy_AI_Gulag_Winter_Warden_All_Animations,player_prisoner,enemy_monster,SovietSlime,SovietTankMan,Tarantula,Toad,enemy_slime,enemy_tank,enemy_widow,enemy_tarantula,enemy_toad}.glb
   assets/props/{crate,wardrobe,couch}.glb
   scenes/{TitleScreen,AristocratScreen,GameMap,Main}.tscn
   scripts/{SceneFlow,GameProgress,LevelRules,MapGenerator,LockedDoor,Stairwell,TitleScreen,AristocratScreen,GameMap,ShopMenu,Main,Player,TouchControls,Monster,Tarantula,Toad,RoomWeb,WebField,PickupItem,ExitZone,Bullet}.gd
