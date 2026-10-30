@@ -4,7 +4,7 @@
 [ext_resource type="Script" path="res://scripts/Player.gd" id="2_3p2gp"]
 [ext_resource type="PackedScene" path="res://assets/characters/Meshy_AI_Gulag_Winter_Warden_All_Animations.glb" id="3_cvmbd"]
 [ext_resource type="Script" path="res://scripts/Monster.gd" id="4_ft6cd"]
-[ext_resource type="PackedScene" path="res://assets/characters/enemy_monster.glb" id="5_bb450"]
+[ext_resource type="PackedScene" path="res://assets/characters/IrradiatedHare.glb" id="5_bb450"]
 [ext_resource type="PackedScene" path="res://assets/characters/enemy_slime.glb" id="6_nfivy"]
 [ext_resource type="PackedScene" path="res://assets/characters/enemy_tank.glb" id="7_1nqs0"]
 [ext_resource type="Script" path="res://scripts/Tarantula.gd" id="8_1iba3"]
@@ -28,7 +28,7 @@ height = 1.6
 
 [sub_resource type="CapsuleShape3D" id="CapsuleShape3D_gsxep"]
 radius = 0.42
-height = 1.35
+height = 1.6
 
 [sub_resource type="CapsuleShape3D" id="CapsuleShape3D_1a61f"]
 radius = 0.36
@@ -85,12 +85,20 @@ transform = Transform3D(-1, 0, 0, 0, 1, 0, 0, 0, -1, 0, 0, 0)
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.05, -12)
 collision_layer = 4
 script = ExtResource("4_ft6cd")
+eye_height = 1.35
+health_bar_height = 1.9
+idle_clip = "Idle"
+walk_clip = "Walk"
+attack_clip = "Attack"
+walk_cycle_metres = 1.4
 
 [node name="CollisionShape3D" type="CollisionShape3D" parent="Monster"]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 1, 0)
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.85, 0)
 shape = SubResource("CapsuleShape3D_gsxep")
 
-[node name="MonsterMesh" type="Node3D" parent="Monster" instance=ExtResource("5_bb450")]
+[node name="MonsterMesh" type="Node3D" parent="Monster"]
+
+[node name="Character" parent="Monster/MonsterMesh" instance=ExtResource("5_bb450")]
 transform = Transform3D(-1, 0, -8.74228e-08, 0, 1, 0, 8.74228e-08, 0, -1, 0, 0, 0)
 
 [node name="Slime" type="CharacterBody3D" parent="."]

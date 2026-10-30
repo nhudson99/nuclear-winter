@@ -12,7 +12,7 @@ func _initialize() -> void:
 
 func _build() -> void:
 	var player_path := "res://assets/characters/Meshy_AI_Gulag_Winter_Warden_All_Animations.glb"
-	var monster_path := "res://assets/characters/enemy_monster.glb"
+	var monster_path := "res://assets/characters/IrradiatedHare.glb"
 	var slime_path := "res://assets/characters/enemy_slime.glb"
 	var tank_path := "res://assets/characters/enemy_tank.glb"
 	var tarantula_path := "res://assets/characters/enemy_tarantula.glb"
@@ -107,6 +107,12 @@ func _build() -> void:
 	monster.collision_layer = 4
 	monster.collision_mask = 1
 	monster.position = Vector3(0.0, 0.05, -MapGenerator.TILE)
+	monster.set("eye_height", 1.35)
+	monster.set("health_bar_height", 1.9)
+	monster.set("idle_clip", "Idle")
+	monster.set("walk_clip", "Walk")
+	monster.set("attack_clip", "Attack")
+	monster.set("walk_cycle_metres", 1.4)
 	main.add_child(monster)
 	monster.owner = main
 
@@ -114,16 +120,22 @@ func _build() -> void:
 	mcol.name = "CollisionShape3D"
 	var mcapsule := CapsuleShape3D.new()
 	mcapsule.radius = 0.42
-	mcapsule.height = 1.35
+	mcapsule.height = 1.6
 	mcol.shape = mcapsule
-	mcol.position = Vector3(0, 1.0, 0)
+	mcol.position = Vector3(0, 0.85, 0)
 	monster.add_child(mcol)
 	mcol.owner = main
 
+	# The hare mesh faces +Z. Monster.gd aims the visual node's -Z along travel,
+	# so the imported scene sits under MonsterMesh turned 180°.
+	var monster_visual := Node3D.new()
+	monster_visual.name = "MonsterMesh"
+	monster.add_child(monster_visual)
+	monster_visual.owner = main
 	var monster_mesh: Node3D = (load(monster_path) as PackedScene).instantiate()
-	monster_mesh.name = "MonsterMesh"
+	monster_mesh.name = "Character"
 	monster_mesh.rotation.y = PI
-	monster.add_child(monster_mesh)
+	monster_visual.add_child(monster_mesh)
 	monster_mesh.owner = main
 
 	_add_enemy(

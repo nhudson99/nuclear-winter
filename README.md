@@ -11,7 +11,7 @@ godot --path godot
 
 - Room modules authored in Blender (`blender/build_rooms.py`) → `godot/assets/rooms/room_{bedroom,living_room,office,storage,stairwell_up,stairwell_down,boiler,pipe_gallery}.glb`. Shell topology stays procedural; furniture and floor/wall PBR maps come from `blender/PripyatApartment_FBX_PBR/` (Pripyat Apartment pack — project license, do not redistribute the pack alone).
 - Player mesh in the level is `godot/assets/characters/Meshy_AI_Gulag_Winter_Warden_All_Animations.glb` (Walking, Running, and an air squat). The older Blender prisoner (`blender/build_prisoner.py` → `godot/assets/characters/player_prisoner.glb`) is still in the repo.
-- Original monster authored in Blender (`blender/build_monster.py`) → `godot/assets/characters/enemy_monster.glb`
+- Hare mesh is `godot/assets/characters/IrradiatedHare.glb` (`Walk` and `Attack`; idle is the first walk frame). The older Blender stalker (`blender/build_monster.py` → `godot/assets/characters/enemy_monster.glb`) is still in the repo.
 - Slime enemy from [Poly Pizza](https://poly.pizza/m/6O6XUMssAW) (Charlie, CC-BY) is scaled and reoriented by `blender/prepare_slime.py` → `godot/assets/characters/enemy_slime.glb`
 - Tank authored in Blender (`blender/build_tank.py`) → `godot/assets/characters/enemy_tank.glb`
 - Widow authored in Blender (`blender/build_widow.py`) → `godot/assets/characters/enemy_widow.glb`
@@ -77,7 +77,7 @@ done
 - **Shop**: the Pip-Boy map has **SHOP** in the top right. Cards are **pistol** (5 rations, fires 10 damage along the aim), **speed upgrade** (1 ration, +5% speed, stackable), and **sneak** (3 rations, hold **Ctrl** with the flashlight off to avoid sight detection). **LMB** is always attack on desktop: unarmed it is a short melee swing (10 damage); with the pistol equipped it fires the weapon. On a phone, aim the right stick at an enemy to do the same thing.
 - **Doorways**: every adjacent room is linked by an open wall gap; player and enemies can walk through. Outward-facing walls are sealed.
 - **Enemies**: the roster grows with the level (`n` monsters, cycling slime → hare → tank → tarantula → widow → toad). They share the generated monster track (room centres through doorway centres). Locked doors omit their track edge until the matching key is collected. At a track intersection each rolls 0–99 and turns left (0–24), right (25–49), up (50–74) or down (75–99). When one detects the player (proximity, or FOV + line of sight) it path-follows the track toward them; 5 seconds after losing detection it returns to the main track. Sneak owned + Ctrl with the light off skips sight detection.
-  - **Monster**: the original hunched stalker. 100 HP, lethal touch (100).
+  - **Hare** (the `Monster` body): irradiated hare, `Walk` / `Attack`. 100 HP, lethal touch (100).
   - **Slime**: Charlie's Poly Pizza slime, scaled to about a metre. Fast, 45 HP, 35 touch damage, plays `idle` / `moving` / `hit` / `attack` / `death`. Over 30 seconds it doubles in size and health, then splits into two original-sized slimes; each child repeats the cycle (capped at 16 living slimes).
   - **Tank**: Left 4 Dead-style brute in jeans. Slow, 320 HP, lethal touch, hulking knuckle-dragger silhouette.
   - **Tarantula**: medium spider. 100 HP, 50 touch damage. Spends 30 seconds webbing its current room, then moves to another unwebbed room. Finished silk cuts player speed by 75%; the tarantula itself is 25% faster on its web and will chase a seen player off it. Losing focus sends it to the nearest unwebbed room to spin a new one.
@@ -133,7 +133,7 @@ Leftover web shell: title → boss CRT briefing → Pip-Boy map (returns to menu
 godot/                     Godot 4.4 game (menus + Level 1)
   assets/ui/               Title, aristocrat CRT, dialogue panel, Pip-Boy map
   assets/maps/ussr_mansion_map.glb
-  assets/characters/{Meshy_AI_Gulag_Winter_Warden_All_Animations,player_prisoner,enemy_monster,enemy_slime,enemy_tank,enemy_widow,enemy_tarantula,enemy_toad}.glb
+  assets/characters/{Meshy_AI_Gulag_Winter_Warden_All_Animations,player_prisoner,IrradiatedHare,enemy_monster,enemy_slime,enemy_tank,enemy_widow,enemy_tarantula,enemy_toad}.glb
   assets/props/{crate,wardrobe,couch}.glb
   scenes/{TitleScreen,AristocratScreen,GameMap,Main}.tscn
   scripts/{SceneFlow,GameProgress,LevelRules,MapGenerator,LockedDoor,Stairwell,TitleScreen,AristocratScreen,GameMap,ShopMenu,Main,Player,TouchControls,Monster,Tarantula,Toad,RoomWeb,WebField,PickupItem,ExitZone,Bullet}.gd
