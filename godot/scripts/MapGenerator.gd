@@ -107,6 +107,10 @@ const TRACK_Y := 0.05
 ## Only east/south sides are stored so each interior doorway is one node.
 const TRACK_CANONICAL_SIDES: Array[String] = ["E", "S"]
 
+## Room modules are shared by every floor. Load each one once, off the main
+## thread, so the first tile of a type does not stall the loading bar.
+static var _packed_rooms: Dictionary = {}
+
 
 static func cell_to_world(cell: Vector2i) -> Vector3:
 	return Vector3(float(cell.x) * TILE, 0.0, float(cell.y) * TILE)
@@ -202,6 +206,9 @@ func generate(
 	var zone_counts: Array[int] = LevelRules.zone_room_counts(play_level)
 	if play_level <= 1:
 		zone_counts = [maxi(room_count, 1)]
+
+	progress.emit(0.02, "ЗАГРУЗКА МОДУЛЕЙ / LOADING ROOMS")
+	await _warm_room_scenes()
 
 	progress.emit(0.04, "РАЗМЕТКА СЕКТОРА / SURVEYING SECTOR")
 	var planned := _plan_floored_level(rng, zone_counts)
@@ -814,6 +821,56 @@ func _shuffle(values: Array[String], rng: RandomNumberGenerator) -> void:
 # --------------------------------------------------------------------------- #
 
 
+func _warm_room_scenes() -> void:
+	var pending: Array[String] = []
+	for type_name in ROOM_SCENES:
+		var path := String(ROOM_SCENES[type_name])
+		if _packed_rooms.has(path) and _packed_rooms[path] != null:
+			continue
+		if ResourceLoader.has_cached(path):
+			_packed_rooms[path] = ResourceLoader.load(path)
+			continue
+		var status := ResourceLoader.load_threaded_get_status(path)
+		if status == ResourceLoader.THREAD_LOAD_LOADED:
+			_packed_rooms[path] = ResourceLoader.load_threaded_get(path)
+			continue
+		if status != ResourceLoader.THREAD_LOAD_IN_PROGRESS:
+			var err := ResourceLoader.load_threaded_request(path)
+			if err != OK:
+				_packed_rooms[path] = load(path)
+				continue
+		pending.append(path)
+	var spins := 0
+	while not pending.is_empty() and spins < 4000 and is_inside_tree():
+		spins += 1
+		var still: Array[String] = []
+		for path in pending:
+			var status := ResourceLoader.load_threaded_get_status(path)
+			if status == ResourceLoader.THREAD_LOAD_LOADED:
+				_packed_rooms[path] = ResourceLoader.load_threaded_get(path)
+			elif (
+				status == ResourceLoader.THREAD_LOAD_FAILED
+				or status == ResourceLoader.THREAD_LOAD_INVALID_RESOURCE
+			):
+				_packed_rooms[path] = load(path)
+			else:
+				still.append(path)
+		pending = still
+		if pending.is_empty():
+			break
+		progress.emit(0.05, "ЗАГРУЗКА МОДУЛЕЙ / LOADING ROOMS")
+		await get_tree().process_frame
+
+
+func _packed_room(path: String) -> PackedScene:
+	if _packed_rooms.has(path) and _packed_rooms[path] != null:
+		return _packed_rooms[path] as PackedScene
+	var packed := load(path) as PackedScene
+	if packed != null:
+		_packed_rooms[path] = packed
+	return packed
+
+
 func _spawn_room(
 	container: Node3D,
 	cell: Vector2i,
@@ -825,7 +882,7 @@ func _spawn_room(
 	var path: String = ROOM_SCENES.get(type_name, "")
 	if path.is_empty() or not ResourceLoader.exists(path):
 		return null
-	var packed := load(path) as PackedScene
+	var packed := _packed_room(path)
 	if packed == null:
 		return null
 
@@ -853,7 +910,23 @@ func _spawn_room(
 	_center_stair_flight(room, type_name)
 	_build_room_collision(room)
 	_silence_shell_dressing_shadows(room)
+	# Neighbor floors are built under a hidden parent. Drop collision before
+	# the next frame so the player does not walk into a storey they are not on.
+	if container.has_meta("nw_dormant"):
+		_sleep_colliders(room)
 	return room
+
+
+func _sleep_colliders(node: Node) -> void:
+	if node is CollisionObject3D:
+		var body := node as CollisionObject3D
+		if not body.has_meta("nw_parked_layer"):
+			body.set_meta("nw_parked_layer", body.collision_layer)
+			body.set_meta("nw_parked_mask", body.collision_mask)
+		body.collision_layer = 0
+		body.collision_mask = 0
+	for child in node.get_children():
+		_sleep_colliders(child)
 
 
 ## Both flights are authored in a corner the capsule cannot walk onto. Shift

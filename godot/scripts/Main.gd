@@ -60,6 +60,20 @@ var _valve_shut: bool = false
 var _used_seed: int = 0
 var _used_rooms: int = 9
 var _active_floor: int = 0
+## Built floors kept off the live map. Neighbors of the floor the player is
+## standing on stay ready so a stair climb does not rebuild the storey.
+var _floor_bundles: Dictionary = {}
+var _floor_inflight: Dictionary = {}
+var _floor_cache: Node3D
+var _floor_swap_busy: bool = false
+
+const PARKED_GROUPS: Array[String] = [
+	"stairwell",
+	"steam_valve",
+	"steam_barrier",
+	"locked_door",
+	"room_web",
+]
 
 func _ready() -> void:
 	camera.projection = Camera3D.PROJECTION_ORTHOGONAL
@@ -100,6 +114,24 @@ func get_play_level() -> int:
 
 func get_active_floor() -> int:
 	return _active_floor
+
+
+## True when `floor` (0-based) is built and parked, ready to show without
+## generating it again. The floor the player is standing on is not "preloaded".
+func is_floor_preloaded(floor: int) -> bool:
+	if floor == _active_floor:
+		return false
+	if not _floor_bundles.has(floor):
+		return false
+	var bundle: Dictionary = _floor_bundles[floor]
+	return bool(bundle.get("ready", false)) and not bool(bundle.get("mounted", false))
+
+
+func preloaded_room_count(floor: int) -> int:
+	if not is_floor_preloaded(floor):
+		return 0
+	var holder: Node = _floor_bundles[floor]["root"]
+	return _count_named_rooms(holder)
 
 
 func unlock_stage(stage: int) -> void:
@@ -149,11 +181,6 @@ func _build_level() -> void:
 	_loading = LOADING_SCREEN.instantiate()
 	add_child(_loading)
 
-	var generator := MapGenerator.new()
-	generator.name = "MapGenerator"
-	add_child(generator)
-	generator.progress.connect(_loading.set_progress)
-
 	_used_seed = level_seed if level_seed != 0 else randi()
 	var seed_override := OS.get_environment("NW_LEVEL_SEED")
 	if seed_override.is_valid_int():
@@ -161,12 +188,17 @@ func _build_level() -> void:
 	_resolved_level = resolve_play_level()
 	_used_rooms = room_count if room_count > 0 else LevelRules.room_count(_resolved_level)
 	_active_floor = 0
-	_layout = await generator.generate(map_root, _used_seed, _used_rooms, _resolved_level, _active_floor)
-	generator.queue_free()
+	await _load_floor_bundle(0, true)
+	if not is_inside_tree():
+		return
+	_mount_bundle(0)
 	_apply_layout(_layout)
 	_apply_preview_overrides()
+	# Neighbors generate during the tail of the loading screen, then keep
+	# going after play starts. The bar stays full; this pass does not drive it.
+	_schedule_neighbor_preloads()
 
-	while Time.get_ticks_msec() - started < int(min_loading_seconds * 1000.0):
+	while Time.get_ticks_msec() - started < _min_loading_msec():
 		await get_tree().process_frame
 
 	_loading.snap_to_end()
@@ -692,41 +724,245 @@ func _on_stair_used(stair: Node) -> void:
 
 
 func change_floor(dest_floor: int, dest_cell: Vector2i) -> void:
-	if dest_floor == _active_floor and dest_cell == Vector2i.ZERO:
+	if _floor_swap_busy:
 		return
+	if dest_floor == _active_floor:
+		return
+	var floor_total := LevelRules.floor_count(_resolved_level)
+	if dest_floor < 0 or dest_floor >= floor_total:
+		return
+	_floor_swap_busy = true
 	var playing := _state == GameState.PLAYING
 	if playing:
 		if player and player.has_method("lock_input"):
 			player.lock_input()
 		set_monsters_processing(false)
-	await _instantiate_floor(dest_floor, dest_cell)
-	if playing:
+	# Keep the current storey underfoot until the next one is ready, then swap
+	# on one frame so the player never drops through a missing floor.
+	var show_loading := not _bundle_ready(dest_floor)
+	var overlay: Node = null
+	if show_loading:
+		overlay = LOADING_SCREEN.instantiate()
+		add_child(overlay)
+		if overlay.has_method("set_progress"):
+			overlay.set_progress(0.15, "СМЕНА ЭТАЖА / NEXT FLOOR")
+		_loading = overlay
+	await _load_floor_bundle(dest_floor, show_loading)
+	if not is_inside_tree():
+		return
+	_park_mounted_floor()
+	_mount_bundle(dest_floor)
+	_clear_dynamic_combatants()
+	_apply_layout(_layout, dest_cell)
+	if overlay != null and is_instance_valid(overlay):
+		if overlay.has_method("snap_to_end"):
+			overlay.snap_to_end()
+		if overlay.has_method("fade_out"):
+			await overlay.fade_out(0.2)
+	if _loading == overlay:
+		_loading = null
+	_schedule_neighbor_preloads()
+	if playing and _state == GameState.PLAYING:
 		if player and player.has_method("unlock_input"):
 			player.unlock_input()
 		if OS.get_environment("NW_PREVIEW_PLAYER") != "1":
 			set_monsters_processing(true)
+	_floor_swap_busy = false
 
 
-func _instantiate_floor(dest_floor: int, dest_cell: Vector2i) -> void:
-	_clear_generated_map()
-	_clear_dynamic_combatants()
-	await get_tree().process_frame
+func _min_loading_msec() -> int:
+	var seconds := min_loading_seconds
+	if OS.has_feature("mobile"):
+		seconds = minf(seconds, 0.4)
+	return int(seconds * 1000.0)
+
+
+func _bundle_ready(floor: int) -> bool:
+	return _floor_bundles.has(floor) and bool((_floor_bundles[floor] as Dictionary).get("ready", false))
+
+
+func _load_floor_bundle(floor: int, report_progress: bool) -> Dictionary:
+	if _bundle_ready(floor):
+		return _floor_bundles[floor]
+	if _floor_inflight.has(floor):
+		while _floor_inflight.has(floor) and is_inside_tree():
+			await get_tree().process_frame
+		return _floor_bundles.get(floor, {})
+	_floor_inflight[floor] = true
+	var holder := Node3D.new()
+	holder.name = "FloorBundle_%d" % floor
+	holder.visible = false
+	# In the tree so stair and valve placement can read global transforms,
+	# but dormant so the hidden storey does not collide or take interact.
+	holder.set_meta("nw_dormant", true)
+	var cache := _ensure_floor_cache()
+	cache.add_child(holder)
 	var generator := MapGenerator.new()
-	generator.name = "MapGenerator"
+	generator.name = "MapGenerator_%d" % floor
 	add_child(generator)
-	_layout = await generator.generate(
-		map_root, _used_seed, _used_rooms, _resolved_level, dest_floor
+	if report_progress and _loading != null and _loading.has_method("set_progress"):
+		generator.progress.connect(_loading.set_progress)
+	var layout: Dictionary = await generator.generate(
+		holder, _used_seed, _used_rooms, _resolved_level, floor
 	)
-	generator.queue_free()
-	_active_floor = dest_floor
-	_apply_layout(_layout, dest_cell)
+	if is_instance_valid(generator):
+		generator.queue_free()
+	if not is_inside_tree():
+		return {}
+	_silence_parked_branch(holder)
+	holder.visible = false
+	var bundle := {
+		"root": holder,
+		"layout": layout,
+		"ready": true,
+		"mounted": false,
+	}
+	_floor_bundles[floor] = bundle
+	_floor_inflight.erase(floor)
+	return bundle
 
 
-func _clear_generated_map() -> void:
-	if map_root == null:
+func _mount_bundle(floor: int) -> void:
+	var bundle: Dictionary = _floor_bundles[floor]
+	var holder: Node = bundle["root"]
+	var parked := holder.is_inside_tree()
+	var children: Array[Node] = []
+	for child in holder.get_children():
+		children.append(child)
+	for child in children:
+		holder.remove_child(child)
+		map_root.add_child(child)
+		if parked:
+			_restore_parked_branch(child)
+	bundle["mounted"] = true
+	_floor_bundles[floor] = bundle
+	_layout = bundle["layout"]
+	_active_floor = floor
+
+
+func _park_mounted_floor() -> void:
+	if not _floor_bundles.has(_active_floor):
 		return
+	var bundle: Dictionary = _floor_bundles[_active_floor]
+	if not bool(bundle.get("mounted", false)):
+		return
+	var holder: Node = bundle["root"]
+	_silence_parked_branch(map_root)
+	var cache := _ensure_floor_cache()
+	if holder.get_parent() == null:
+		cache.add_child(holder)
+	holder.visible = false
+	var children: Array[Node] = []
 	for child in map_root.get_children():
-		child.queue_free()
+		children.append(child)
+	for child in children:
+		map_root.remove_child(child)
+		holder.add_child(child)
+	bundle["mounted"] = false
+	bundle["layout"] = _layout
+	_floor_bundles[_active_floor] = bundle
+
+
+func _ensure_floor_cache() -> Node3D:
+	if _floor_cache != null and is_instance_valid(_floor_cache):
+		return _floor_cache
+	_floor_cache = Node3D.new()
+	_floor_cache.name = "FloorCache"
+	_floor_cache.visible = false
+	add_child(_floor_cache)
+	return _floor_cache
+
+
+func _schedule_neighbor_preloads() -> void:
+	_evict_distant_floors()
+	var wanted: Array[int] = LevelRules.neighbor_floors(_resolved_level, _active_floor)
+	if wanted.is_empty():
+		return
+	_preload_queue(wanted)
+
+
+func _preload_queue(floors: Array[int]) -> void:
+	# One storey at a time. Building two neighbors together stalls a phone.
+	await get_tree().process_frame
+	for floor in floors:
+		if not is_inside_tree():
+			return
+		if _bundle_ready(floor) or _floor_inflight.has(floor):
+			continue
+		if floor != _active_floor and floor not in LevelRules.neighbor_floors(_resolved_level, _active_floor):
+			continue
+		await _load_floor_bundle(floor, false)
+		if not is_inside_tree():
+			return
+		if floor != _active_floor and floor not in LevelRules.neighbor_floors(_resolved_level, _active_floor):
+			_drop_floor(floor)
+
+
+func _evict_distant_floors() -> void:
+	var keep := {_active_floor: true}
+	for floor in LevelRules.neighbor_floors(_resolved_level, _active_floor):
+		keep[floor] = true
+	for key in _floor_bundles.keys():
+		var floor := int(key)
+		if keep.has(floor) or _floor_inflight.has(floor):
+			continue
+		_drop_floor(floor)
+
+
+func _drop_floor(floor: int) -> void:
+	if floor == _active_floor or not _floor_bundles.has(floor):
+		return
+	var bundle: Dictionary = _floor_bundles[floor]
+	if bool(bundle.get("mounted", false)):
+		return
+	_floor_bundles.erase(floor)
+	var root: Node = bundle.get("root")
+	if root != null and is_instance_valid(root):
+		root.queue_free()
+
+
+func _silence_parked_branch(node: Node) -> void:
+	var kept: Array[String] = []
+	for group in PARKED_GROUPS:
+		if node.is_in_group(group):
+			kept.append(group)
+			node.remove_from_group(group)
+	if not kept.is_empty():
+		node.set_meta("nw_parked_groups", kept)
+	if node is CollisionObject3D:
+		var body := node as CollisionObject3D
+		if not body.has_meta("nw_parked_layer"):
+			body.set_meta("nw_parked_layer", body.collision_layer)
+			body.set_meta("nw_parked_mask", body.collision_mask)
+		body.collision_layer = 0
+		body.collision_mask = 0
+	for child in node.get_children():
+		_silence_parked_branch(child)
+
+
+func _restore_parked_branch(node: Node) -> void:
+	if node.has_meta("nw_parked_groups"):
+		var groups: Array = node.get_meta("nw_parked_groups")
+		for group in groups:
+			node.add_to_group(String(group))
+		node.remove_meta("nw_parked_groups")
+	if node is CollisionObject3D and node.has_meta("nw_parked_layer"):
+		var body := node as CollisionObject3D
+		body.collision_layer = int(body.get_meta("nw_parked_layer"))
+		body.collision_mask = int(body.get_meta("nw_parked_mask"))
+		body.remove_meta("nw_parked_layer")
+		body.remove_meta("nw_parked_mask")
+	for child in node.get_children():
+		_restore_parked_branch(child)
+
+
+func _count_named_rooms(node: Node) -> int:
+	var count := 0
+	if String(node.name).begins_with("Room_"):
+		count += 1
+	for child in node.get_children():
+		count += _count_named_rooms(child)
+	return count
 
 
 func _clear_dynamic_combatants() -> void:

@@ -130,6 +130,27 @@ func _run() -> void:
 	quit(0 if all_ok else 1)
 
 
+func _expected_neighbors(level: int, floor: int) -> Array:
+	var count := LevelRules.floor_count(level)
+	if floor < 0 or floor >= count:
+		return []
+	var want: Array = []
+	if floor - 1 >= 0:
+		want.append(floor - 1)
+	if floor + 1 < count:
+		want.append(floor + 1)
+	return want
+
+
+func _same_ints(got: Array, want: Array) -> bool:
+	if got.size() != want.size():
+		return false
+	for index in got.size():
+		if int(got[index]) != int(want[index]):
+			return false
+	return true
+
+
 func _check_formulas() -> bool:
 	var expected := {
 		1: [1, 0, 0, 0, 0, 0],
@@ -167,6 +188,8 @@ func _check_formulas() -> bool:
 		var floors_ok: bool = (
 			LevelRules.floor_count(level) == int(ceili(float(level) / 2.0))
 			and LevelRules.zones_on_floor(level, 0).size() <= LevelRules.MAX_WINGS_PER_FLOOR
+			and _same_ints(LevelRules.neighbor_floors(level, 0), _expected_neighbors(level, 0))
+			and _same_ints(LevelRules.neighbor_floors(level, 1), _expected_neighbors(level, 1))
 		)
 		print(
 			"formula n=", level,
@@ -895,6 +918,15 @@ func _check_live_floor_change() -> bool:
 
 	var layout: Dictionary = main.get_layout()
 	var start_floor_ok: bool = main.get_active_floor() == 0
+	var preload_started := Time.get_ticks_msec()
+	while not main.is_floor_preloaded(1) and Time.get_ticks_msec() - preload_started < 90000:
+		await process_frame
+	var preloaded: bool = main.is_floor_preloaded(1) and main.preloaded_room_count(1) > 0
+	print(
+		"floor_preloaded_next=", preloaded,
+		" rooms=", main.preloaded_room_count(1),
+		" ms=", Time.get_ticks_msec() - preload_started
+	)
 	var rooms_floor0 := 0
 	for child in main.get_node("GeneratedMap").get_children():
 		if String(child.name).begins_with("Room_"):
@@ -926,8 +958,15 @@ func _check_live_floor_change() -> bool:
 	var unlocked := up.can_use()
 	print("live_stair_lock blocked=", blocked, " unlocked=", unlocked)
 
+	var swap_started := Time.get_ticks_msec()
 	await main.change_floor(up.dest_floor, up.dest_cell)
+	var swap_ms := Time.get_ticks_msec() - swap_started
 	var moved: bool = main.get_active_floor() == 1
+	var kept_previous: bool = main.is_floor_preloaded(0) and main.preloaded_room_count(0) > 0
+	# A cached storey swaps without rebuilding the mesh. Leave headroom for
+	# enemy placement, but not enough for a second full generate.
+	var swap_fast := swap_ms < 2500
+	print("floor_swap_ms=", swap_ms, " kept_previous=", kept_previous, " fast=", swap_fast)
 	var rooms_floor1 := 0
 	for child in main.get_node("GeneratedMap").get_children():
 		if String(child.name).begins_with("Room_"):
@@ -948,11 +987,26 @@ func _check_live_floor_change() -> bool:
 			break
 	print("live_floor_return_ok=", back_ok)
 
+	# Let the neighbor-preload coroutine finish its idle frame before the
+	# scene is freed out from under it.
+	await process_frame
+	await process_frame
 	main.queue_free()
 	await create_timer(0.05).timeout
 	OS.set_environment("NW_LEVEL", "")
 	OS.set_environment("NW_LEVEL_SEED", "")
-	return start_floor_ok and scoped_ok and blocked and unlocked and moved and scoped1_ok and back_ok
+	return (
+		start_floor_ok
+		and preloaded
+		and scoped_ok
+		and blocked
+		and unlocked
+		and moved
+		and swap_fast
+		and kept_previous
+		and scoped1_ok
+		and back_ok
+	)
 
 
 func _check_level_advance(gp: Node) -> bool:
