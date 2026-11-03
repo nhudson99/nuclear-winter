@@ -1,7 +1,7 @@
 extends SceneTree
 
-## Library bookshelf unlocks a wing LockedDoor, pitch-black ambient, stalker
-## freeze, void laser hook, MonsterTracker, melee cadence, and death despawn.
+## Library hosts the stage-1 sector key and LockedDoor into the next wing.
+## Also covers pitch-black ambient, stalker freeze, void, tracker, melee, despawn.
 
 func _initialize() -> void:
 	call_deferred("_run")
@@ -26,27 +26,26 @@ func _run() -> void:
 	for room in layout.get("rooms", []):
 		if String(room.get("type", "")) == MapGenerator.TYPE_LIBRARY:
 			has_library_room = true
-	var bookshelf_obj := false
-	var bookshelf_stage := 0
-	for spec in layout.get("objectives", []):
-		if String(spec.get("kind", "")) == LevelRules.KIND_BOOKSHELF:
-			bookshelf_obj = true
-			bookshelf_stage = int(spec.get("stage", 0))
-	var unlock_stage := LevelRules.library_unlock_stage(4)
+	var key_stage := LevelRules.library_key_stage(4)
+	var library_key := false
+	for spec in layout.get("keys", []):
+		if int(spec.get("stage", 0)) == key_stage and bool(spec.get("in_library", false)):
+			library_key = true
 	var library_ok: bool = (
 		has_library_room
-		and bookshelf_obj
+		and library_key
 		and not library.is_empty()
-		and unlock_stage > 0
-		and bookshelf_stage == unlock_stage
-		and int(library.get("unlock_stage", 0)) == unlock_stage
-		and not library.has("from_cell")
+		and key_stage == 1
+		and int(library.get("key_stage", 0)) == key_stage
+		and library.has("from_cell")
+		and library.has("to_cell")
+		and library.get("cell") == library.get("from_cell")
 	)
 	print(
 		"library_ok=", library_ok,
 		" room=", has_library_room,
-		" objective=", bookshelf_obj,
-		" stage=", bookshelf_stage,
+		" key=", library_key,
+		" stage=", key_stage,
 		" secret=", library
 	)
 
@@ -54,40 +53,37 @@ func _run() -> void:
 	if main.has_method("park_monsters"):
 		main.park_monsters()
 
-	# Library may sit on a higher storey (last-wing lock). Jump there so the
-	# secret button and matching LockedDoor are mounted.
-	var library_floor := int(library.get("floor", 0))
-	if library_floor != main.get_active_floor():
-		var dest_cell: Vector2i = library.get("cell", layout.get("start_cell", Vector2i.ZERO))
-		await main.change_floor(library_floor, dest_cell)
-		layout = main.get_layout()
-		library = layout.get("library", {})
-
-	var button: Node = null
-	for node in main.get_tree().get_nodes_in_group("secret_bookshelf"):
-		button = node
-		break
 	var metal_door := false
 	for node in main.get_tree().get_nodes_in_group("library_door"):
 		metal_door = true
 		break
+	var bookshelf := false
+	for node in main.get_tree().get_nodes_in_group("secret_bookshelf"):
+		bookshelf = true
+		break
 	var stage_door: LockedDoor = null
 	for node in main.get_tree().get_nodes_in_group("locked_door"):
-		if node is LockedDoor and (node as LockedDoor).stage == unlock_stage:
+		if node is LockedDoor and (node as LockedDoor).stage == key_stage:
 			stage_door = node as LockedDoor
 			break
-	var secret_nodes_ok: bool = button != null and not metal_door and stage_door != null
+	var key_node: Area3D = main.get_node_or_null("Key_%d" % key_stage) as Area3D
+	var secret_nodes_ok: bool = (
+		key_node != null
+		and not metal_door
+		and not bookshelf
+		and stage_door != null
+	)
 	print(
 		"secret_nodes_ok=", secret_nodes_ok,
-		" button=", button,
+		" key=", key_node,
 		" metal_door=", metal_door,
-		" locked_door=", stage_door,
-		" library_floor=", library_floor
+		" bookshelf=", bookshelf,
+		" locked_door=", stage_door
 	)
 
 	var locked_before := stage_door != null and stage_door.is_locked()
-	if button != null:
-		player.global_position = (button as Node3D).global_position + Vector3(0.9, 0.05, 0.0)
+	if key_node != null:
+		player.global_position = key_node.global_position + Vector3(0.9, 0.05, 0.0)
 		await create_timer(0.05).timeout
 		Input.action_press("interact")
 		await create_timer(0.05).timeout
@@ -95,12 +91,12 @@ func _run() -> void:
 		Input.action_release("interact")
 		await create_timer(0.1).timeout
 	var opened_ok: bool = (
-		main.bookshelf_is_opened()
+		main.collected_key_stages().has(key_stage)
 		and locked_before
 		and stage_door != null
 		and not stage_door.is_locked()
 	)
-	print("bookshelf_unlock_ok=", opened_ok, " was_locked=", locked_before)
+	print("library_key_unlock_ok=", opened_ok, " was_locked=", locked_before)
 
 	var world := main.get_node("WorldEnvironment") as WorldEnvironment
 	var ambient_ok: bool = (

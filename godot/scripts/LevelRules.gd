@@ -7,8 +7,9 @@ extends RefCounted
 ## Monsters cycle easy → moderate → dangerous as the level index grows:
 ##   slime → stalker(hare) → tank → void → tarantula → widow → toad…
 ## Objectives: exactly `n` on level `n`. Level 1 is the mission item alone.
-## Higher levels add sector keys, the library bookshelf (unlocks a wing lock),
-## then the mission item. Floors grow on odd levels (`ceil(n / 2)`).
+## Higher levels add one sector key per wing lock, then the mission item.
+## The first wing's key and LockedDoor live in the library room. Floors grow
+## on odd levels (`ceil(n / 2)`).
 
 const KIND_SLIME := "slime"
 const KIND_HARE := "hare"
@@ -110,16 +111,20 @@ static func locked_door_count(level: int) -> int:
 	return maxi(clamp_level(level) - 1, 0)
 
 
-## Physical key pickups. One wing lock is opened by the library bookshelf
-## instead of a key, so pickups are one fewer than locked doors when n > 1.
+## One physical key per locked door (wing or stair).
 static func key_count(level: int) -> int:
-	return maxi(clamp_level(level) - 2, 0)
+	return locked_door_count(level)
 
 
-## Wing lock stage unlocked by finding the secret bookshelf (0 = none).
+## Wing stage whose key + LockedDoor are hosted by the library room (0 = none).
+## Stage 1 is the first wing gate off the start sector.
+static func library_key_stage(level: int) -> int:
+	return 1 if locked_door_count(level) > 0 else 0
+
+
+## Legacy alias — bookshelf unlock is gone; the library hosts a normal key.
 static func library_unlock_stage(level: int) -> int:
-	var locked := locked_door_count(level)
-	return locked if locked > 0 else 0
+	return library_key_stage(level)
 
 
 static func zone_count(level: int) -> int:
@@ -191,24 +196,18 @@ static func randomize_monster_spawns(level: int) -> bool:
 	return clamp_level(level) >= 2
 
 
-## Exactly n objectives on level n: sector keys (if any), the library bookshelf
-## when there is a wing lock for it to open, then the mission item.
+## Exactly n objectives on level n: one sector key per lock, then the mission.
+## The library-hosted key is still a KIND_KEY — the room is just its spawn.
 static func objectives(level: int) -> Array[Dictionary]:
 	var n := clamp_level(level)
 	var out: Array[Dictionary] = []
 	var keys := key_count(n)
+	var library_stage := library_key_stage(n)
 	for stage in range(1, keys + 1):
 		out.append({
 			"kind": KIND_KEY,
 			"stage": stage,
-			"label": _key_label(stage, keys),
-		})
-	var library_stage := library_unlock_stage(n)
-	if library_stage > 0:
-		out.append({
-			"kind": KIND_BOOKSHELF,
-			"stage": library_stage,
-			"label": "Find the secret bookshelf button in the library",
+			"label": _key_label(stage, keys, library_stage),
 		})
 	out.append({
 		"kind": KIND_MISSION,
@@ -218,7 +217,9 @@ static func objectives(level: int) -> Array[Dictionary]:
 	return out
 
 
-static func _key_label(stage: int, total_keys: int) -> String:
+static func _key_label(stage: int, total_keys: int, library_stage: int = 0) -> String:
+	if stage == library_stage and library_stage > 0:
+		return "Find the sector key in the library"
 	if total_keys <= 1:
 		return "Find the sector key"
 	return "Find sector key %d" % stage
