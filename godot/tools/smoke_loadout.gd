@@ -36,12 +36,15 @@ func _run() -> void:
 
 	var player: CharacterBody3D = main.get_node("Player")
 	var monster: CharacterBody3D = main.get_node("Monster")
+	var slime: CharacterBody3D = main.get_node("Slime")
 	var exit_zone: Area3D = main.get_node("ExitZone")
 	var pickup: Area3D = main.get_node_or_null("PickupItem")
 	monster.set_physics_process(false)
 	monster.touch_damage = 0.0
+	slime.set_physics_process(false)
+	slime.touch_damage = 0.0
 	if main.has_method("park_monsters"):
-		main.park_monsters(monster)
+		main.park_monsters(slime)
 
 	var zoom_ok := is_equal_approx(main.camera.size, 20.0 / 1.5)
 	print("zoom_ok=", zoom_ok, " camera_size=", main.camera.size)
@@ -51,7 +54,7 @@ func _run() -> void:
 	var ambient_ok := (
 		env != null
 		and env.ambient_light_source == Environment.AMBIENT_SOURCE_COLOR
-		and absf(env.ambient_light_energy - 0.09) < 0.005
+		and absf(env.ambient_light_energy - 0.0) < 0.005
 	)
 	print(
 		"ambient_ok=", ambient_ok,
@@ -64,16 +67,25 @@ func _run() -> void:
 	print("speed_bonus_ok=", speed_ok, " walk=", player.move_speed, " run=", player.run_speed)
 	print("health_rank_ok=", health_rank_ok, " max=", player.max_health, " hp=", player.health)
 
-	var bar: Node3D = monster.get_node_or_null("HealthBar")
-	var hidden_ok: bool = bar != null and not bar.visible and not monster.is_health_bar_revealed()
-	print("hp_hidden_ok=", hidden_ok)
+	# Stalker has no health bar; the slime still reveals under the beam.
+	var stalker_bar_gone: bool = monster.get_node_or_null("HealthBar") == null
+	var bar: Node3D = slime.get_node_or_null("HealthBar")
+	var hidden_ok: bool = (
+		stalker_bar_gone
+		and bar != null
+		and not bar.visible
+		and not slime.is_health_bar_revealed()
+	)
+	print("hp_hidden_ok=", hidden_ok, " stalker_bar_gone=", stalker_bar_gone)
 
 	var start: Vector3 = main.get_layout()["start"]
 	player.global_position = start + Vector3(0.0, 0.05, 0.0)
-	monster.global_position = start + Vector3(4.0, 0.05, 0.0)
+	slime.visible = true
+	slime.global_position = start + Vector3(4.0, 0.05, 0.0)
+	monster.global_position = start + Vector3(80.0, 0.05, 80.0)
 	var visual: Node3D = player.get_node("Model")
 	visual.rotation.y = atan2(1.0, 0.0) + PI
-	player.set_aim_world_override(monster.global_position)
+	player.set_aim_world_override(slime.global_position)
 	var camera_before: float = main.camera.size
 	var pickup_visible_before: bool = pickup != null and pickup.visible
 	player.set_flashlight_on(true)
@@ -85,32 +97,33 @@ func _run() -> void:
 	)
 	print("flashlight_focus_skipped=", focus_skipped, " pickup_visible=", pickup.visible if pickup else false)
 	await physics_frame
-	monster._update_health_bar_visibility()
-	var revealed_ok: bool = monster.is_health_bar_revealed() and bar.visible
+	slime._update_health_bar_visibility()
+	var revealed_ok: bool = slime.is_health_bar_revealed() and bar.visible
 	print(
 		"hp_revealed_ok=", revealed_ok,
-		" illuminates=", player.illuminates_point(monster.global_position + Vector3(0.0, 1.2, 0.0))
+		" illuminates=", player.illuminates_point(slime.global_position + Vector3(0.0, 1.2, 0.0))
 	)
 	player.set_flashlight_on(false)
-	monster._update_health_bar_visibility()
-	var hides_ok: bool = not monster.is_health_bar_revealed() and not bar.visible
+	slime._update_health_bar_visibility()
+	var hides_ok: bool = not slime.is_health_bar_revealed() and not bar.visible
 	print("hp_hides_without_beam_ok=", hides_ok)
 
-	monster.health = 100.0
+	# Stalker is indestructible; damage checks use the slime.
+	var stalker_hp_before: float = monster.health
+	monster.take_damage(50.0)
+	var stalker_immune: bool = is_equal_approx(float(monster.health), stalker_hp_before)
+	print("stalker_immune_ok=", stalker_immune)
+
+	slime.health = 45.0
 	# Fast enough that a discrete area step skips a body. The sweep must still hit.
 	player.pistol_speed = 90.0
 	var fired: Node3D = player.fire_weapon()
 	var spawned: bool = fired != null
 	for _i in 20:
 		await physics_frame
-	var pistol_ok: bool = spawned and is_equal_approx(float(monster.health), 90.0)
-	print("pistol_hit_ok=", pistol_ok, " hp=", monster.health, " spawned=", spawned)
+	var pistol_ok: bool = spawned and is_equal_approx(float(slime.health), 35.0)
+	print("pistol_hit_ok=", pistol_ok, " hp=", slime.health, " spawned=", spawned)
 
-	var slime: CharacterBody3D = main.get_node("Slime")
-	slime.visible = true
-	slime.set_physics_process(false)
-	slime.touch_damage = 0.0
-	monster.global_position = start + Vector3(80.0, 0.05, 80.0)
 	slime.global_position = start + Vector3(4.0, 0.05, 0.0)
 	player.global_position = start + Vector3(0.0, 0.05, 0.0)
 	player.set_aim_world_override(slime.global_position)
@@ -223,19 +236,19 @@ func _run() -> void:
 	await physics_frame
 	Input.action_release("slot_2")
 	await physics_frame
-	monster.health = 100.0
-	monster.global_position = start + Vector3(4.0, 0.05, 0.0)
+	slime.health = 45.0
+	slime.global_position = start + Vector3(4.0, 0.05, 0.0)
 	player.global_position = start + Vector3(0.0, 0.05, 0.0)
-	player.set_aim_world_override(monster.global_position)
+	player.set_aim_world_override(slime.global_position)
 	player._fire_cooldown = 0.0
 	var before_bullets := _bullet_count(main)
 	var shotgun_shot: Node3D = player.fire_weapon()
 	var spawned_pellets := _bullet_count(main) - before_bullets
 	var spread_ok := _pellets_inside_cone(player, main)
-	var shotgun_hit: bool = shotgun_shot != null and monster.health < 100.0
+	var shotgun_hit: bool = shotgun_shot != null and slime.health < 45.0
 	for _i in 8:
 		await physics_frame
-	shotgun_hit = shotgun_shot != null and monster.health < 100.0
+	shotgun_hit = shotgun_shot != null and slime.health < 45.0
 	var rates_ok: bool = (
 		is_equal_approx(player.pistol_cooldown, 0.4)
 		and is_equal_approx(player.ak_cooldown, 0.1)
@@ -248,12 +261,12 @@ func _run() -> void:
 		"shotgun_ok=", spawned_pellets == 10 and spread_ok and shotgun_hit and rates_ok,
 		" pellets=", spawned_pellets,
 		" spread=", spread_ok,
-		" hp=", monster.health
+		" hp=", slime.health
 	)
 
 	gp.select_weapon(GameProgress.WeaponId.AK)
 	player._fire_cooldown = 0.0
-	monster.health = 100.0
+	slime.health = 100.0
 	var ak_shot: Node3D = player.fire_weapon()
 	# Freed bullets compare equal to null, so remember the spawn before they land.
 	# 10 rounds/sec is 0.1s. Waiting a dozen frames would let that cooldown expire.
@@ -261,39 +274,58 @@ func _run() -> void:
 	var ak_blocked: bool = player.fire_weapon() == null
 	for _i in 12:
 		await physics_frame
-	var ak_ok: bool = ak_spawned and is_equal_approx(float(monster.health), 75.0)
-	print("ak_ok=", ak_ok and ak_blocked, " hp=", monster.health, " spawned=", ak_spawned, " blocked=", ak_blocked)
+	var ak_ok: bool = ak_spawned and is_equal_approx(float(slime.health), 75.0)
+	print("ak_ok=", ak_ok and ak_blocked, " hp=", slime.health, " spawned=", ak_spawned, " blocked=", ak_blocked)
 
-	monster.global_position = start + Vector3(4.0, 0.05, 0.0)
+	# Slime still aggroes on shot / beam and shows a health bar.
+	mesh = slime.get_node("MonsterMesh")
+	slime.global_position = start + Vector3(4.0, 0.05, 0.0)
 	player.global_position = start + Vector3(0.0, 0.05, 0.0)
-	# +X is away from the player, so sight stays false and only shot/beam aggro.
 	mesh.rotation.y = -PI * 0.5
-	monster.proximity_radius = 0.1
-	monster.detect_range = 0.4
-	monster.configure_patrol_for_test(30.0)
-	monster.set_physics_process(true)
+	slime.proximity_radius = 0.1
+	slime.detect_range = 0.4
+	slime.configure_patrol_for_test(30.0)
+	slime.set_physics_process(true)
 	Input.action_release("flashlight")
 	player.set_flashlight_on(false)
 	await physics_frame
-	var calm: bool = monster.get_ai_mode_name() == "patrol"
-	monster.take_damage(1.0)
+	var calm: bool = slime.get_ai_mode_name() == "patrol"
+	slime.take_damage(1.0)
 	await physics_frame
-	var shot_chase: bool = monster.get_ai_mode_name() == "chase"
-	monster.configure_patrol_for_test(30.0)
-	monster.health = 80.0
+	var shot_chase: bool = slime.get_ai_mode_name() == "chase"
+	slime.configure_patrol_for_test(30.0)
+	slime.health = 80.0
 	mesh.rotation.y = -PI * 0.5
 	visual.rotation.y = atan2(1.0, 0.0) + PI
-	player.set_aim_world_override(monster.global_position)
+	player.set_aim_world_override(slime.global_position)
 	Input.action_press("flashlight")
 	player.set_flashlight_on(true)
 	await physics_frame
-	var lit_chase: bool = monster.get_ai_mode_name() == "chase"
-	monster._update_health_bar_visibility()
-	var lit_bar: bool = monster.is_health_bar_revealed()
+	var lit_chase: bool = slime.get_ai_mode_name() == "chase"
+	slime._update_health_bar_visibility()
+	var lit_bar: bool = slime.is_health_bar_revealed()
 	Input.action_release("flashlight")
 	player.set_flashlight_on(false)
-	monster._update_health_bar_visibility()
-	var dark_bar: bool = not monster.is_health_bar_revealed()
+	slime._update_health_bar_visibility()
+	var dark_bar: bool = not slime.is_health_bar_revealed()
+	slime.set_physics_process(false)
+
+	# Stalker freezes while lit and only moves in the dark.
+	monster.global_position = start + Vector3(4.0, 0.05, 0.0)
+	monster.configure_patrol_for_test(30.0)
+	monster.set_physics_process(true)
+	player.set_aim_world_override(monster.global_position)
+	Input.action_press("flashlight")
+	player.set_flashlight_on(true)
+	var lit_pos := monster.global_position
+	for _i in 8:
+		await physics_frame
+	var stalker_frozen: bool = _planar(monster.global_position, lit_pos) < 0.05
+	Input.action_release("flashlight")
+	player.set_flashlight_on(false)
+	for _i in 12:
+		await physics_frame
+	var stalker_moves: bool = _planar(monster.global_position, lit_pos) > 0.2
 	monster.set_physics_process(false)
 	print(
 		"aggro_ok=", calm and shot_chase and lit_chase,
@@ -301,7 +333,9 @@ func _run() -> void:
 		" shot=", shot_chase,
 		" light=", lit_chase,
 		" bar_lit=", lit_bar,
-		" bar_dark=", dark_bar
+		" bar_dark=", dark_bar,
+		" stalker_frozen=", stalker_frozen,
+		" stalker_moves=", stalker_moves
 	)
 
 	var all_ok: bool = (
@@ -335,9 +369,18 @@ func _run() -> void:
 		and lit_chase
 		and lit_bar
 		and dark_bar
+		and stalker_immune
+		and stalker_frozen
+		and stalker_moves
 	)
 	print("loadout_smoke_ok=", all_ok)
 	quit(0 if all_ok else 1)
+
+
+func _planar(a: Vector3, b: Vector3) -> float:
+	var delta := a - b
+	delta.y = 0.0
+	return delta.length()
 
 
 func _bullet_count(main: Node) -> int:

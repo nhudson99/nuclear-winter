@@ -5,23 +5,26 @@ extends RefCounted
 ## check the formulas without booting a map.
 ##
 ## Monsters cycle easy → moderate → dangerous as the level index grows:
-##   n=1 slime, n=2 slime+hare, n=3 slime+hare+tank, n=4 …+tarantula, n=5 …+widow, n=6 …+toad…
-## Objectives: one mission item, plus (n-1) keys that each open the next locked
-## wing of rooms, plus the steam valve that clears the breach in front of the
-## mission item. The mission item sits in the last locked wing.
+##   slime → stalker(hare) → tank → void → tarantula → widow → toad…
+## Objectives: one sector key per wing lock (from level 2), the steam valve,
+## then the mission item. The first wing's key and LockedDoor live in the
+## library room. Floors grow on odd levels (`ceil(n / 2)`).
 
 const KIND_SLIME := "slime"
 const KIND_HARE := "hare"
+const KIND_STALKER := "hare" # radiation-mask stalker; kept as "hare" for saves/smokes
 const KIND_TANK := "tank"
+const KIND_VOID := "void"
 const KIND_TARANTULA := "tarantula"
 const KIND_WIDOW := "widow"
 const KIND_TOAD := "toad"
 const KIND_MISSION := "mission"
 const KIND_KEY := "key"
 const KIND_VALVE := "valve"
+const KIND_BOOKSHELF := "bookshelf"
 
 const MONSTER_CYCLE: Array[String] = [
-	KIND_SLIME, KIND_HARE, KIND_TANK, KIND_TARANTULA, KIND_WIDOW, KIND_TOAD
+	KIND_SLIME, KIND_HARE, KIND_TANK, KIND_VOID, KIND_TARANTULA, KIND_WIDOW, KIND_TOAD
 ]
 
 ## Level 1 keeps the current nine-room mansion.
@@ -74,7 +77,11 @@ static func toad_count(level: int) -> int:
 	return kind_count(KIND_TOAD, level)
 
 
-## One kind per spawned monster, in cycle order: slime, hare, tank, tarantula, widow…
+static func void_count(level: int) -> int:
+	return kind_count(KIND_VOID, level)
+
+
+## One kind per spawned monster, in cycle order: slime, stalker, tank, void…
 static func monster_kinds(level: int) -> Array[String]:
 	var n := clamp_level(level)
 	var kinds: Array[String] = []
@@ -88,23 +95,36 @@ static func monster_counts(level: int) -> Dictionary:
 		KIND_SLIME: slime_count(level),
 		KIND_HARE: hare_count(level),
 		KIND_TANK: tank_count(level),
+		KIND_VOID: void_count(level),
 		KIND_TARANTULA: tarantula_count(level),
 		KIND_WIDOW: widow_count(level),
 		KIND_TOAD: toad_count(level),
 	}
 
 
+## Keys (if any) + steam valve + mission item.
 static func objective_count(level: int) -> int:
-	# Keys, the steam valve, and the mission item.
-	return clamp_level(level) + 1
+	return key_count(level) + 2
 
 
 static func locked_door_count(level: int) -> int:
 	return maxi(clamp_level(level) - 1, 0)
 
 
+## One physical key per locked door (wing or stair).
 static func key_count(level: int) -> int:
 	return locked_door_count(level)
+
+
+## Wing stage whose key + LockedDoor are hosted by the library room (0 = none).
+## Stage 1 is the first wing gate off the start sector.
+static func library_key_stage(level: int) -> int:
+	return 1 if locked_door_count(level) > 0 else 0
+
+
+## Legacy alias — bookshelf unlock is gone; the library hosts a normal key.
+static func library_unlock_stage(level: int) -> int:
+	return library_key_stage(level)
 
 
 static func zone_count(level: int) -> int:
@@ -130,8 +150,9 @@ static func zone_room_counts(level: int) -> Array[int]:
 	return zones
 
 
+## Every odd level adds another floor: 1→1, 2→1, 3→2, 4→2, …
 static func floor_count(level: int) -> int:
-	return int(ceili(float(zone_count(level)) / float(MAX_WINGS_PER_FLOOR)))
+	return int(ceili(float(clamp_level(level)) / float(MAX_WINGS_PER_FLOOR)))
 
 
 static func floor_for_zone(zone: int) -> int:
@@ -175,16 +196,17 @@ static func randomize_monster_spawns(level: int) -> bool:
 	return clamp_level(level) >= 2
 
 
-## n keys-or-mission steps, plus the steam valve that has to be shut before the
-## mission pocket can be entered: key 1..n-1 (if any), the valve, then the item.
+## Sector keys (library hosts stage 1), steam valve, then the mission item.
 static func objectives(level: int) -> Array[Dictionary]:
 	var n := clamp_level(level)
 	var out: Array[Dictionary] = []
-	for stage in range(1, n):
+	var keys := key_count(n)
+	var library_stage := library_key_stage(n)
+	for stage in range(1, keys + 1):
 		out.append({
 			"kind": KIND_KEY,
 			"stage": stage,
-			"label": _key_label(stage, n - 1),
+			"label": _key_label(stage, keys, library_stage),
 		})
 	out.append({
 		"kind": KIND_VALVE,
@@ -199,7 +221,9 @@ static func objectives(level: int) -> Array[Dictionary]:
 	return out
 
 
-static func _key_label(stage: int, total_keys: int) -> String:
+static func _key_label(stage: int, total_keys: int, library_stage: int = 0) -> String:
+	if stage == library_stage and library_stage > 0:
+		return "Find the sector key in the library"
 	if total_keys <= 1:
 		return "Find the sector key"
 	return "Find sector key %d" % stage
@@ -211,6 +235,7 @@ static func counts_match_cycle(level: int) -> bool:
 		KIND_SLIME: 0,
 		KIND_HARE: 0,
 		KIND_TANK: 0,
+		KIND_VOID: 0,
 		KIND_TARANTULA: 0,
 		KIND_WIDOW: 0,
 		KIND_TOAD: 0,
@@ -223,6 +248,7 @@ static func counts_match_cycle(level: int) -> bool:
 		int(counted[KIND_SLIME]) == slime_count(level)
 		and int(counted[KIND_HARE]) == hare_count(level)
 		and int(counted[KIND_TANK]) == tank_count(level)
+		and int(counted[KIND_VOID]) == void_count(level)
 		and int(counted[KIND_TARANTULA]) == tarantula_count(level)
 		and int(counted[KIND_WIDOW]) == widow_count(level)
 		and int(counted[KIND_TOAD]) == toad_count(level)

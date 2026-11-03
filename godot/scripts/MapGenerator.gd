@@ -42,6 +42,10 @@ const SHELL_DRESSING_PREFIXES: Array[String] = [
 ]
 ## Radius around the player spawn that must stay free of floor decals.
 const SPAWN_CLEAR_RADIUS := 1.15
+## How far inside the exterior exit doorway the player stands (metres from the
+## room centre toward the open wall). Half-tile is the wall; keep clear of the
+## plug line and of furniture stacked on the room centre.
+const SPAWN_EXIT_INSET := 1.6
 ## Room floor slab thickness from the Blender modules.
 const FLOOR_THICKNESS := 0.1
 const GROUND_THICKNESS := 0.6
@@ -52,11 +56,15 @@ const SIDE_STAIR := "STAIR"
 const LOCK_KIND_WING := "wing"
 const LOCK_KIND_STAIR := "stair"
 
-const ROOM_TYPES: Array[String] = ["bedroom", "living_room", "office", "storage"]
+const ROOM_TYPES: Array[String] = ["bedroom", "living_room", "office", "storage", "library"]
 const STAIR_TYPES: Array[String] = ["stairwell_up", "stairwell_down"]
 const TYPE_BOILER := "boiler"
 const TYPE_PIPE_GALLERY := "pipe_gallery"
+const TYPE_LIBRARY := "library"
 const STEAM_ROOM_TYPES: Array[String] = [TYPE_BOILER, TYPE_PIPE_GALLERY]
+const BOOKCASE_NAME_PREFIXES: Array[String] = [
+	"Bookcase_", "Antiquarian_", "Elegance_", "Stack_", "Quad_",
+]
 ## Ceiling pipe the player follows from a steaming doorway to the valve.
 const STEAM_PIPE_Y := 1.82
 const STEAM_PIPE_RADIUS := 0.065
@@ -68,9 +76,10 @@ const ROOM_SCENES := {
 	"living_room": "res://assets/rooms/room_living_room_decorated.glb",
 	"office": "res://assets/rooms/room_office_decorated.glb",
 	"storage": "res://assets/rooms/room_storage_decorated.glb",
+	"library": "res://assets/rooms/room_library_decorated.glb",
 	"stairwell_up": "res://assets/rooms/room_stairwell_up_decorated.glb",
 	"stairwell_down": "res://assets/rooms/room_stairwell_down_decorated.glb",
-	"boiler": "res://assets/rooms/room_boiler_decorated.glb",
+	"boiler": "res://assets/rooms/room_boiler_decorated_v2.glb",
 	"pipe_gallery": "res://assets/rooms/room_pipe_gallery_decorated.glb",
 }
 
@@ -79,6 +88,7 @@ const ROOM_LABELS := {
 	"living_room": "ГОСТИНАЯ / LIVING ROOM",
 	"office": "КАБИНЕТ / OFFICE",
 	"storage": "СКЛАД / STORAGE",
+	"library": "БИБЛИОТЕКА / LIBRARY",
 	"stairwell_up": "ЛЕСТНИЦА ВВЕРХ / STAIRS UP",
 	"stairwell_down": "ЛЕСТНИЦА ВНИЗ / STAIRS DOWN",
 	"boiler": "КОТЕЛЬНАЯ / BOILER",
@@ -224,7 +234,16 @@ func generate(
 	if steam.is_empty():
 		push_warning("MapGenerator: steam pocket could not be placed")
 	planned["steam"] = steam
-	var type_of := _types_for_cells(rng, cells, steam, planned.get("stairs", []))
+	var type_of := _types_for_cells(
+		rng,
+		cells,
+		steam,
+		planned.get("stairs", []),
+		planned.get("floor_of", {}),
+		planned.get("zone_of", {}),
+		play_level,
+		planned.get("locks", [])
+	)
 	_apply_stair_types(type_of, planned["stairs"])
 	var sealed := _sealed_edge_set(steam)
 
@@ -268,21 +287,14 @@ func generate(
 	var exit_info := {}
 	if wanted_floor == 0:
 		exit_info = _open_exterior_exit(rooms, start_cell, occupied, rng, floor_of)
+		# Spawn in the exit room so the player stands at the main doorway, not
+		# buried in centre-room furniture (library bookcases, desks, rubble).
+		if exit_info.has("cell"):
+			start_cell = exit_info["cell"]
 	await get_tree().process_frame
 
 	progress.emit(0.96, "РАССТАНОВКА / PLACING ASSETS")
 	planned["active_floor"] = wanted_floor
-	# The player stands on the start-room centre. Every module dresses that
-	# middle with a dark rubble decal, which reads as a blot directly under
-	# their feet. Other rooms keep the dressing.
-	if wanted_floor == 0:
-		for room_info in rooms:
-			if room_info.get("cell") != cells[0]:
-				continue
-			var start_room := room_info.get("node") as Node3D
-			if start_room:
-				_clear_spawn_floor_dressing(start_room)
-			break
 	var layout := _describe_layout(
 		rooms,
 		cells,
@@ -293,6 +305,15 @@ func generate(
 		planned,
 		rng
 	)
+	if wanted_floor == 0:
+		var spawn_room: Node3D = null
+		for room_info in rooms:
+			if room_info.get("cell") != start_cell:
+				continue
+			spawn_room = room_info.get("node") as Node3D
+			break
+		if spawn_room != null:
+			_clear_spawn_floor_dressing(spawn_room, layout.get("start", spawn_room.global_position))
 	_add_locked_doors(container, layout, wanted_floor)
 	_add_stairwells(container, layout, wanted_floor)
 	_add_steam(container, layout, wanted_floor)
@@ -759,12 +780,17 @@ func _fits_span(cells: Array[Vector2i], candidate: Vector2i, max_span: int) -> b
 
 
 ## Livable types fill every cell that is not a boiler or a pipe gallery.
-## Stairwells overwrite afterwards, and they win if a steam cell was also a landing.
+## Stairwells overwrite afterwards. When the level hosts a library key, the
+## room on that wing lock's from-cell becomes the library.
 func _types_for_cells(
 	rng: RandomNumberGenerator,
 	cells: Array[Vector2i],
 	steam: Dictionary,
-	stairs: Array
+	stairs: Array,
+	floor_of: Dictionary = {},
+	zone_of: Dictionary = {},
+	level: int = 1,
+	locks: Array = []
 ) -> Dictionary:
 	var stair_cells := {}
 	for spec in stairs:
@@ -778,6 +804,13 @@ func _types_for_cells(
 		var gallery: Vector2i = steam["gallery_cell"]
 		if gallery != steam.get("boiler_cell") and not stair_cells.has(gallery):
 			reserved[gallery] = TYPE_PIPE_GALLERY
+	var steam_blocked := {}
+	if steam.has("from_cell"):
+		steam_blocked[steam["from_cell"]] = true
+		steam_blocked[steam["to_cell"]] = true
+	for spec in steam.get("sealed", []):
+		steam_blocked[spec.get("a", Vector2i.ZERO)] = true
+		steam_blocked[spec.get("b", Vector2i.ZERO)] = true
 	var open: Array[Vector2i] = []
 	for cell in cells:
 		if not reserved.has(cell):
@@ -788,12 +821,16 @@ func _types_for_cells(
 		type_of[open[index]] = bag[index]
 	for cell in reserved:
 		type_of[cell] = reserved[cell]
+	var start_cell := cells[0] if not cells.is_empty() else Vector2i.ZERO
+	_ensure_library(
+		type_of, open, stair_cells, rng, floor_of, zone_of, steam_blocked, start_cell, level, locks
+	)
 	return type_of
 
 
-## Deals the room types in whole cycles, so every level shows all four and no
-## type can dominate; the cycle order is shuffled first so which types get the
-## leftover slots still varies by seed.
+## Deals the room types in whole cycles, so every level shows all livable types
+## and no type can dominate; the cycle order is shuffled first so which types
+## get the leftover slots still varies by seed.
 func _assign_types(rng: RandomNumberGenerator, count: int) -> Array[String]:
 	var bag: Array[String] = []
 	while bag.size() < count:
@@ -805,6 +842,66 @@ func _assign_types(rng: RandomNumberGenerator, count: int) -> Array[String]:
 			bag.append(type_name)
 	_shuffle(bag, rng)
 	return bag
+
+
+## Library hosts the stage-1 sector key and the LockedDoor into the next wing.
+## Prefer the wing lock's from_cell so the door sits on the library wall.
+func _ensure_library(
+	type_of: Dictionary,
+	open: Array[Vector2i],
+	stair_cells: Dictionary,
+	rng: RandomNumberGenerator,
+	floor_of: Dictionary = {},
+	zone_of: Dictionary = {},
+	steam_blocked: Dictionary = {},
+	start_cell: Vector2i = Vector2i.ZERO,
+	level: int = 1,
+	locks: Array = []
+) -> void:
+	var key_stage := LevelRules.library_key_stage(level)
+	# Level 1 keeps library tiles as ordinary livable rooms.
+	if key_stage <= 0:
+		return
+
+	var host_zone := key_stage - 1
+	var existing: Array[Vector2i] = []
+	for cell in type_of:
+		if String(type_of[cell]) == TYPE_LIBRARY:
+			existing.append(cell)
+
+	# The LockedDoor into the next wing must sit on the library wall, so the
+	# library is the wing lock's from_cell (prefer not the growth-root spawn).
+	var candidates: Array[Vector2i] = []
+	var fallback: Array[Vector2i] = []
+	for lock in locks:
+		if int(lock.get("stage", 0)) != key_stage:
+			continue
+		if String(lock.get("kind", LOCK_KIND_WING)) == LOCK_KIND_STAIR:
+			continue
+		var from_cell: Vector2i = lock["from_cell"]
+		if not type_of.has(from_cell):
+			continue
+		if stair_cells.has(from_cell) or steam_blocked.has(from_cell):
+			continue
+		if String(type_of.get(from_cell, "")) in STEAM_ROOM_TYPES:
+			continue
+		if not zone_of.is_empty() and int(zone_of.get(from_cell, 0)) != host_zone:
+			continue
+		if from_cell == start_cell:
+			fallback.append(from_cell)
+		else:
+			candidates.append(from_cell)
+	var pool: Array[Vector2i] = candidates if not candidates.is_empty() else fallback
+	if pool.is_empty():
+		return
+
+	var pick: Vector2i = pool[rng.randi_range(0, pool.size() - 1)]
+	for cell in existing:
+		if cell == pick:
+			continue
+		if String(type_of.get(cell, "")) == TYPE_LIBRARY:
+			type_of[cell] = "storage"
+	type_of[pick] = TYPE_LIBRARY
 
 
 ## Array.shuffle() draws from the global RNG, which would break seed replay.
@@ -1211,12 +1308,13 @@ static func debris_covers_point(mesh_instance: MeshInstance3D, origin: Vector3, 
 	return dx * dx + dz * dz <= radius * radius
 
 
-## Drops rubble decals that cover the room centre. The player spawns there, and
-## the decal otherwise sits under their boots for the whole opening of the level.
-func _clear_spawn_floor_dressing(room: Node3D) -> void:
-	var origin := room.global_position
+## Drops rubble decals that cover the spawn point (just inside the exit door).
+func _clear_spawn_floor_dressing(room: Node3D, origin: Vector3 = Vector3.ZERO) -> void:
+	var at := origin
+	if not at.is_finite() or at == Vector3.ZERO:
+		at = room.global_position
 	var doomed: Array[Node] = []
-	_collect_spawn_debris(room, origin, doomed)
+	_collect_spawn_debris(room, at, doomed)
 	for node in doomed:
 		node.queue_free()
 
@@ -1525,7 +1623,12 @@ static func edge_is_steam_door(layout: Dictionary, a: Vector2i, b: Vector2i) -> 
 	return edge_key(a, b) == edge_key(steam["from_cell"], steam["to_cell"])
 
 
-## Steam still fills the breach, or a bypass was plugged and stays a wall.
+## Legacy helper — the metal library door is gone; wing locks use LockedDoor.
+static func edge_is_library_door(_layout: Dictionary, _a: Vector2i, _b: Vector2i) -> bool:
+	return false
+
+
+## Steam still fills the breach, or a bypass was plugged.
 static func edge_is_blocked(layout: Dictionary, a: Vector2i, b: Vector2i) -> bool:
 	return edge_is_sealed(layout, a, b) or edge_is_steam_door(layout, a, b)
 
@@ -1623,9 +1726,10 @@ func _add_monster_track(container: Node3D, track: Dictionary) -> void:
 
 
 ## Knocks the plug out of one outward-facing wall so the run has a way back out
-## into the ash. Usually that is the start room, but growth can bury the start
-## cell in the middle of the map, so the nearest room with an outward-facing wall
-## is used instead. Some room always has one.
+## into the ash. Usually that is the growth root, but the root can sit in the
+## middle of the map, so the nearest room with an outward-facing wall is used
+## instead. Prefer livable rooms over the dense library tile so the doorway
+## spawn is not boxed in by bookcases. Some room always has a free wall.
 func _open_exterior_exit(
 	rooms: Array[Dictionary],
 	start_cell: Vector2i,
@@ -1634,7 +1738,7 @@ func _open_exterior_exit(
 	floor_of: Dictionary = {}
 ) -> Dictionary:
 	var best: Dictionary = {}
-	var best_distance := 1 << 30
+	var best_score := 1 << 30
 	var floor_cells := _floor_occupied(occupied, floor_of, 0)
 	for room in rooms:
 		if room.get("node") == null:
@@ -1642,16 +1746,21 @@ func _open_exterior_exit(
 		var cell: Vector2i = room["cell"]
 		if int(floor_of.get(cell, 0)) != 0:
 			continue
-		var distance := absi(cell.x - start_cell.x) + absi(cell.y - start_cell.y)
-		if distance >= best_distance:
-			continue
 		var free_sides: Array[String] = []
 		for side in SIDES:
 			if not floor_cells.has(cell + SIDE_STEPS[side]):
 				free_sides.append(side)
 		if free_sides.is_empty():
 			continue
-		best_distance = distance
+		var distance := absi(cell.x - start_cell.x) + absi(cell.y - start_cell.y)
+		# Library furniture crowds the floor; demote it as an entrance room.
+		var library_penalty := 1000 if String(room.get("type", "")) == TYPE_LIBRARY else 0
+		var score := distance + library_penalty
+		if score > best_score:
+			continue
+		if score == best_score and not best.is_empty():
+			continue
+		best_score = score
 		# South reads as "the way you came in" under the isometric camera.
 		var side: String = (
 			"S" if free_sides.has("S")
@@ -1718,6 +1827,75 @@ func _sealed_edge_set(steam: Dictionary) -> Dictionary:
 	for spec in steam.get("sealed", []):
 		sealed[edge_key(spec["a"], spec["b"])] = true
 	return sealed
+
+
+func _library_cell_from_rooms(rooms: Array) -> Variant:
+	for room in rooms:
+		if String(room.get("type", "")) == TYPE_LIBRARY:
+			return room["cell"]
+	return null
+
+
+func _library_key_position(library_cell: Vector2i, lock: Dictionary, floor_of: Dictionary) -> Vector3:
+	var center := _world_of(library_cell, floor_of)
+	var side := String(lock.get("side", ""))
+	if SIDE_STEPS.has(side):
+		var outward: Vector2i = SIDE_STEPS[side]
+		# Stand inside the room, opposite the locked wing door.
+		center -= Vector3(outward.x, 0.0, outward.y) * (TILE * 0.28)
+	return center + Vector3(0.0, 0.05, 0.0)
+
+
+## Library metadata: the room that hosts the sector key and the wing LockedDoor
+## into the next zone. No secret bookshelf — same key/door system as other wings.
+func _plan_library_secret(
+	rooms: Array,
+	floor_of: Dictionary,
+	_active_floor: int,
+	level: int,
+	locks: Array = []
+) -> Dictionary:
+	var key_stage := LevelRules.library_key_stage(level)
+	if key_stage <= 0:
+		return {}
+	var library_room: Dictionary = {}
+	for room in rooms:
+		if String(room.get("type", "")) != TYPE_LIBRARY:
+			continue
+		library_room = room
+		break
+	if library_room.is_empty():
+		return {}
+	var cell: Vector2i = library_room["cell"]
+	var info := {
+		"cell": cell,
+		"floor": int(floor_of.get(cell, library_room.get("floor", 0))),
+		"key_stage": key_stage,
+		"unlock_stage": key_stage,
+	}
+	for lock in locks:
+		if int(lock.get("stage", 0)) != key_stage:
+			continue
+		if String(lock.get("kind", LOCK_KIND_WING)) == LOCK_KIND_STAIR:
+			continue
+		if lock.get("from_cell") != cell:
+			continue
+		info["from_cell"] = lock["from_cell"]
+		info["to_cell"] = lock["to_cell"]
+		info["side"] = lock["side"]
+		break
+	return info
+
+
+func _collect_bookcases(node: Node, into: Array[Node3D]) -> void:
+	if node is Node3D:
+		var name := String(node.name)
+		for prefix in BOOKCASE_NAME_PREFIXES:
+			if name.begins_with(prefix):
+				into.append(node as Node3D)
+				break
+	for child in node.get_children():
+		_collect_bookcases(child, into)
 
 
 func _add_steam(container: Node3D, layout: Dictionary, active_floor: int) -> void:
@@ -1796,9 +1974,12 @@ func _room_node(layout: Dictionary, cell: Vector2i) -> Node3D:
 func _valve_marker_position(layout: Dictionary, cell: Vector2i, floor_of: Dictionary) -> Vector3:
 	var node := _room_node(layout, cell)
 	if node:
-		var marker := find_child_by_name(node, "ValveUse")
-		if marker is Node3D:
-			return (marker as Node3D).global_position
+		# Boiler v2 shuts steam from the wall control panel; fall back to the
+		# legacy valve-use marker / gauge board on older tiles.
+		for marker_name in ["NoCol_ControlPanel", "ControlPanel", "ValveUse", "GaugeBoard"]:
+			var marker := find_child_by_name(node, marker_name)
+			if marker is Node3D:
+				return (marker as Node3D).global_position
 	return _world_of(cell, floor_of) + Vector3(0.0, 1.0, 0.0)
 
 
@@ -1936,22 +2117,47 @@ func _describe_layout(
 		reserved[steam["boiler_cell"]] = true
 
 	var key_specs: Array[Dictionary] = []
+	var library_stage := LevelRules.library_key_stage(level)
+	var library_cell_value = _library_cell_from_rooms(rooms)
+	var keyed_stages := {}
 	for lock in locks:
 		var stage := int(lock.get("stage", 1))
+		if keyed_stages.has(stage):
+			continue
 		var key_zone := stage - 1
-		var key_cells := _cells_in_zone(cells, zone_of, key_zone)
-		var avoid := reserved.duplicate()
-		avoid[lock["from_cell"]] = true
-		avoid[lock["to_cell"]] = true
-		var key_cell := _pick_item_cell(key_cells, start_cell, lock["from_cell"], avoid)
+		var key_cell: Vector2i
+		var key_position: Vector3
+		if stage == library_stage and library_cell_value is Vector2i:
+			# Key sits in the library, opposite the locked doorway so it is not
+			# buried in the door plug or the far-side wing.
+			key_cell = library_cell_value as Vector2i
+			var lib_lock: Dictionary = lock
+			for other in locks:
+				if int(other.get("stage", 0)) != stage:
+					continue
+				if String(other.get("kind", LOCK_KIND_WING)) == LOCK_KIND_STAIR:
+					continue
+				if other.get("from_cell") == key_cell:
+					lib_lock = other
+					break
+			key_position = _library_key_position(key_cell, lib_lock, floor_of)
+		else:
+			var key_cells := _cells_in_zone(cells, zone_of, key_zone)
+			var avoid := reserved.duplicate()
+			avoid[lock["from_cell"]] = true
+			avoid[lock["to_cell"]] = true
+			key_cell = _pick_item_cell(key_cells, start_cell, lock["from_cell"], avoid)
+			key_position = _world_of(key_cell, floor_of) + Vector3(0.0, 0.05, 0.0)
 		reserved[key_cell] = true
 		lock["key_cell"] = key_cell
+		keyed_stages[stage] = true
 		key_specs.append({
 			"stage": stage,
 			"cell": key_cell,
-			"position": _world_of(key_cell, floor_of) + Vector3(0.0, 0.05, 0.0),
+			"position": key_position,
 			"zone": key_zone,
 			"floor": int(floor_of.get(key_cell, 0)),
+			"in_library": stage == library_stage,
 		})
 
 	var enemies := _place_enemy_roster(
@@ -1964,11 +2170,18 @@ func _describe_layout(
 	var widow_cell := _first_enemy_cell(enemies, LevelRules.KIND_WIDOW, objective_cell)
 	var toad_cell := _first_enemy_cell(enemies, LevelRules.KIND_TOAD, start_cell)
 
-	var start_center := _world_of(start_cell, floor_of)
 	var exit_position := _world_of(exit_cell, floor_of)
+	var start_position := _world_of(start_cell, floor_of) + Vector3(0.0, 0.05, 0.0)
 	if not exit_side.is_empty():
-		# Sit in the doorway itself rather than the wall's centre line.
-		exit_position += Vector3(SIDE_STEPS[exit_side].x, 0.0, SIDE_STEPS[exit_side].y) * (TILE * 0.5 - 0.4)
+		var outward: Vector2i = SIDE_STEPS[exit_side]
+		# ExitZone sits in the doorway itself.
+		exit_position += Vector3(outward.x, 0.0, outward.y) * (TILE * 0.5 - 0.4)
+		# Player stands just inside that doorway, clear of centre-room clutter.
+		start_position = (
+			_world_of(exit_cell, floor_of)
+			+ Vector3(outward.x, 0.0, outward.y) * (TILE * 0.5 - SPAWN_EXIT_INSET)
+			+ Vector3(0.0, 0.05, 0.0)
+		)
 
 	var room_summaries: Array[Dictionary] = []
 	for room in rooms:
@@ -2030,6 +2243,8 @@ func _describe_layout(
 	if steam.has("boiler_cell"):
 		steam["valve_position"] = _world_of(steam["boiler_cell"], floor_of) + Vector3(0.0, 1.0, 0.0)
 
+	var library := _plan_library_secret(rooms, floor_of, active_floor, level, locks)
+
 	return {
 		"seed": level_seed,
 		"level": level,
@@ -2037,7 +2252,7 @@ func _describe_layout(
 		"floor_count": LevelRules.floor_count(level),
 		"rooms": room_summaries,
 		"start_cell": start_cell,
-		"start": start_center + Vector3(0.0, 0.05, 0.0),
+		"start": start_position,
 		"exit_side": exit_side,
 		"exit_cell": exit_cell,
 		"exit": exit_position,
@@ -2061,6 +2276,7 @@ func _describe_layout(
 		"locks": locks,
 		"stairs": stair_specs,
 		"steam": steam,
+		"library": library,
 		"zones": zone_of,
 		"floors": floor_of,
 		"objectives": LevelRules.objectives(level),

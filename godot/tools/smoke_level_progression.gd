@@ -60,12 +60,15 @@ func _run() -> void:
 
 	var reach1_ok := _check_steam(level1["layout"], true)
 	var reach2_blocked := not _reachable_without_locks(level2["layout"], level2["layout"]["objective_cell"])
-	var reach2_key := _reachable_without_locks(level2["layout"], (level2["layout"]["keys"] as Array)[0]["cell"])
+	var library_cell: Vector2i = (level2["layout"].get("library", {}) as Dictionary).get(
+		"cell", level2["layout"]["start_cell"]
+	)
+	var reach2_library := _reachable_without_locks(level2["layout"], library_cell)
 	var steam_higher_ok := _check_steam(level2["layout"], false) and _check_steam(level3["layout"], false)
 	print(
 		"steam_l1_ok=", reach1_ok,
 		" mission_l2_locked_ok=", reach2_blocked,
-		" key_l2_open_ok=", reach2_key,
+		" library_l2_open_ok=", reach2_library,
 		" steam_higher_ok=", steam_higher_ok
 	)
 
@@ -115,7 +118,7 @@ func _run() -> void:
 		and zones3_ok
 		and reach1_ok
 		and reach2_blocked
-		and reach2_key
+		and reach2_library
 		and steam_higher_ok
 		and floors_ok
 		and stairs_ok
@@ -152,16 +155,17 @@ func _same_ints(got: Array, want: Array) -> bool:
 
 
 func _check_formulas() -> bool:
+	# slime, hare, tank, void, tarantula, widow, toad
 	var expected := {
-		1: [1, 0, 0, 0, 0, 0],
-		2: [1, 1, 0, 0, 0, 0],
-		3: [1, 1, 1, 0, 0, 0],
-		4: [1, 1, 1, 1, 0, 0],
-		5: [1, 1, 1, 1, 1, 0],
-		6: [1, 1, 1, 1, 1, 1],
-		7: [2, 1, 1, 1, 1, 1],
-		8: [2, 2, 1, 1, 1, 1],
-		9: [2, 2, 2, 1, 1, 1],
+		1: [1, 0, 0, 0, 0, 0, 0],
+		2: [1, 1, 0, 0, 0, 0, 0],
+		3: [1, 1, 1, 0, 0, 0, 0],
+		4: [1, 1, 1, 1, 0, 0, 0],
+		5: [1, 1, 1, 1, 1, 0, 0],
+		6: [1, 1, 1, 1, 1, 1, 0],
+		7: [1, 1, 1, 1, 1, 1, 1],
+		8: [2, 1, 1, 1, 1, 1, 1],
+		9: [2, 2, 1, 1, 1, 1, 1],
 	}
 	var ok := true
 	for level in expected:
@@ -169,20 +173,33 @@ func _check_formulas() -> bool:
 			LevelRules.slime_count(level),
 			LevelRules.hare_count(level),
 			LevelRules.tank_count(level),
+			LevelRules.void_count(level),
 			LevelRules.tarantula_count(level),
 			LevelRules.widow_count(level),
 			LevelRules.toad_count(level),
 		]
 		var want: Array = expected[level]
 		var match_ok: bool = got == want and LevelRules.counts_match_cycle(level)
+		var library_key_listed := false
 		var valve_listed := false
 		for spec in LevelRules.objectives(level):
-			if String(spec.get("kind", "")) == LevelRules.KIND_VALVE:
+			var kind := String(spec.get("kind", ""))
+			if (
+				kind == LevelRules.KIND_KEY
+				and int(spec.get("stage", 0)) == LevelRules.library_key_stage(level)
+				and LevelRules.library_key_stage(level) > 0
+			):
+				library_key_listed = true
+			if kind == LevelRules.KIND_VALVE:
 				valve_listed = true
+		var want_library_key := LevelRules.library_key_stage(level) > 0
+		var want_count := LevelRules.key_count(level) + 2
 		var obj_ok: bool = (
-			LevelRules.objective_count(level) == level + 1
+			LevelRules.objective_count(level) == want_count
 			and LevelRules.key_count(level) == maxi(level - 1, 0)
-			and LevelRules.objectives(level).size() == level + 1
+			and LevelRules.locked_door_count(level) == maxi(level - 1, 0)
+			and LevelRules.objectives(level).size() == want_count
+			and library_key_listed == want_library_key
 			and valve_listed
 		)
 		var floors_ok: bool = (
@@ -225,6 +242,7 @@ func _roster_matches(layout: Dictionary, level: int) -> bool:
 		LevelRules.KIND_SLIME: 0,
 		LevelRules.KIND_HARE: 0,
 		LevelRules.KIND_TANK: 0,
+		LevelRules.KIND_VOID: 0,
 		LevelRules.KIND_TARANTULA: 0,
 		LevelRules.KIND_WIDOW: 0,
 		LevelRules.KIND_TOAD: 0,
@@ -245,6 +263,7 @@ func _roster_matches(layout: Dictionary, level: int) -> bool:
 		int(counts[LevelRules.KIND_SLIME]) == LevelRules.slime_count(level)
 		and int(counts[LevelRules.KIND_HARE]) == LevelRules.hare_count(level)
 		and int(counts[LevelRules.KIND_TANK]) == LevelRules.tank_count(level)
+		and int(counts[LevelRules.KIND_VOID]) == LevelRules.void_count(level)
 		and int(counts[LevelRules.KIND_TARANTULA]) == LevelRules.tarantula_count(level)
 		and int(counts[LevelRules.KIND_WIDOW]) == LevelRules.widow_count(level)
 		and int(counts[LevelRules.KIND_TOAD]) == LevelRules.toad_count(level)
@@ -257,20 +276,37 @@ func _objectives_match(layout: Dictionary, level: int) -> bool:
 	var keys: Array = layout.get("keys", [])
 	var locks: Array = layout.get("locks", [])
 	var objectives: Array = layout.get("objectives", [])
-	var valve := 0
-	for spec in objectives:
-		if String(spec.get("kind", "")) == LevelRules.KIND_VALVE:
-			valve += 1
-	var ok := (
-		keys.size() == LevelRules.key_count(level)
-		and locks.size() >= LevelRules.locked_door_count(level)
-		and objectives.size() == LevelRules.objective_count(level)
-		and valve == 1
-	)
+	var library: Dictionary = layout.get("library", {})
+	var library_key := 0
+	for spec in keys:
+		if bool(spec.get("in_library", false)):
+			library_key += 1
+	var want_library: int = 1 if LevelRules.library_key_stage(level) > 0 else 0
+	var library_edge_ok: bool = true
+	if want_library > 0:
+		library_edge_ok = (
+			not library.is_empty()
+			and library.has("from_cell")
+			and library.has("to_cell")
+			and library.get("cell") == library.get("from_cell")
+		)
+	var ok: bool = true
+	if keys.size() != LevelRules.key_count(level):
+		ok = false
+	if locks.size() < LevelRules.locked_door_count(level):
+		ok = false
+	if objectives.size() != LevelRules.objective_count(level):
+		ok = false
+	if library_key != want_library:
+		ok = false
+	if not library_edge_ok:
+		ok = false
 	print(
 		"objectives level=", level,
 		" keys=", keys.size(),
 		" locks=", locks.size(),
+		" library_key=", library_key,
+		" edge=", library_edge_ok,
 		" list=", objectives.size(),
 		" ok=", ok
 	)
@@ -336,10 +372,24 @@ func _check_level1_no_start_web() -> bool:
 			on_start = true
 	var clear := webs.is_empty() and not on_start
 	var spawn_clear := _spawn_floor_is_clear(main)
+	var player := main.get_node_or_null("Player") as Node3D
+	var exit_pos: Vector3 = layout.get("exit", Vector3.ZERO)
+	var spawn_at_exit := false
+	if player != null:
+		var gap := Vector2(
+			player.global_position.x - exit_pos.x,
+			player.global_position.z - exit_pos.z
+		).length()
+		spawn_at_exit = (
+			start == layout.get("exit_cell", Vector2i(-999, -999))
+			and gap > 0.5
+			and gap < 2.0
+		)
+		print("level1_spawn_at_exit=", spawn_at_exit, " gap=", gap)
 	print("level1_webs=", webs.size(), " on_start=", on_start, " start=", start)
 	print("level1_spawn_clear_ok=", spawn_clear)
 	main.queue_free()
-	return clear and spawn_clear
+	return clear and spawn_clear and spawn_at_exit
 
 
 func _spawn_floor_is_clear(main: Node3D) -> bool:
@@ -382,7 +432,10 @@ func _check_chained_zones(layout: Dictionary, level: int) -> bool:
 	var zones: Dictionary = layout.get("zones", {})
 	var locks: Array = layout.get("locks", [])
 	var keys: Array = layout.get("keys", [])
-	if locks.size() < level - 1 or keys.size() != level - 1:
+	if locks.size() < LevelRules.locked_door_count(level):
+		return false
+	if keys.size() != LevelRules.key_count(level):
+		print("key_count_wrong level=", level, " keys=", keys.size(), " want=", LevelRules.key_count(level))
 		return false
 	var stages := {}
 	for lock in locks:
@@ -407,12 +460,24 @@ func _check_chained_zones(layout: Dictionary, level: int) -> bool:
 		if int(zones.get(lock["to_cell"], -1)) != stage:
 			print("lock_to_wrong stage=", stage, " zone=", zones.get(lock["to_cell"], -1))
 			return false
+	var library_stage := LevelRules.library_key_stage(level)
+	var library: Dictionary = layout.get("library", {})
 	for key in keys:
 		var stage := int(key.get("stage", 0))
-		if int(zones.get(key["cell"], -1)) != stage - 1:
+		if stage == library_stage:
+			if not bool(key.get("in_library", false)):
+				print("library_key_not_flagged stage=", stage)
+				return false
+			if key.get("cell") != library.get("cell"):
+				print("library_key_wrong_cell stage=", stage, " cell=", key.get("cell"))
+				return false
+			if library.get("from_cell") != library.get("cell"):
+				print("library_lock_not_on_room stage=", stage)
+				return false
+		elif int(zones.get(key["cell"], -1)) != stage - 1:
 			print("key_zone_wrong stage=", stage, " zone=", zones.get(key["cell"], -1))
 			return false
-		if key["cell"] == layout.get("start_cell"):
+		if key["cell"] == layout.get("start_cell") and stage != library_stage:
 			print("key_on_start stage=", stage)
 			return false
 	return true
@@ -519,7 +584,12 @@ func _reachable_past(
 
 
 func _panel_stand(main: Node3D, valve: SteamValve) -> Vector3:
-	var board := MapGenerator.find_child_by_name(main.get_node("GeneratedMap"), "GaugeBoard") as Node3D
+	var board: Node3D = null
+	var map_root := main.get_node("GeneratedMap")
+	for panel_name in ["NoCol_ControlPanel", "ControlPanel", "GaugeBoard"]:
+		board = MapGenerator.find_child_by_name(map_root, panel_name) as Node3D
+		if board != null:
+			break
 	if board == null:
 		var fallback := valve.global_position
 		fallback.y = 0.05
@@ -632,11 +702,19 @@ func _check_live_steam() -> bool:
 	if lamp != null:
 		lamp_mat = lamp.material_override as StandardMaterial3D
 	var lamp_green := lamp_mat != null and lamp_mat.emission.g > lamp_mat.emission.r and lamp_mat.emission_energy_multiplier > 3.0
+	# Boiler v2 dropped the legacy gauge lamp; treat a missing gauge as OK.
 	var gauge := MapGenerator.find_child_by_name(main.get_node("GeneratedMap"), "NoCol_Gauge_1") as MeshInstance3D
 	var gauge_mat: StandardMaterial3D = null
 	if gauge != null:
 		gauge_mat = gauge.material_override as StandardMaterial3D
-	var gauge_green := gauge_mat != null and gauge_mat.emission.g > gauge_mat.emission.r and gauge_mat.emission_energy_multiplier > 3.0
+	var gauge_green := (
+		gauge == null
+		or (
+			gauge_mat != null
+			and gauge_mat.emission.g > gauge_mat.emission.r
+			and gauge_mat.emission_energy_multiplier > 3.0
+		)
+	)
 	var status := valve.get_node_or_null("PanelStatusLight") as MeshInstance3D
 	var status_mat: StandardMaterial3D = null
 	if status != null:
@@ -721,7 +799,7 @@ func _check_live_level_2() -> bool:
 
 	var layout: Dictionary = main.get_layout()
 	var doors: Array = main.locked_doors()
-	var keys_ok: bool = (layout.get("keys", []) as Array).size() == 1
+	var keys_ok: bool = (layout.get("keys", []) as Array).size() == LevelRules.key_count(2)
 	var door_ok: bool = doors.size() >= 1
 	for door in doors:
 		if not (door as LockedDoor).is_locked():
@@ -730,6 +808,7 @@ func _check_live_level_2() -> bool:
 		LevelRules.KIND_SLIME: 1,
 		LevelRules.KIND_HARE: 1,
 		LevelRules.KIND_TANK: 0,
+		LevelRules.KIND_VOID: 0,
 		LevelRules.KIND_TARANTULA: 0,
 		LevelRules.KIND_WIDOW: 0,
 		LevelRules.KIND_TOAD: 0,
@@ -740,25 +819,45 @@ func _check_live_level_2() -> bool:
 	if main.has_method("park_monsters"):
 		main.park_monsters()
 
-	var lock: Dictionary = (layout.get("locks", []) as Array)[0]
+	var library: Dictionary = layout.get("library", {})
+	var lock: Dictionary = {}
+	for spec in layout.get("locks", []):
+		if int(spec.get("stage", 0)) != 1:
+			continue
+		if String(spec.get("kind", "")) == MapGenerator.LOCK_KIND_STAIR:
+			continue
+		if spec.get("from_cell") == library.get("cell"):
+			lock = spec
+			break
+	if lock.is_empty() and not (layout.get("locks", []) as Array).is_empty():
+		lock = (layout.get("locks", []) as Array)[0]
 	var from_cell: Vector2i = lock["from_cell"]
 	var to_cell: Vector2i = lock["to_cell"]
 	var from_center := MapGenerator.cell_to_world(from_cell)
 	var to_center := MapGenerator.cell_to_world(to_cell)
 	var walk_dir := (to_center - from_center).normalized()
+	# Stand just inside the locked doorway — library furniture fills the room
+	# centre, so walking from mid-room never reaches the wing door.
+	var door_stand: Vector3 = (from_center + to_center) * 0.5 - walk_dir * 1.25
+	door_stand.y = 0.05
 	player.set_physics_process(false)
-	await _walk_from(player, from_center, walk_dir, WALK_STEPS)
+	await _walk_from(player, door_stand, walk_dir, WALK_STEPS)
 	var blocked := _planar(player.global_position, to_center) > MapGenerator.TILE * 0.5
 	print("live_blocked_ok=", blocked, " dist=", _planar(player.global_position, to_center))
 
-	var key: Area3D = main.get_node_or_null("Key_1")
-	if key == null:
-		print("live_key_missing")
+	var library_edge_ok: bool = (
+		library.get("cell") == from_cell
+		and library.has("to_cell")
+		and library.get("to_cell") == to_cell
+	)
+	var key_node: Area3D = main.get_node_or_null("Key_1") as Area3D
+	if key_node == null:
+		print("live_library_key_missing")
 		main.queue_free()
 		OS.set_environment("NW_LEVEL", "")
 		return false
 	player.set_physics_process(true)
-	player.global_position = key.global_position + Vector3(0.8, 0.05, 0.0)
+	player.global_position = key_node.global_position + Vector3(0.8, 0.05, 0.0)
 	player.velocity = Vector3.ZERO
 	await create_timer(0.05).timeout
 	Input.action_press("interact")
@@ -767,15 +866,19 @@ func _check_live_level_2() -> bool:
 	Input.action_release("interact")
 	await create_timer(0.1).timeout
 
-	var key_taken: bool = main.collected_key_stages().has(1)
+	var key_ok: bool = main.collected_key_stages().has(1)
 	var unlocked := doors.size() >= 1
 	for door in doors:
 		if int((door as LockedDoor).stage) == 1 and (door as LockedDoor).is_locked():
 			unlocked = false
-	print("live_key_taken=", key_taken, " unlocked=", unlocked)
+	print(
+		"live_library_key_ok=", key_ok,
+		" unlocked=", unlocked,
+		" edge=", library_edge_ok
+	)
 
 	player.set_physics_process(false)
-	await _walk_from(player, from_center, walk_dir, WALK_STEPS)
+	await _walk_from(player, door_stand, walk_dir, WALK_STEPS)
 	var opened := _planar(player.global_position, to_center) < MapGenerator.TILE * 0.5
 	print("live_opened_ok=", opened, " dist=", _planar(player.global_position, to_center))
 
@@ -797,7 +900,17 @@ func _check_live_level_2() -> bool:
 	await create_timer(0.05).timeout
 	OS.set_environment("NW_LEVEL", "")
 	OS.set_environment("NW_LEVEL_SEED", "")
-	return keys_ok and door_ok and roster_ok and blocked and key_taken and unlocked and opened and mission_ok
+	return (
+		keys_ok
+		and door_ok
+		and roster_ok
+		and blocked
+		and library_edge_ok
+		and key_ok
+		and unlocked
+		and opened
+		and mission_ok
+	)
 
 
 func _count_active_kinds(main: Node) -> Dictionary:
@@ -805,6 +918,7 @@ func _count_active_kinds(main: Node) -> Dictionary:
 		LevelRules.KIND_SLIME: 0,
 		LevelRules.KIND_HARE: 0,
 		LevelRules.KIND_TANK: 0,
+		LevelRules.KIND_VOID: 0,
 		LevelRules.KIND_TARANTULA: 0,
 		LevelRules.KIND_WIDOW: 0,
 		LevelRules.KIND_TOAD: 0,
@@ -953,7 +1067,7 @@ func _check_live_floor_change() -> bool:
 		return false
 
 	var blocked := not up.can_use()
-	for stage in range(1, LevelRules.key_count(3) + 1):
+	for stage in range(1, LevelRules.locked_door_count(3) + 1):
 		main.unlock_stage(stage)
 	var unlocked := up.can_use()
 	print("live_stair_lock blocked=", blocked, " unlocked=", unlocked)

@@ -12,16 +12,17 @@ func _initialize() -> void:
 
 func _build() -> void:
 	var player_path := "res://assets/characters/Meshy_AI_Gulag_Winter_Warden_All_Animations.glb"
-	var monster_path := "res://assets/characters/enemy_monster.glb"
+	var monster_path := "res://assets/characters/IrradiatedMaskMonster.glb"
 	# Rigged exports. The static SovietSlime.glb / SovietTankMan.glb in blender/
 	# have no clips; these are the animated twins.
 	var slime_path := "res://assets/characters/SovietSlime.glb"
 	var tank_path := "res://assets/characters/SovietTankMan.glb"
+	var void_path := "res://assets/characters/Void_walking.glb"
 	var tarantula_path := "res://assets/characters/Tarantula.glb"
 	var widow_path := "res://assets/characters/enemy_widow.glb"
 	var toad_path := "res://assets/characters/Toad.glb"
 
-	for path in [player_path, monster_path, slime_path, tank_path, tarantula_path, widow_path, toad_path]:
+	for path in [player_path, monster_path, slime_path, tank_path, void_path, tarantula_path, widow_path, toad_path]:
 		if not ResourceLoader.exists(path):
 			push_error("Missing: " + path)
 			quit(1)
@@ -41,12 +42,11 @@ func _build() -> void:
 	world_env.name = "WorldEnvironment"
 	var env := Environment.new()
 	env.background_mode = Environment.BG_COLOR
-	# Dim ambient (9% energy) so the map is faintly readable with the
-	# flashlight off. The sun stays dark; hold RMB for the beam.
+	# Pitch black: flashlight + green objective lights only.
 	env.background_color = Color(0.0, 0.0, 0.0)
 	env.ambient_light_source = Environment.AMBIENT_SOURCE_COLOR
-	env.ambient_light_color = Color(0.55, 0.60, 0.58)
-	env.ambient_light_energy = 0.09
+	env.ambient_light_color = Color(0.0, 0.0, 0.0)
+	env.ambient_light_energy = 0.0
 	env.reflected_light_source = Environment.REFLECTION_SOURCE_DISABLED
 	world_env.environment = env
 	main.add_child(world_env)
@@ -103,30 +103,37 @@ func _build() -> void:
 	model.add_child(character)
 	character.owner = main
 
-	var monster := CharacterBody3D.new()
-	monster.name = "Monster"
-	monster.set_script(load("res://scripts/Monster.gd"))
-	monster.collision_layer = 4
-	monster.collision_mask = 1
-	monster.position = Vector3(0.0, 0.05, -MapGenerator.TILE)
-	main.add_child(monster)
-	monster.owner = main
-
-	var mcol := CollisionShape3D.new()
-	mcol.name = "CollisionShape3D"
-	var mcapsule := CapsuleShape3D.new()
-	mcapsule.radius = 0.42
-	mcapsule.height = 1.35
-	mcol.shape = mcapsule
-	mcol.position = Vector3(0, 1.0, 0)
-	monster.add_child(mcol)
-	mcol.owner = main
-
-	var monster_mesh: Node3D = (load(monster_path) as PackedScene).instantiate()
-	monster_mesh.name = "MonsterMesh"
-	monster_mesh.rotation.y = PI
-	monster.add_child(monster_mesh)
-	monster_mesh.owner = main
+	# Radiation-mask stalker: indestructible, freezes in the flashlight.
+	_add_enemy(
+		main,
+		"Monster",
+		monster_path,
+		{
+			"move_speed": 3.6,
+			"max_health": 100.0,
+			"touch_damage": 100.0,
+			"attack_interval": 0.5,
+			"proximity_radius": 3.0,
+			"detect_range": 16.0,
+			"health_bar_height": 2.1,
+			"touch_radius": 0.95,
+			"eye_height": 1.55,
+			"section_dwell_time": 28.0,
+			"indestructible": true,
+			"show_health_bar": false,
+			"walk_cycle_metres": 1.6,
+		},
+		0.38,
+		1.55,
+		0.95,
+		"res://scripts/Stalker.gd",
+		1.0,
+		PI
+	)
+	# Mesh is centered on origin (~1.9 m tall); lift so feet sit on the floor.
+	var stalker_mesh := main.get_node_or_null("Monster/MonsterMesh/Character") as Node3D
+	if stalker_mesh:
+		stalker_mesh.position.y = 0.95
 
 	# SovietSlime rests at ~0.62 m tall and 1.9 m long. The capsule stays narrow
 	# enough that a fully grown (2x) slime still clears the 2.6 m doorway.
@@ -135,9 +142,11 @@ func _build() -> void:
 		"Slime",
 		slime_path,
 		{
-			"move_speed": 3.9,
+			"move_speed": 1.95,
 			"max_health": 45.0,
-			"touch_damage": 35.0,
+			"touch_damage": 5.0,
+			"attack_interval": 0.25,
+			"fast_attacker": true,
 			"proximity_radius": 2.4,
 			"detect_range": 12.0,
 			"health_bar_height": 0.9,
@@ -146,6 +155,7 @@ func _build() -> void:
 			"section_dwell_time": 16.0,
 			"idle_clip": "Idle",
 			"walk_clip": "Move",
+			"attack_clip": "Move",
 			"walk_cycle_metres": 2.6,
 			"grow_and_split": true,
 			"grow_duration": 30.0,
@@ -156,7 +166,7 @@ func _build() -> void:
 		0.58
 	)
 	_save_packed_subtree(main.get_node("Slime"), "res://scenes/Slime.tscn")
-	# SovietTankMan is 1.7 m tall. Walk loops; Smash plays on touch.
+	# SovietTankMan is 1.7 m tall. Walk loops; Smash plays on attack.
 	_add_enemy(
 		main,
 		"Tank",
@@ -166,6 +176,7 @@ func _build() -> void:
 			"turn_speed": 4.6,
 			"max_health": 320.0,
 			"touch_damage": 100.0,
+			"attack_interval": 0.5,
 			"proximity_radius": 4.2,
 			"detect_range": 14.0,
 			"health_bar_height": 1.95,
@@ -181,6 +192,35 @@ func _build() -> void:
 		1.7,
 		0.85
 	)
+	# The Void: mid-tier ranged laser that pulls the player into the void.
+	_add_enemy(
+		main,
+		"Void",
+		void_path,
+		{
+			"move_speed": 3.1,
+			"turn_speed": 6.0,
+			"max_health": 160.0,
+			"touch_damage": 25.0,
+			"attack_interval": 0.5,
+			"proximity_radius": 3.4,
+			"detect_range": 15.0,
+			"health_bar_height": 2.1,
+			"touch_radius": 0.95,
+			"eye_height": 1.5,
+			"section_dwell_time": 26.0,
+			"idle_clip": "Idle",
+			"walk_clip": "walking_man",
+			"attack_clip": "walking_man",
+			"walk_cycle_metres": 2.0,
+		},
+		0.4,
+		1.6,
+		0.9,
+		"res://scripts/VoidMonster.gd",
+		1.0,
+		PI
+	)
 	# Native leg span is 3.28 m, wider than the 2.6 m doorway. 0.67 brings the
 	# span to ~2.2 m and the height to ~1.14 m. Walk / Bite / WebWeave.
 	_add_enemy(
@@ -192,6 +232,7 @@ func _build() -> void:
 			"turn_speed": 7.2,
 			"max_health": 100.0,
 			"touch_damage": 50.0,
+			"attack_interval": 0.5,
 			"proximity_radius": 3.2,
 			"detect_range": 14.0,
 			"health_bar_height": 1.3,
@@ -221,6 +262,7 @@ func _build() -> void:
 			"turn_speed": 6.4,
 			"max_health": 250.0,
 			"touch_damage": 100.0,
+			"attack_interval": 0.5,
 			"proximity_radius": 3.6,
 			"detect_range": 15.0,
 			"health_bar_height": 2.2,
@@ -229,6 +271,7 @@ func _build() -> void:
 			"section_dwell_time": 36.0,
 			"idle_clip": "Idle",
 			"walk_clip": "Walk",
+			"attack_clip": "Walk",
 			"death_clip": "Die",
 			"walk_cycle_metres": 1.5,
 		},
@@ -249,6 +292,7 @@ func _build() -> void:
 			"turn_speed": 5.4,
 			"max_health": 200.0,
 			"touch_damage": 0.0,
+			"attack_interval": 0.5,
 			"proximity_radius": 0.1,
 			"detect_range": 0.1,
 			"health_bar_height": 1.95,

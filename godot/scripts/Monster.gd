@@ -4,9 +4,9 @@ extends CharacterBody3D
 ## centres), detects nearby players in a radius, and chases on FOV + line of
 ## sight, when shot, or while the flashlight beam is on them. It path-follows
 ## the track so walls and furniture do not trap it. After losing detection for
-## `lose_sight_grace` seconds it returns to the track. Touching the player
-## deals lethal damage. The health bar shows only while this body is inside
-## the flashlight beam.
+## `lose_sight_grace` seconds it returns to the track. Damage uses an attack
+## swing on a cooldown (not instant touch). Dead monsters despawn. Off-floor
+## bodies keep patrolling through MonsterTracker.
 
 enum AiMode { PATROL, CHASE, RETURN }
 
@@ -24,10 +24,15 @@ enum AiMode { PATROL, CHASE, RETURN }
 @export var stride_angle_deg: float = 34.0
 @export var max_health: float = 100.0
 @export var touch_damage: float = 100.0
+## Seconds between melee swings. Fast monsters (slime) use 0.25; others 0.5.
+@export var attack_interval: float = 0.5
+@export var fast_attacker: bool = false
 @export var health_bar_height: float = 2.35
 @export var section_dwell_time: float = 30.0
 @export var room_arrive_distance: float = 0.7
 @export var touch_radius: float = 0.95
+@export var indestructible: bool = false
+@export var show_health_bar: bool = true
 ## Added to travel yaw so imported meshes that rest on -Z face the walk direction.
 @export var facing_yaw_offset: float = PI
 ## Optional AnimationPlayer clips. Empty strings keep the procedural pivot walk.
@@ -98,10 +103,20 @@ var _touch_shape_node: CollisionShape3D
 var _touch_sphere: SphereShape3D
 var _base_touch_sphere_radius: float = 0.95
 var _base_touch_pos: Vector3 = Vector3.ZERO
+var _player_in_touch: bool = false
+var _attack_cooldown_left: float = 0.0
+var _tracker: MonsterTracker
+var _off_floor: bool = false
+var _current_floor: int = 0
+var _despawn_armed: bool = false
 
 func _ready() -> void:
 	add_to_group("monster")
 	health = max_health
+	if fast_attacker or grow_and_split:
+		attack_interval = 0.25
+	elif attack_interval <= 0.0:
+		attack_interval = 0.5
 	_rng.randomize()
 	player = get_tree().get_first_node_in_group("player") as CharacterBody3D
 	if player == null:
@@ -111,7 +126,8 @@ func _ready() -> void:
 	pivot_leg_l = _find_node_by_name(visual, "Pivot_Leg_L") as Node3D
 	pivot_leg_r = _find_node_by_name(visual, "Pivot_Leg_R") as Node3D
 	_setup_animations()
-	_setup_health_bar()
+	if show_health_bar and not indestructible:
+		_setup_health_bar()
 	_setup_touch_area()
 	if grow_and_split:
 		add_to_group("slime")
@@ -121,8 +137,9 @@ func _physics_process(delta: float) -> void:
 	if not _alive:
 		velocity.x = 0.0
 		velocity.z = 0.0
-		_apply_gravity(delta)
-		move_and_slide()
+		if not _off_floor:
+			_apply_gravity(delta)
+			move_and_slide()
 		_animate_walk(_walk_phase, 0.0)
 		return
 
@@ -132,16 +149,22 @@ func _physics_process(delta: float) -> void:
 		velocity.z = 0.0
 		return
 
+	_attack_cooldown_left = maxf(0.0, _attack_cooldown_left - delta)
+	_try_melee_attack()
+	_try_use_stairs()
+
 	if player == null or not is_instance_valid(player):
 		player = get_tree().get_first_node_in_group("player") as CharacterBody3D
 		_patrol(delta)
-		_apply_gravity(delta)
-		move_and_slide()
+		_finish_move(delta)
 		return
 
-	_near_player = _is_player_in_proximity()
-	var lit := _lit_by_flashlight()
-	_seeing_player = _force_detect or _near_player or _can_see_player() or lit or _provoked
+	var can_sense := _same_floor_as_player() and not _off_floor
+	_near_player = can_sense and _is_player_in_proximity()
+	var lit := can_sense and _lit_by_flashlight()
+	_seeing_player = can_sense and (
+		_force_detect or _near_player or _can_see_player() or lit or _provoked
+	)
 	if _seeing_player and _allows_chase():
 		_provoked = false
 		_time_since_seen = 0.0
@@ -165,13 +188,14 @@ func _physics_process(delta: float) -> void:
 		_:
 			_patrol(delta)
 
-	_apply_gravity(delta)
-	move_and_slide()
-	_update_stuck_recovery(delta)
-	_update_health_bar_visibility()
+	_finish_move(delta)
+	if not _off_floor:
+		_update_stuck_recovery(delta)
+		_update_health_bar_visibility()
+	_refresh_room_cell()
 
 func take_damage(amount: float) -> void:
-	if not _alive or amount <= 0.0:
+	if not _alive or amount <= 0.0 or indestructible:
 		return
 	health = maxf(0.0, health - amount)
 	if _health_bar:
@@ -186,6 +210,7 @@ func take_damage(amount: float) -> void:
 		_anim_locked = true
 		_play_clip(death_clip, 1.0)
 		_on_died()
+		_begin_despawn()
 	else:
 		_play_clip(hit_clip, 1.0)
 
@@ -283,10 +308,11 @@ func reveal_health_bar() -> void:
 	_update_health_bar_visibility()
 
 func _update_health_bar_visibility() -> void:
+	if not show_health_bar or indestructible or _health_bar == null:
+		return
 	var lit := _lit_by_flashlight()
 	_health_revealed = lit
-	if _health_bar:
-		_health_bar.visible = lit
+	_health_bar.visible = lit
 
 
 func _lit_by_flashlight() -> bool:
@@ -315,6 +341,8 @@ func _setup_touch_area() -> void:
 	if existing != null:
 		if not existing.body_entered.is_connected(_on_touch_body_entered):
 			existing.body_entered.connect(_on_touch_body_entered)
+		if not existing.body_exited.is_connected(_on_touch_body_exited):
+			existing.body_exited.connect(_on_touch_body_exited)
 		return
 	var area := Area3D.new()
 	area.name = "TouchArea"
@@ -331,15 +359,176 @@ func _setup_touch_area() -> void:
 	area.add_child(shape)
 	add_child(area)
 	area.body_entered.connect(_on_touch_body_entered)
+	area.body_exited.connect(_on_touch_body_exited)
 
 func _on_touch_body_entered(body: Node3D) -> void:
 	if not _alive:
 		return
 	if body == null or not body.is_in_group("player"):
 		return
-	if body.has_method("take_damage"):
-		body.take_damage(touch_damage)
+	_player_in_touch = true
+
+func _on_touch_body_exited(body: Node3D) -> void:
+	if body == null or not body.is_in_group("player"):
+		return
+	_player_in_touch = false
+
+
+func _try_melee_attack() -> void:
+	if not _alive or _off_floor or touch_damage <= 0.0:
+		return
+	if not _player_in_touch or not _allows_attack():
+		return
+	if not _same_floor_as_player():
+		return
+	if _attack_cooldown_left > 0.0:
+		return
+	if player == null or not is_instance_valid(player):
+		return
+	if player.has_method("is_alive") and not player.is_alive():
+		return
+	_attack_cooldown_left = attack_interval
 	_play_clip(attack_clip, 1.0)
+	if player.has_method("take_damage"):
+		player.take_damage(touch_damage)
+
+
+func _allows_attack() -> bool:
+	return true
+
+
+func _finish_move(delta: float) -> void:
+	if _off_floor:
+		# Abstract slide along the track — no collision on parked floors.
+		global_position.x += velocity.x * delta
+		global_position.z += velocity.z * delta
+		velocity.y = 0.0
+		return
+	_apply_gravity(delta)
+	move_and_slide()
+
+
+func bind_tracker(tracker: MonsterTracker) -> void:
+	_tracker = tracker
+
+
+func set_off_floor(off: bool) -> void:
+	_off_floor = off
+	visible = not off
+	# Keep ticking so patrol continues on other floors.
+	set_physics_process(true)
+	if off:
+		_player_in_touch = false
+		collision_layer = 0
+		collision_mask = 0
+	else:
+		collision_layer = 4
+		collision_mask = 1
+
+
+func is_off_floor() -> bool:
+	return _off_floor
+
+
+func on_tracker_floor_changed(
+	floor: int,
+	track: Dictionary,
+	rooms: Array,
+	bounds: AABB
+) -> void:
+	_current_floor = floor
+	configure_level(rooms, bounds, track)
+
+
+func _same_floor_as_player() -> bool:
+	if _tracker == null:
+		return not _off_floor
+	var main := get_tree().get_first_node_in_group("main_level")
+	if main != null and main.has_method("get_active_floor"):
+		return _tracker.get_floor(self) == int(main.get_active_floor())
+	return not _off_floor
+
+
+func _refresh_room_cell() -> void:
+	if _tracker == null or _track_nodes.is_empty():
+		return
+	if _current_node_id.is_empty() or not _track_nodes.has(_current_node_id):
+		return
+	var info: Dictionary = _track_nodes[_current_node_id]
+	if info.has("cell"):
+		_tracker.set_room(self, info["cell"])
+
+
+func _try_use_stairs() -> void:
+	if _tracker == null:
+		return
+	var stairs: Array = _tracker.stairs_for(_tracker.get_floor(self))
+	if stairs.is_empty():
+		return
+	for spec in stairs:
+		if int(spec.get("required_stage", 0)) > 0:
+			# Locked stairs stay closed for monsters until unlocked in layout.
+			# Stairwell.unlock is per-instance; prefer the live node when present.
+			pass
+		var landing: Vector3 = spec.get("position", Vector3.ZERO)
+		var to_stair := landing - global_position
+		to_stair.y = 0.0
+		if to_stair.length() > 1.35:
+			continue
+		var dest_floor := int(spec.get("dest_floor", _current_floor))
+		if dest_floor == _tracker.get_floor(self):
+			continue
+		# Honour locked stairwells still closed in the live scene.
+		if not _stair_unlocked(spec):
+			continue
+		_tracker.set_floor(self, dest_floor)
+		global_position = landing + Vector3(0.0, 0.05, 0.0)
+		_current_node_id = ""
+		_target_node_id = ""
+		_ai_mode = AiMode.PATROL
+		return
+
+
+func _stair_unlocked(spec: Dictionary) -> bool:
+	var required := int(spec.get("required_stage", 0))
+	if required <= 0:
+		return true
+	var main := get_tree().get_first_node_in_group("main_level")
+	if main != null and main.has_method("collected_key_stages"):
+		var stages: Array = main.collected_key_stages()
+		return stages.has(required)
+	# Live stairwell nodes carry unlock state for the mounted floor.
+	for node in get_tree().get_nodes_in_group("stairwell"):
+		if node == null or not is_instance_valid(node):
+			continue
+		if not node.has_method("is_unlocked"):
+			continue
+		if int(node.get("required_stage")) != required:
+			continue
+		if int(node.get("from_floor")) != int(spec.get("floor", -1)):
+			continue
+		return bool(node.is_unlocked())
+	return false
+
+
+func _begin_despawn() -> void:
+	if _despawn_armed:
+		return
+	_despawn_armed = true
+	_player_in_touch = false
+	if _tracker != null:
+		_tracker.mark_dead(self)
+	# Short beat so a death clip can start, then remove the corpse.
+	var tree := get_tree()
+	if tree != null:
+		tree.create_timer(0.35).timeout.connect(_despawn_now)
+	else:
+		_despawn_now()
+
+
+func _despawn_now() -> void:
+	if is_instance_valid(self):
+		queue_free()
 
 func _reset_detection() -> void:
 	_time_since_seen = 999.0
@@ -488,6 +677,8 @@ func _on_started_chase() -> void:
 
 
 func _on_died() -> void:
+	# Subclasses hook here (toad regurgitation, and similar). Base despawn is
+	# armed from take_damage after this returns.
 	pass
 
 
@@ -540,14 +731,20 @@ func _is_player_in_proximity() -> bool:
 		return false
 	if player.has_method("is_alive") and not player.is_alive():
 		return false
+	if not _same_floor_as_player():
+		return false
 	var to_player := player.global_position - global_position
 	to_player.y = 0.0
 	return to_player.length() <= proximity_radius
 
 func _can_see_player() -> bool:
+	if player == null or not is_instance_valid(player):
+		return false
 	if player.has_method("is_alive") and not player.is_alive():
 		return false
 	if player.has_method("is_sneaking") and player.is_sneaking():
+		return false
+	if not _same_floor_as_player() or _off_floor:
 		return false
 	var to_player := player.global_position - global_position
 	to_player.y = 0.0
@@ -562,7 +759,10 @@ func _can_see_player() -> bool:
 	if angle > field_of_view_deg * 0.5:
 		return false
 
-	var space := get_world_3d().direct_space_state
+	var world := get_world_3d()
+	if world == null or world.direct_space_state == null:
+		return true
+	var space := world.direct_space_state
 	var origin := global_position + Vector3(0.0, eye_height, 0.0)
 	var dest := player.global_position + Vector3(0.0, 1.0, 0.0)
 	var query := PhysicsRayQueryParameters3D.create(origin, dest)

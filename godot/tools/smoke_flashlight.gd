@@ -174,7 +174,7 @@ func _environment_is_dark(main: Node3D) -> bool:
 	var bg_black := env.background_color.r < 0.02 and env.background_color.g < 0.02 and env.background_color.b < 0.02
 	var ambient_dim := (
 		env.ambient_light_source == Environment.AMBIENT_SOURCE_COLOR
-		and absf(env.ambient_light_energy - 0.09) < 0.005
+		and absf(env.ambient_light_energy - 0.0) < 0.005
 	)
 	print(
 		"env_bg=", env.background_color,

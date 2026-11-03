@@ -1,0 +1,37 @@
+[remap]
+
+importer="texture"
+type="CompressedTexture2D"
+uid="uid://6t7s41o7ehyi"
+path="res://.godot/imported/room_boiler_decorated_v2_Image_1.jpg-ed4a2193e88f8c63ae8b3a8920469309.ctex"
+metadata={
+"vram_texture": false
+}
+generator_parameters={
+"md5": "75c708c375150192bccb4a7575a22873"
+}
+
+[deps]
+
+source_file="res://assets/rooms/room_boiler_decorated_v2_Image_1.jpg"
+dest_files=["res://.godot/imported/room_boiler_decorated_v2_Image_1.jpg-ed4a2193e88f8c63ae8b3a8920469309.ctex"]
+
+[params]
+
+compress/mode=0
+compress/high_quality=false
+compress/lossy_quality=0.7
+compress/hdr_compression=1
+compress/normal_map=0
+compress/channel_pack=0
+mipmaps/generate=true
+mipmaps/limit=-1
+roughness/mode=0
+roughness/src_normal=""
+process/fix_alpha_border=true
+process/premult_alpha=false
+process/normal_map_invert_y=false
+process/hdr_as_srgb=false
+process/hdr_clamp_exposure=false
+process/size_limit=0
+detect_3d/compress_to=1

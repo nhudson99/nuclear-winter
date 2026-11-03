@@ -15,11 +15,12 @@ const TOUCH_CONTROLS := preload("res://scripts/TouchControls.gd")
 const HOTBAR_SCRIPT := preload("res://scripts/Hotbar.gd")
 ## 50% more zoom onto the player than the original 20 m ortho height.
 const PLAY_CAMERA_SIZE := 20.0 / 1.5
-## About 9% ambient (was 0.10) so rooms stay faintly readable with the flashlight off.
-const DARK_AMBIENT_ENERGY := 0.09
+## Pitch black: only the flashlight and green objective lights illuminate.
+const DARK_AMBIENT_ENERGY := 0.0
 const SLIME_SCENE_PATH := "res://scenes/Slime.tscn"
 const MAX_LIVING_SLIMES := 16
 const SLIME_SPLIT_SPREAD := 0.6
+const VOID_SCENE_PATH := "res://assets/characters/Void_walking.glb"
 
 @onready var camera: Camera3D = $IsoCamera
 @onready var player: CharacterBody3D = $Player
@@ -30,6 +31,7 @@ const SLIME_SPLIT_SPREAD := 0.6
 @onready var tarantula: CharacterBody3D = get_node_or_null("Tarantula")
 @onready var widow: CharacterBody3D = get_node_or_null("Widow")
 @onready var toad: CharacterBody3D = get_node_or_null("Toad")
+@onready var void_monster: CharacterBody3D = get_node_or_null("Void")
 
 @export var camera_distance: float = 22.0
 @export var camera_height: float = 22.0
@@ -54,9 +56,11 @@ var _tank_serial: int = 1
 var _tarantula_serial: int = 1
 var _widow_serial: int = 1
 var _toad_serial: int = 1
+var _void_serial: int = 1
 var _resolved_level: int = 1
 var _collected_keys: Dictionary = {}
 var _valve_shut: bool = false
+var _bookshelf_opened: bool = false
 var _used_seed: int = 0
 var _used_rooms: int = 9
 var _active_floor: int = 0
@@ -66,21 +70,34 @@ var _floor_bundles: Dictionary = {}
 var _floor_inflight: Dictionary = {}
 var _floor_cache: Node3D
 var _floor_swap_busy: bool = false
+var _tracker: MonsterTracker
+var _void_dimension: VoidDimension
+var _roster_seeded: bool = false
 
 const PARKED_GROUPS: Array[String] = [
 	"stairwell",
 	"steam_valve",
 	"steam_barrier",
 	"locked_door",
+	"library_door",
+	"secret_bookshelf",
 	"room_web",
 ]
 
 func _ready() -> void:
+	add_to_group("main_level")
 	camera.projection = Camera3D.PROJECTION_ORTHOGONAL
 	camera.size = PLAY_CAMERA_SIZE
 	camera.near = 0.05
 	camera.far = 250.0
 	camera.current = true
+	_tracker = MonsterTracker.new()
+	_tracker.name = "MonsterTracker"
+	add_child(_tracker)
+	_void_dimension = VoidDimension.new()
+	_void_dimension.name = "VoidDimension"
+	add_child(_void_dimension)
+	_void_dimension.configure(self, player)
 	_apply_level_lighting()
 	_setup_hud()
 	_wire_game_loop()
@@ -221,7 +238,9 @@ func _apply_layout(layout: Dictionary, arrival_cell = null) -> void:
 		player.global_position = _arrival_position(layout, null)
 	player.velocity = Vector3.ZERO
 
-	_place_enemy_roster(layout)
+	if _tracker:
+		_tracker.remember_floor_layout(int(layout.get("active_floor", _active_floor)), layout)
+	_seed_or_sync_enemies(layout)
 	_place_objectives(layout)
 
 	var exit_zone := get_node_or_null("ExitZone") as Node3D
@@ -236,6 +255,8 @@ func _apply_layout(layout: Dictionary, arrival_cell = null) -> void:
 	_apply_collected_keys()
 	if _valve_shut:
 		_open_steam_passage()
+	if _bookshelf_opened:
+		_apply_library_unlock()
 	_refresh_objective_hud()
 	_snap_camera()
 
@@ -265,65 +286,146 @@ func _arrival_position(layout: Dictionary, arrival_cell) -> Vector3:
 	return layout.get("start", Vector3.ZERO)
 
 
-func _place_enemy_roster(layout: Dictionary) -> void:
-	var roster: Array = layout.get("enemies", [])
-	var templates := {
+func _enemy_templates() -> Dictionary:
+	return {
 		LevelRules.KIND_SLIME: slime,
 		LevelRules.KIND_HARE: monster,
 		LevelRules.KIND_TANK: tank,
+		LevelRules.KIND_VOID: void_monster,
 		LevelRules.KIND_TARANTULA: tarantula,
 		LevelRules.KIND_WIDOW: widow,
 		LevelRules.KIND_TOAD: toad,
 	}
-	var used := {
-		LevelRules.KIND_SLIME: false,
-		LevelRules.KIND_HARE: false,
-		LevelRules.KIND_TANK: false,
-		LevelRules.KIND_TARANTULA: false,
-		LevelRules.KIND_WIDOW: false,
-		LevelRules.KIND_TOAD: false,
-	}
-	if roster.is_empty():
-		_place_enemy(monster, layout.get("monster", Vector3.ZERO), layout)
-		_place_enemy(slime, layout.get("slime", Vector3.ZERO), layout)
-		_place_enemy(tank, layout.get("tank", Vector3.ZERO), layout)
-		_place_enemy(tarantula, layout.get("tarantula", Vector3.ZERO), layout)
-		_place_enemy(widow, layout.get("widow", Vector3.ZERO), layout)
-		_place_enemy(toad, layout.get("toad", Vector3.ZERO), layout)
+
+
+func _seed_or_sync_enemies(layout: Dictionary) -> void:
+	var active := int(layout.get("active_floor", _active_floor))
+	_ensure_enemies_for_layout(layout)
+	_roster_seeded = true
+	if _tracker:
+		_tracker.sync_active_floor(active)
+
+
+func _ensure_enemies_for_layout(layout: Dictionary) -> void:
+	var templates := _enemy_templates()
+	var roster: Array = layout.get("enemies", [])
+	var floor := int(layout.get("active_floor", _active_floor))
+	var used_kinds := {}
+	if roster.is_empty() and floor == 0 and not _roster_seeded:
+		_spawn_tracked_enemy(monster, LevelRules.KIND_HARE, layout.get("monster", Vector3.ZERO), layout, 0, layout.get("monster_cell", Vector2i.ZERO))
+		_spawn_tracked_enemy(slime, LevelRules.KIND_SLIME, layout.get("slime", Vector3.ZERO), layout, 0, layout.get("slime_cell", Vector2i.ZERO))
+		_spawn_tracked_enemy(tank, LevelRules.KIND_TANK, layout.get("tank", Vector3.ZERO), layout, 0, layout.get("tank_cell", Vector2i.ZERO))
+		_spawn_tracked_enemy(tarantula, LevelRules.KIND_TARANTULA, layout.get("tarantula", Vector3.ZERO), layout, 0, layout.get("tarantula_cell", Vector2i.ZERO))
+		_spawn_tracked_enemy(widow, LevelRules.KIND_WIDOW, layout.get("widow", Vector3.ZERO), layout, 0, layout.get("widow_cell", Vector2i.ZERO))
+		_spawn_tracked_enemy(toad, LevelRules.KIND_TOAD, layout.get("toad", Vector3.ZERO), layout, 0, layout.get("toad_cell", Vector2i.ZERO))
+		_park_unused_templates({
+			LevelRules.KIND_HARE: true,
+			LevelRules.KIND_SLIME: true,
+			LevelRules.KIND_TANK: true,
+			LevelRules.KIND_TARANTULA: true,
+			LevelRules.KIND_WIDOW: true,
+			LevelRules.KIND_TOAD: true,
+		}, layout)
 		return
 
-	var active := int(layout.get("active_floor", _active_floor))
 	for spec in roster:
-		if spec.has("floor") and int(spec.get("floor", 0)) != active:
+		var spec_floor := int(spec.get("floor", 0))
+		# Spawn when we have that floor's layout (mounted or preloaded).
+		if not _floor_bundles.has(spec_floor) and spec_floor != floor:
 			continue
 		var kind := String(spec.get("kind", LevelRules.KIND_SLIME))
-		var template: CharacterBody3D = templates.get(kind, slime)
-		if template == null:
+		if _has_tracked_kind_on_floor(kind, spec_floor):
+			used_kinds[kind] = true
 			continue
-		var body: CharacterBody3D
-		if not used[kind]:
-			body = template
-			used[kind] = true
-		else:
-			body = template.duplicate() as CharacterBody3D
-			body.name = _next_enemy_name(kind)
-			add_child(body)
-		_place_enemy(body, spec.get("position", Vector3.ZERO), layout)
+		var floor_layout := layout if spec_floor == floor else _layout_for_floor(spec_floor, layout)
+		var body := _claim_enemy_body(kind, templates, used_kinds)
+		if body == null:
+			continue
+		_spawn_tracked_enemy(
+			body,
+			kind,
+			spec.get("position", Vector3.ZERO),
+			floor_layout,
+			spec_floor,
+			spec.get("cell", Vector2i.ZERO)
+		)
+		used_kinds[kind] = true
 
-	for kind in used:
-		if used[kind]:
+	if floor == 0 or not _roster_seeded:
+		_park_unused_templates(used_kinds, layout)
+
+	# Rebind tracks for everyone we already know about on known floors.
+	if _tracker == null:
+		return
+	for body in _tracker.alive_bodies():
+		var body_floor := _tracker.get_floor(body)
+		var floor_layout := layout if body_floor == floor else _layout_for_floor(body_floor, layout)
+		if body.has_method("apply_monster_track"):
+			body.apply_monster_track(floor_layout.get("monster_track", {}))
+
+
+func _has_tracked_kind_on_floor(kind: String, floor: int) -> bool:
+	if _tracker == null:
+		return false
+	for body in _tracker.monsters_on_floor(floor):
+		if _tracker.get_kind(body) == kind:
+			return true
+	return false
+
+
+func _claim_enemy_body(kind: String, templates: Dictionary, used_kinds: Dictionary) -> CharacterBody3D:
+	var template: CharacterBody3D = templates.get(kind, null)
+	if template == null:
+		return null
+	if not bool(used_kinds.get(kind, false)) and (_tracker == null or _tracker.get_kind(template) == ""):
+		return template
+	var body := template.duplicate() as CharacterBody3D
+	body.name = _next_enemy_name(kind)
+	add_child(body)
+	return body
+
+
+func _park_unused_templates(used_kinds: Dictionary, layout: Dictionary) -> void:
+	var templates := _enemy_templates()
+	for kind in templates:
+		if bool(used_kinds.get(kind, false)):
 			continue
 		var leftover: CharacterBody3D = templates.get(kind, null)
 		if leftover == null:
 			continue
-		# Configure off the map. Doing this on the start cell used to leave a
-		# tarantula web under the player after the body was parked.
+		if _tracker != null and _tracker.get_kind(leftover) != "":
+			continue
 		leftover.set_physics_process(false)
 		leftover.visible = false
 		var parked: Vector3 = layout.get("start", Vector3.ZERO) + Vector3(200.0, 0.0, 200.0)
 		_place_enemy(leftover, parked, layout)
 		leftover.set_physics_process(false)
 		leftover.visible = false
+
+
+func _layout_for_floor(floor: int, fallback: Dictionary) -> Dictionary:
+	if _floor_bundles.has(floor):
+		var bundle: Dictionary = _floor_bundles[floor]
+		if bundle.has("layout"):
+			return bundle["layout"]
+	return fallback
+
+
+func _spawn_tracked_enemy(
+	body: CharacterBody3D,
+	kind: String,
+	where: Vector3,
+	layout: Dictionary,
+	floor: int,
+	cell: Vector2i
+) -> void:
+	if body == null:
+		return
+	_place_enemy(body, where, layout)
+	if _tracker:
+		_tracker.register(body, kind, floor, cell)
+		if floor != _active_floor and body.has_method("set_off_floor"):
+			body.set_off_floor(true)
 
 
 func _next_enemy_name(kind: String) -> String:
@@ -337,6 +439,9 @@ func _next_enemy_name(kind: String) -> String:
 		LevelRules.KIND_TANK:
 			_tank_serial += 1
 			return "Tank_%d" % _tank_serial
+		LevelRules.KIND_VOID:
+			_void_serial += 1
+			return "Void_%d" % _void_serial
 		LevelRules.KIND_TARANTULA:
 			_tarantula_serial += 1
 			return "Tarantula_%d" % _tarantula_serial
@@ -348,7 +453,8 @@ func _next_enemy_name(kind: String) -> String:
 			return "Toad_%d" % _toad_serial
 		_:
 			return "Enemy_%d" % (
-				_slime_serial + _hare_serial + _tank_serial + _tarantula_serial + _widow_serial + _toad_serial
+				_slime_serial + _hare_serial + _tank_serial + _void_serial
+				+ _tarantula_serial + _widow_serial + _toad_serial
 			)
 
 
@@ -420,10 +526,11 @@ func monsters() -> Array[CharacterBody3D]:
 
 func set_monsters_processing(enabled: bool) -> void:
 	for body in monsters():
-		if not body.visible:
+		# Off-floor monsters keep ticking through MonsterTracker even when hidden.
+		if not enabled:
 			body.set_physics_process(false)
 			continue
-		body.set_physics_process(enabled)
+		body.set_physics_process(true)
 
 
 func park_monsters(keep: Node = null) -> void:
@@ -431,9 +538,23 @@ func park_monsters(keep: Node = null) -> void:
 		if body == keep:
 			continue
 		body.set_physics_process(false)
-		body.touch_damage = 0.0
+		body.set("touch_damage", 0.0)
 		body.visible = false
 		body.global_position += Vector3(200.0, 0.0, 200.0)
+
+
+func monster_tracker() -> MonsterTracker:
+	return _tracker
+
+
+func is_in_void() -> bool:
+	return _void_dimension != null and _void_dimension.is_active()
+
+
+func enter_void_dimension(from_pos: Vector3) -> void:
+	if _void_dimension == null or _state != GameState.PLAYING:
+		return
+	_void_dimension.enter(from_pos)
 
 
 func _toad_holds_mission() -> bool:
@@ -491,6 +612,13 @@ func spawn_split_slimes(parent: CharacterBody3D) -> bool:
 		if parent.has_method("copy_split_level_state"):
 			parent.copy_split_level_state(child)
 		child.set_physics_process(processing)
+		if _tracker:
+			var floor := _tracker.get_floor(parent) if _tracker.get_kind(parent) != "" else _active_floor
+			_tracker.register(child, LevelRules.KIND_SLIME, floor, _tracker.get_room(parent))
+			if floor != _active_floor and child.has_method("set_off_floor"):
+				child.set_off_floor(true)
+	if _tracker and _tracker.get_kind(parent) != "":
+		_tracker.mark_dead(parent)
 	return true
 
 
@@ -550,6 +678,8 @@ func _wire_game_loop() -> void:
 		player.key_collected.connect(_on_key_collected)
 	if player.has_signal("valve_shut") and not player.valve_shut.is_connected(_on_valve_shut):
 		player.valve_shut.connect(_on_valve_shut)
+	if player.has_signal("bookshelf_opened") and not player.bookshelf_opened.is_connected(_on_bookshelf_opened):
+		player.bookshelf_opened.connect(_on_bookshelf_opened)
 	if player.has_signal("stair_used") and not player.stair_used.is_connected(_on_stair_used):
 		player.stair_used.connect(_on_stair_used)
 	var exit_zone := get_node_or_null("ExitZone")
@@ -626,8 +756,32 @@ func _on_valve_shut() -> void:
 	_refresh_objective_hud()
 
 
+func _on_bookshelf_opened() -> void:
+	if _state != GameState.PLAYING and _state != GameState.LOADING:
+		return
+	_bookshelf_opened = true
+	_apply_library_unlock()
+	_refresh_objective_hud()
+
+
+## Secret bookshelf opens the wing lock the same way a key pickup does.
+func _apply_library_unlock() -> void:
+	var stage := LevelRules.library_unlock_stage(_resolved_level)
+	if stage <= 0:
+		var library: Dictionary = _layout.get("library", {})
+		stage = int(library.get("unlock_stage", 0))
+	if stage <= 0:
+		return
+	_collected_keys[stage] = true
+	_unlock_door(stage)
+
+
 func valve_is_shut() -> bool:
 	return _valve_shut
+
+
+func bookshelf_is_opened() -> bool:
+	return _bookshelf_opened
 
 
 func steam_barriers() -> Array[SteamBarrier]:
@@ -752,8 +906,11 @@ func change_floor(dest_floor: int, dest_cell: Vector2i) -> void:
 		return
 	_park_mounted_floor()
 	_mount_bundle(dest_floor)
+	# Monsters persist through MonsterTracker — only refresh floor-local pickups.
 	_clear_dynamic_combatants()
 	_apply_layout(_layout, dest_cell)
+	if _tracker:
+		_tracker.sync_active_floor(dest_floor)
 	if overlay != null and is_instance_valid(overlay):
 		if overlay.has_method("snap_to_end"):
 			overlay.snap_to_end()
@@ -818,6 +975,13 @@ func _load_floor_bundle(floor: int, report_progress: bool) -> Dictionary:
 		"mounted": false,
 	}
 	_floor_bundles[floor] = bundle
+	if _tracker:
+		_tracker.remember_floor_layout(floor, layout)
+		# Spawn that storey's roster as soon as the geometry exists so they keep
+		# patrolling even while the player is elsewhere.
+		if _roster_seeded:
+			_ensure_enemies_for_layout(layout)
+			_tracker.sync_active_floor(_active_floor)
 	_floor_inflight.erase(floor)
 	return bundle
 
@@ -966,13 +1130,7 @@ func _count_named_rooms(node: Node) -> int:
 
 
 func _clear_dynamic_combatants() -> void:
-	for body in monsters():
-		if body == monster or body == slime or body == tank or body == tarantula or body == widow or body == toad:
-			continue
-		if is_instance_valid(body):
-			if body.has_method("release_swallowed_item"):
-				body.release_swallowed_item()
-			body.queue_free()
+	# Key pickups are floor-local; monsters stay alive in MonsterTracker.
 	for node in get_tree().get_nodes_in_group("pickup"):
 		if node == null or not is_instance_valid(node):
 			continue
@@ -997,6 +1155,8 @@ func _refresh_objective_hud() -> void:
 			done = _collected_keys.has(int(spec.get("stage", 0)))
 		elif kind == LevelRules.KIND_VALVE:
 			done = _valve_shut or _layout.get("steam", {}).is_empty()
+		elif kind == LevelRules.KIND_BOOKSHELF:
+			done = _bookshelf_opened
 		elif kind == LevelRules.KIND_MISSION:
 			done = player != null and player.has_collected_item()
 		var mark := "x" if done else " "

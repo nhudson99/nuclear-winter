@@ -322,6 +322,15 @@ func _check_spawns(layout: Dictionary) -> bool:
 	var slime_away: bool = slime_cell != start_cell
 	var tank_away: bool = tank_cell != start_cell
 	var far_ok := _enemies_keep_clear(layout)
+	# Player spawns just inside the exterior exit doorway, in that same room.
+	var start_pos: Vector3 = layout.get("start", Vector3.ZERO)
+	var exit_pos: Vector3 = layout.get("exit", Vector3.ZERO)
+	var door_gap := Vector2(start_pos.x - exit_pos.x, start_pos.z - exit_pos.z).length()
+	var at_exit_door: bool = (
+		start_cell == exit_cell
+		and door_gap > 0.5
+		and door_gap < 2.0
+	)
 	print(
 		"spawns start=", start_cell,
 		" objective=", objective_cell,
@@ -330,9 +339,19 @@ func _check_spawns(layout: Dictionary) -> bool:
 		" tank=", tank_cell,
 		" exit=", exit_cell,
 		" in_map=", in_map,
-		" far=", far_ok
+		" far=", far_ok,
+		" door_gap=", door_gap,
+		" at_exit=", at_exit_door
 	)
-	return in_map and objective_away and monster_away and slime_away and tank_away and far_ok
+	return (
+		in_map
+		and objective_away
+		and monster_away
+		and slime_away
+		and tank_away
+		and far_ok
+		and at_exit_door
+	)
 
 
 func _enemies_keep_clear(layout: Dictionary) -> bool:
