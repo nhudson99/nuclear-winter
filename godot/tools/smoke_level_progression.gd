@@ -152,16 +152,17 @@ func _same_ints(got: Array, want: Array) -> bool:
 
 
 func _check_formulas() -> bool:
+	# slime, hare, tank, void, tarantula, widow, toad
 	var expected := {
-		1: [1, 0, 0, 0, 0, 0],
-		2: [1, 1, 0, 0, 0, 0],
-		3: [1, 1, 1, 0, 0, 0],
-		4: [1, 1, 1, 1, 0, 0],
-		5: [1, 1, 1, 1, 1, 0],
-		6: [1, 1, 1, 1, 1, 1],
-		7: [2, 1, 1, 1, 1, 1],
-		8: [2, 2, 1, 1, 1, 1],
-		9: [2, 2, 2, 1, 1, 1],
+		1: [1, 0, 0, 0, 0, 0, 0],
+		2: [1, 1, 0, 0, 0, 0, 0],
+		3: [1, 1, 1, 0, 0, 0, 0],
+		4: [1, 1, 1, 1, 0, 0, 0],
+		5: [1, 1, 1, 1, 1, 0, 0],
+		6: [1, 1, 1, 1, 1, 1, 0],
+		7: [1, 1, 1, 1, 1, 1, 1],
+		8: [2, 1, 1, 1, 1, 1, 1],
+		9: [2, 2, 1, 1, 1, 1, 1],
 	}
 	var ok := true
 	for level in expected:
@@ -169,6 +170,7 @@ func _check_formulas() -> bool:
 			LevelRules.slime_count(level),
 			LevelRules.hare_count(level),
 			LevelRules.tank_count(level),
+			LevelRules.void_count(level),
 			LevelRules.tarantula_count(level),
 			LevelRules.widow_count(level),
 			LevelRules.toad_count(level),
@@ -176,14 +178,18 @@ func _check_formulas() -> bool:
 		var want: Array = expected[level]
 		var match_ok: bool = got == want and LevelRules.counts_match_cycle(level)
 		var valve_listed := false
+		var bookshelf_listed := false
 		for spec in LevelRules.objectives(level):
 			if String(spec.get("kind", "")) == LevelRules.KIND_VALVE:
 				valve_listed = true
+			if String(spec.get("kind", "")) == LevelRules.KIND_BOOKSHELF:
+				bookshelf_listed = true
 		var obj_ok: bool = (
-			LevelRules.objective_count(level) == level + 1
+			LevelRules.objective_count(level) == level + 2
 			and LevelRules.key_count(level) == maxi(level - 1, 0)
-			and LevelRules.objectives(level).size() == level + 1
+			and LevelRules.objectives(level).size() == level + 2
 			and valve_listed
+			and bookshelf_listed
 		)
 		var floors_ok: bool = (
 			LevelRules.floor_count(level) == int(ceili(float(level) / 2.0))
@@ -225,6 +231,7 @@ func _roster_matches(layout: Dictionary, level: int) -> bool:
 		LevelRules.KIND_SLIME: 0,
 		LevelRules.KIND_HARE: 0,
 		LevelRules.KIND_TANK: 0,
+		LevelRules.KIND_VOID: 0,
 		LevelRules.KIND_TARANTULA: 0,
 		LevelRules.KIND_WIDOW: 0,
 		LevelRules.KIND_TOAD: 0,
@@ -245,6 +252,7 @@ func _roster_matches(layout: Dictionary, level: int) -> bool:
 		int(counts[LevelRules.KIND_SLIME]) == LevelRules.slime_count(level)
 		and int(counts[LevelRules.KIND_HARE]) == LevelRules.hare_count(level)
 		and int(counts[LevelRules.KIND_TANK]) == LevelRules.tank_count(level)
+		and int(counts[LevelRules.KIND_VOID]) == LevelRules.void_count(level)
 		and int(counts[LevelRules.KIND_TARANTULA]) == LevelRules.tarantula_count(level)
 		and int(counts[LevelRules.KIND_WIDOW]) == LevelRules.widow_count(level)
 		and int(counts[LevelRules.KIND_TOAD]) == LevelRules.toad_count(level)
@@ -730,6 +738,7 @@ func _check_live_level_2() -> bool:
 		LevelRules.KIND_SLIME: 1,
 		LevelRules.KIND_HARE: 1,
 		LevelRules.KIND_TANK: 0,
+		LevelRules.KIND_VOID: 0,
 		LevelRules.KIND_TARANTULA: 0,
 		LevelRules.KIND_WIDOW: 0,
 		LevelRules.KIND_TOAD: 0,
@@ -805,6 +814,7 @@ func _count_active_kinds(main: Node) -> Dictionary:
 		LevelRules.KIND_SLIME: 0,
 		LevelRules.KIND_HARE: 0,
 		LevelRules.KIND_TANK: 0,
+		LevelRules.KIND_VOID: 0,
 		LevelRules.KIND_TARANTULA: 0,
 		LevelRules.KIND_WIDOW: 0,
 		LevelRules.KIND_TOAD: 0,

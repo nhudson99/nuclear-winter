@@ -148,11 +148,12 @@ func _run() -> void:
 	print("tarantula_retarget_ok=", retarget_ok, " return=", retarget)
 
 	var cycle_ok := (
-		LevelRules.tarantula_count(4) == 1
-		and LevelRules.widow_count(4) == 0
-		and LevelRules.widow_count(5) == 1
-		and LevelRules.monster_kinds(5).has(LevelRules.KIND_WIDOW)
-		and LevelRules.monster_kinds(4).has(LevelRules.KIND_TARANTULA)
+		LevelRules.tarantula_count(5) == 1
+		and LevelRules.widow_count(5) == 0
+		and LevelRules.widow_count(6) == 1
+		and LevelRules.monster_kinds(6).has(LevelRules.KIND_WIDOW)
+		and LevelRules.monster_kinds(5).has(LevelRules.KIND_TARANTULA)
+		and LevelRules.monster_kinds(4).has(LevelRules.KIND_VOID)
 	)
 	print("new_enemy_cycle_ok=", cycle_ok)
 

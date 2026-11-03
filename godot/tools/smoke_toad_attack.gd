@@ -118,33 +118,35 @@ func _run() -> void:
 	)
 	print("toad_drop_ok=", dropped_ok, " item_pos=", mission.global_position)
 
+	# Stalker is indestructible; melee damage is checked on the slime.
+	var slime: CharacterBody3D = main.get_node_or_null("Slime")
 	gp.has_pistol = false
-	player.global_position = monster.global_position + Vector3(1.2, 0.05, 0.0)
-	monster.visible = true
-	monster.global_position = player.global_position + Vector3(-1.1, 0.0, 0.0)
-	monster.health = 100.0
-	monster.set_physics_process(false)
+	slime.visible = true
+	slime.set_physics_process(false)
+	slime.global_position = layout.get("start", Vector3.ZERO) + Vector3(3.0, 0.05, 0.0)
+	player.global_position = slime.global_position + Vector3(1.2, 0.05, 0.0)
+	slime.health = 45.0
 	var visual: Node3D = player.get_node("Model")
-	var to_monster := monster.global_position - player.global_position
-	visual.rotation.y = atan2(to_monster.x, to_monster.z) + PI
-	player.set_aim_world_override(monster.global_position)
+	var to_slime := slime.global_position - player.global_position
+	visual.rotation.y = atan2(to_slime.x, to_slime.z) + PI
+	player.set_aim_world_override(slime.global_position)
 	player._fire_cooldown = 0.0
 	var melee_hit: Node3D = player.attack()
-	var melee_ok: bool = melee_hit == monster and is_equal_approx(float(monster.health), 90.0)
-	print("melee_attack_ok=", melee_ok, " hp=", monster.health, " hit=", melee_hit)
+	var melee_ok: bool = melee_hit == slime and is_equal_approx(float(slime.health), 35.0)
+	print("melee_attack_ok=", melee_ok, " hp=", slime.health, " hit=", melee_hit)
 
 	gp.has_pistol = true
 	gp.pistol_loaded = 10
 	gp.selected_weapon = GameProgress.WeaponId.PISTOL
 	player._fire_cooldown = 0.0
 	var shot: Node3D = player.attack()
-	var weapon_ok: bool = shot != null and shot != monster and shot != player
+	var weapon_ok: bool = shot != null and shot != slime and shot != player
 	print("weapon_attack_ok=", weapon_ok, " shot=", shot)
 
 	var cycle_ok := (
-		LevelRules.toad_count(5) == 0
-		and LevelRules.toad_count(6) == 1
-		and LevelRules.monster_kinds(6).has(LevelRules.KIND_TOAD)
+		LevelRules.toad_count(6) == 0
+		and LevelRules.toad_count(7) == 1
+		and LevelRules.monster_kinds(7).has(LevelRules.KIND_TOAD)
 	)
 	print("toad_cycle_ok=", cycle_ok)
 

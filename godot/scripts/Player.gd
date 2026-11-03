@@ -4,6 +4,7 @@ signal died
 signal item_collected
 signal key_collected(stage: int)
 signal valve_shut
+signal bookshelf_opened
 signal stair_used(stair: Node)
 
 @export var move_speed: float = 2.4
@@ -544,7 +545,33 @@ func _try_interact() -> void:
 		valve_shut.emit()
 		return
 
+	var bookshelf := _nearest_secret_bookshelf()
+	if bookshelf != null and bookshelf.has_method("try_activate") and bookshelf.try_activate():
+		bookshelf_opened.emit()
+		return
+
 	_use_stair(_nearest_stairwell())
+
+
+func _nearest_secret_bookshelf() -> Node:
+	var best: Node = null
+	var best_dist := INF
+	for node in get_tree().get_nodes_in_group("secret_bookshelf"):
+		if node == null or not is_instance_valid(node):
+			continue
+		if not node.has_method("can_interact") or not node.can_interact(global_position):
+			continue
+		var dist := interact_range
+		if node.has_method("interact_distance"):
+			dist = float(node.interact_distance(global_position))
+		elif node is Node3D:
+			var to_shelf: Vector3 = (node as Node3D).global_position - global_position
+			to_shelf.y = 0.0
+			dist = to_shelf.length()
+		if dist < best_dist:
+			best_dist = dist
+			best = node
+	return best
 
 
 func _nearest_steam_valve() -> Node:

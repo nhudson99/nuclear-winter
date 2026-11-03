@@ -52,11 +52,15 @@ const SIDE_STAIR := "STAIR"
 const LOCK_KIND_WING := "wing"
 const LOCK_KIND_STAIR := "stair"
 
-const ROOM_TYPES: Array[String] = ["bedroom", "living_room", "office", "storage"]
+const ROOM_TYPES: Array[String] = ["bedroom", "living_room", "office", "storage", "library"]
 const STAIR_TYPES: Array[String] = ["stairwell_up", "stairwell_down"]
 const TYPE_BOILER := "boiler"
 const TYPE_PIPE_GALLERY := "pipe_gallery"
+const TYPE_LIBRARY := "library"
 const STEAM_ROOM_TYPES: Array[String] = [TYPE_BOILER, TYPE_PIPE_GALLERY]
+const BOOKCASE_NAME_PREFIXES: Array[String] = [
+	"Bookcase_", "Antiquarian_", "Elegance_", "Stack_", "Quad_",
+]
 ## Ceiling pipe the player follows from a steaming doorway to the valve.
 const STEAM_PIPE_Y := 1.82
 const STEAM_PIPE_RADIUS := 0.065
@@ -68,6 +72,7 @@ const ROOM_SCENES := {
 	"living_room": "res://assets/rooms/room_living_room_decorated.glb",
 	"office": "res://assets/rooms/room_office_decorated.glb",
 	"storage": "res://assets/rooms/room_storage_decorated.glb",
+	"library": "res://assets/rooms/room_library_decorated.glb",
 	"stairwell_up": "res://assets/rooms/room_stairwell_up_decorated.glb",
 	"stairwell_down": "res://assets/rooms/room_stairwell_down_decorated.glb",
 	"boiler": "res://assets/rooms/room_boiler_decorated.glb",
@@ -79,6 +84,7 @@ const ROOM_LABELS := {
 	"living_room": "ГОСТИНАЯ / LIVING ROOM",
 	"office": "КАБИНЕТ / OFFICE",
 	"storage": "СКЛАД / STORAGE",
+	"library": "БИБЛИОТЕКА / LIBRARY",
 	"stairwell_up": "ЛЕСТНИЦА ВВЕРХ / STAIRS UP",
 	"stairwell_down": "ЛЕСТНИЦА ВНИЗ / STAIRS DOWN",
 	"boiler": "КОТЕЛЬНАЯ / BOILER",
@@ -296,6 +302,7 @@ func generate(
 	_add_locked_doors(container, layout, wanted_floor)
 	_add_stairwells(container, layout, wanted_floor)
 	_add_steam(container, layout, wanted_floor)
+	_add_library_secret(container, layout, wanted_floor, rng)
 	_add_ground(container, layout["bounds"])
 	_add_monster_track(container, layout["monster_track"])
 	progress.emit(1.0, "ГОТОВО / READY")
@@ -760,6 +767,7 @@ func _fits_span(cells: Array[Vector2i], candidate: Vector2i, max_span: int) -> b
 
 ## Livable types fill every cell that is not a boiler or a pipe gallery.
 ## Stairwells overwrite afterwards, and they win if a steam cell was also a landing.
+## At least one library is forced so the secret-bookshelf objective always exists.
 func _types_for_cells(
 	rng: RandomNumberGenerator,
 	cells: Array[Vector2i],
@@ -788,12 +796,13 @@ func _types_for_cells(
 		type_of[open[index]] = bag[index]
 	for cell in reserved:
 		type_of[cell] = reserved[cell]
+	_ensure_library(type_of, open, stair_cells, rng)
 	return type_of
 
 
-## Deals the room types in whole cycles, so every level shows all four and no
-## type can dominate; the cycle order is shuffled first so which types get the
-## leftover slots still varies by seed.
+## Deals the room types in whole cycles, so every level shows all livable types
+## and no type can dominate; the cycle order is shuffled first so which types
+## get the leftover slots still varies by seed.
 func _assign_types(rng: RandomNumberGenerator, count: int) -> Array[String]:
 	var bag: Array[String] = []
 	while bag.size() < count:
@@ -805,6 +814,28 @@ func _assign_types(rng: RandomNumberGenerator, count: int) -> Array[String]:
 			bag.append(type_name)
 	_shuffle(bag, rng)
 	return bag
+
+
+func _ensure_library(
+	type_of: Dictionary,
+	open: Array[Vector2i],
+	stair_cells: Dictionary,
+	rng: RandomNumberGenerator
+) -> void:
+	for cell in type_of:
+		if String(type_of[cell]) == TYPE_LIBRARY:
+			return
+	var candidates: Array[Vector2i] = []
+	for cell in open:
+		if stair_cells.has(cell):
+			continue
+		if String(type_of.get(cell, "")) in STEAM_ROOM_TYPES:
+			continue
+		candidates.append(cell)
+	if candidates.is_empty():
+		return
+	var pick: Vector2i = candidates[rng.randi_range(0, candidates.size() - 1)]
+	type_of[pick] = TYPE_LIBRARY
 
 
 ## Array.shuffle() draws from the global RNG, which would break seed replay.
@@ -1525,9 +1556,20 @@ static func edge_is_steam_door(layout: Dictionary, a: Vector2i, b: Vector2i) -> 
 	return edge_key(a, b) == edge_key(steam["from_cell"], steam["to_cell"])
 
 
-## Steam still fills the breach, or a bypass was plugged and stays a wall.
+static func edge_is_library_door(layout: Dictionary, a: Vector2i, b: Vector2i) -> bool:
+	var library: Dictionary = layout.get("library", {})
+	if not library.has("from_cell") or not library.has("to_cell"):
+		return false
+	return edge_key(a, b) == edge_key(library["from_cell"], library["to_cell"])
+
+
+## Steam still fills the breach, a bypass was plugged, or the library door is shut.
 static func edge_is_blocked(layout: Dictionary, a: Vector2i, b: Vector2i) -> bool:
-	return edge_is_sealed(layout, a, b) or edge_is_steam_door(layout, a, b)
+	return (
+		edge_is_sealed(layout, a, b)
+		or edge_is_steam_door(layout, a, b)
+		or edge_is_library_door(layout, a, b)
+	)
 
 
 ## The lower cell keeps its plug when a bypass is sealed, so the two modules
@@ -1718,6 +1760,106 @@ func _sealed_edge_set(steam: Dictionary) -> Dictionary:
 	for spec in steam.get("sealed", []):
 		sealed[edge_key(spec["a"], spec["b"])] = true
 	return sealed
+
+
+func _plan_library_secret(
+	rooms: Array,
+	floor_of: Dictionary,
+	occupied: Dictionary,
+	locked_edges: Dictionary,
+	active_floor: int,
+	rng: RandomNumberGenerator
+) -> Dictionary:
+	var library_room: Dictionary = {}
+	for room in rooms:
+		if String(room.get("type", "")) != TYPE_LIBRARY:
+			continue
+		if int(floor_of.get(room["cell"], room.get("floor", 0))) != active_floor:
+			continue
+		library_room = room
+		break
+	if library_room.is_empty():
+		return {}
+	var cell: Vector2i = library_room["cell"]
+	var neighbors: Array[Dictionary] = []
+	for side in SIDES:
+		var neighbor: Vector2i = cell + SIDE_STEPS[side]
+		if not occupied.has(neighbor):
+			continue
+		if int(floor_of.get(neighbor, 0)) != active_floor:
+			continue
+		if locked_edges.has(edge_key(cell, neighbor)):
+			continue
+		neighbors.append({"side": side, "to": neighbor})
+	if neighbors.is_empty():
+		return {
+			"cell": cell,
+			"floor": active_floor,
+			"bookcase": "",
+		}
+	var pick: Dictionary = neighbors[rng.randi_range(0, neighbors.size() - 1)]
+	return {
+		"cell": cell,
+		"floor": active_floor,
+		"from_cell": cell,
+		"to_cell": pick["to"],
+		"side": pick["side"],
+		"bookcase": "",
+	}
+
+
+func _add_library_secret(
+	container: Node3D,
+	layout: Dictionary,
+	active_floor: int,
+	rng: RandomNumberGenerator
+) -> void:
+	var library: Dictionary = layout.get("library", {})
+	if library.is_empty():
+		return
+	if int(library.get("floor", 0)) != active_floor:
+		return
+	var room := _room_node(layout, library.get("cell", Vector2i.ZERO))
+	if room == null:
+		return
+	var root := Node3D.new()
+	root.name = "LibrarySecret"
+	container.add_child(root)
+
+	var bookcases: Array[Node3D] = []
+	_collect_bookcases(room, bookcases)
+	if not bookcases.is_empty():
+		var shelf: Node3D = bookcases[rng.randi_range(0, bookcases.size() - 1)]
+		var button := SecretBookshelf.new()
+		button.name = "SecretBookshelf"
+		root.add_child(button)
+		button.configure(shelf)
+		library["bookcase"] = String(shelf.name)
+		library["button_position"] = button.global_position
+
+	if library.has("from_cell") and library.has("to_cell"):
+		var door := LibraryDoor.new()
+		door.name = "LibraryDoor"
+		var from_cell: Vector2i = library["from_cell"]
+		var to_cell: Vector2i = library["to_cell"]
+		var side := String(library.get("side", "E"))
+		door.position = (_world_of(from_cell, layout.get("floors", {})) + _world_of(to_cell, layout.get("floors", {}))) * 0.5
+		root.add_child(door)
+		door.configure(from_cell, to_cell, side, _door_size_for_side(side))
+		library["door_position"] = door.global_position if door.is_inside_tree() else door.position
+		library["door_node"] = door.name
+	layout["library"] = library
+
+
+func _collect_bookcases(node: Node, into: Array[Node3D]) -> void:
+	if node is Node3D:
+		var name := String(node.name)
+		for prefix in BOOKCASE_NAME_PREFIXES:
+			if name.begins_with(prefix):
+				into.append(node as Node3D)
+				break
+	for child in node.get_children():
+		_collect_bookcases(child, into)
 
 
 func _add_steam(container: Node3D, layout: Dictionary, active_floor: int) -> void:
@@ -2030,6 +2172,10 @@ func _describe_layout(
 	if steam.has("boiler_cell"):
 		steam["valve_position"] = _world_of(steam["boiler_cell"], floor_of) + Vector3(0.0, 1.0, 0.0)
 
+	var library := _plan_library_secret(rooms, floor_of, occupied, locked_edges, active_floor, rng)
+	if not library.is_empty() and library.has("from_cell"):
+		locked_edges[edge_key(library["from_cell"], library["to_cell"])] = true
+
 	return {
 		"seed": level_seed,
 		"level": level,
@@ -2061,6 +2207,7 @@ func _describe_layout(
 		"locks": locks,
 		"stairs": stair_specs,
 		"steam": steam,
+		"library": library,
 		"zones": zone_of,
 		"floors": floor_of,
 		"objectives": LevelRules.objectives(level),
