@@ -464,7 +464,13 @@ func _check_monster_track(result: Dictionary) -> bool:
 	var far_set := {}
 	for cell in steam.get("far_cells", []):
 		far_set[cell] = true
-	if far_set.is_empty():
+	# Library exit may be off-track until the bookshelf opens; it is allowed to
+	# stay reachable if another route exists, unlike steam far cells.
+	var allowed_off := far_set.duplicate()
+	var library: Dictionary = layout.get("library", {})
+	if library.has("to_cell"):
+		allowed_off[library["to_cell"]] = true
+	if far_set.is_empty() and allowed_off.is_empty():
 		if not _track_graph_connected(nodes, start_id):
 			print("track_not_connected start=", start_id)
 			return false
@@ -476,7 +482,7 @@ func _check_monster_track(result: Dictionary) -> bool:
 			if far_set.has(room_cell) and reaches:
 				print("steam_track_leaks cell=", room_cell)
 				return false
-			if not far_set.has(room_cell) and not reaches:
+			if not allowed_off.has(room_cell) and not reaches:
 				print("near_room_off_track cell=", room_cell)
 				return false
 

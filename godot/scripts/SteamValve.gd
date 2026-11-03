@@ -1,8 +1,8 @@
 class_name SteamValve
 extends Node3D
 
-## Boiler control. Press E or USE nearby to shut the steam main. The orange
-## indicator turns green and the steam jet clears.
+## Boiler control panel. Press E or USE at the panel (or valve) to shut the
+## steam main. The orange indicator turns green and the steam jet clears.
 
 signal shut(valve: SteamValve)
 
@@ -44,9 +44,8 @@ func configure(wheel: Node3D, lamp: MeshInstance3D) -> void:
 	if lamp != null:
 		_spots.append(lamp)
 	var room := _room_of(lamp if lamp != null else wheel)
-	var board := _find_named(room, "GaugeBoard")
-	if board is Node3D:
-		_panel = board as Node3D
+	_panel = _find_control_panel(room)
+	if _panel != null:
 		_spots.append(_panel)
 	for gauge_name in ["NoCol_Gauge_0", "NoCol_Gauge_1"]:
 		var gauge := _find_named(room, gauge_name)
@@ -287,6 +286,14 @@ func _room_of(marker: Node) -> Node:
 		if String(node.name).begins_with("Room_"):
 			return node
 		node = node.get_parent()
+	return null
+
+
+func _find_control_panel(room: Node) -> Node3D:
+	for panel_name in ["NoCol_ControlPanel", "ControlPanel", "GaugeBoard"]:
+		var found := _find_named(room, panel_name)
+		if found is Node3D:
+			return found as Node3D
 	return null
 
 

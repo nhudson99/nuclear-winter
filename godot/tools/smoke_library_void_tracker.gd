@@ -30,8 +30,65 @@ func _run() -> void:
 	for spec in layout.get("objectives", []):
 		if String(spec.get("kind", "")) == LevelRules.KIND_BOOKSHELF:
 			bookshelf_obj = true
-	var library_ok: bool = has_library_room and bookshelf_obj and not library.is_empty()
-	print("library_ok=", library_ok, " room=", has_library_room, " objective=", bookshelf_obj, " secret=", library)
+	var library_cell: Vector2i = library.get("cell", Vector2i.ZERO)
+	var occupied := {}
+	for room in layout.get("rooms", []):
+		occupied[room["cell"]] = true
+	var neighbor_count := 0
+	var leaf_exit := false
+	for side in MapGenerator.SIDES:
+		var nxt: Vector2i = library_cell + MapGenerator.SIDE_STEPS[side]
+		if not occupied.has(nxt):
+			continue
+		neighbor_count += 1
+		var degree := 0
+		for side2 in MapGenerator.SIDES:
+			if occupied.has(nxt + MapGenerator.SIDE_STEPS[side2]):
+				degree += 1
+		if degree == 1:
+			leaf_exit = true
+	var entrance_open := neighbor_count >= 2 and library.has("from_cell")
+	var start_cell: Vector2i = layout.get("start_cell", Vector2i.ZERO)
+	var locked := {}
+	if library.has("from_cell") and library.has("to_cell"):
+		locked[MapGenerator.edge_key(library["from_cell"], library["to_cell"])] = true
+	var reachable := false
+	if occupied.has(start_cell) and occupied.has(library_cell):
+		if start_cell == library_cell:
+			reachable = true
+		else:
+			var seen := {start_cell: true}
+			var queue: Array[Vector2i] = [start_cell]
+			while not queue.is_empty() and not reachable:
+				var cell: Vector2i = queue.pop_back()
+				for side in MapGenerator.SIDES:
+					var nxt: Vector2i = cell + MapGenerator.SIDE_STEPS[side]
+					if not occupied.has(nxt) or seen.has(nxt):
+						continue
+					if locked.has(MapGenerator.edge_key(cell, nxt)):
+						continue
+					if nxt == library_cell:
+						reachable = true
+						break
+					seen[nxt] = true
+					queue.append(nxt)
+	var library_ok: bool = (
+		has_library_room
+		and bookshelf_obj
+		and not library.is_empty()
+		and entrance_open
+		and reachable
+		and (leaf_exit or neighbor_count >= 2)
+	)
+	print(
+		"library_ok=", library_ok,
+		" room=", has_library_room,
+		" objective=", bookshelf_obj,
+		" neighbors=", neighbor_count,
+		" leaf_exit=", leaf_exit,
+		" reachable=", reachable,
+		" secret=", library
+	)
 
 	var button: Node = null
 	for node in main.get_tree().get_nodes_in_group("secret_bookshelf"):
@@ -95,15 +152,15 @@ func _run() -> void:
 	slime.global_position = layout["start"] + Vector3(3.0, 0.05, 0.0)
 	player.global_position = slime.global_position
 	player.health = 100.0
-	slime.set("touch_damage", 35.0)
+	slime.set("touch_damage", 5.0)
 	slime.set("attack_interval", 0.25)
 	slime.set("_player_in_touch", true)
 	slime.set("_attack_cooldown_left", 0.0)
 	slime.set_physics_process(true)
 	slime._try_melee_attack()
-	var hit_once: bool = is_equal_approx(player.health, 65.0)
+	var hit_once: bool = is_equal_approx(player.health, 95.0)
 	slime._try_melee_attack()
-	var gated: bool = is_equal_approx(player.health, 65.0)
+	var gated: bool = is_equal_approx(player.health, 95.0)
 	print("melee_cadence_ok=", hit_once and gated, " hp=", player.health)
 
 	# Death despawns instead of leaving a corpse.

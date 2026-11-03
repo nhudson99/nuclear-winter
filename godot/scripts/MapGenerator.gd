@@ -75,7 +75,7 @@ const ROOM_SCENES := {
 	"library": "res://assets/rooms/room_library_decorated.glb",
 	"stairwell_up": "res://assets/rooms/room_stairwell_up_decorated.glb",
 	"stairwell_down": "res://assets/rooms/room_stairwell_down_decorated.glb",
-	"boiler": "res://assets/rooms/room_boiler_decorated.glb",
+	"boiler": "res://assets/rooms/room_boiler_decorated_v2.glb",
 	"pipe_gallery": "res://assets/rooms/room_pipe_gallery_decorated.glb",
 }
 
@@ -230,7 +230,14 @@ func generate(
 	if steam.is_empty():
 		push_warning("MapGenerator: steam pocket could not be placed")
 	planned["steam"] = steam
-	var type_of := _types_for_cells(rng, cells, steam, planned.get("stairs", []))
+	var type_of := _types_for_cells(
+		rng,
+		cells,
+		steam,
+		planned.get("stairs", []),
+		planned.get("floor_of", {}),
+		planned.get("zone_of", {})
+	)
 	_apply_stair_types(type_of, planned["stairs"])
 	var sealed := _sealed_edge_set(steam)
 
@@ -767,12 +774,15 @@ func _fits_span(cells: Array[Vector2i], candidate: Vector2i, max_span: int) -> b
 
 ## Livable types fill every cell that is not a boiler or a pipe gallery.
 ## Stairwells overwrite afterwards, and they win if a steam cell was also a landing.
-## At least one library is forced so the secret-bookshelf objective always exists.
+## At least one library is forced on floor 0 so the secret-bookshelf objective
+## is always reachable from the start storey.
 func _types_for_cells(
 	rng: RandomNumberGenerator,
 	cells: Array[Vector2i],
 	steam: Dictionary,
-	stairs: Array
+	stairs: Array,
+	floor_of: Dictionary = {},
+	zone_of: Dictionary = {}
 ) -> Dictionary:
 	var stair_cells := {}
 	for spec in stairs:
@@ -786,6 +796,15 @@ func _types_for_cells(
 		var gallery: Vector2i = steam["gallery_cell"]
 		if gallery != steam.get("boiler_cell") and not stair_cells.has(gallery):
 			reserved[gallery] = TYPE_PIPE_GALLERY
+	# Steam breach / sealed bypasses cannot host the library — those edges are
+	# already closed before the secret door is planned.
+	var steam_blocked := {}
+	if steam.has("from_cell"):
+		steam_blocked[steam["from_cell"]] = true
+		steam_blocked[steam["to_cell"]] = true
+	for spec in steam.get("sealed", []):
+		steam_blocked[spec.get("a", Vector2i.ZERO)] = true
+		steam_blocked[spec.get("b", Vector2i.ZERO)] = true
 	var open: Array[Vector2i] = []
 	for cell in cells:
 		if not reserved.has(cell):
@@ -796,7 +815,10 @@ func _types_for_cells(
 		type_of[open[index]] = bag[index]
 	for cell in reserved:
 		type_of[cell] = reserved[cell]
-	_ensure_library(type_of, open, stair_cells, rng)
+	var start_cell := cells[0] if not cells.is_empty() else Vector2i.ZERO
+	_ensure_library(
+		type_of, open, stair_cells, rng, floor_of, zone_of, steam_blocked, start_cell
+	)
 	return type_of
 
 
@@ -816,26 +838,132 @@ func _assign_types(rng: RandomNumberGenerator, count: int) -> Array[String]:
 	return bag
 
 
+## Library sits on the start floor at a wing edge: at least two same-zone
+## neighbours so the wing entrance stays open while the sealed exit faces a
+## leaf room beyond the stacks.
 func _ensure_library(
 	type_of: Dictionary,
 	open: Array[Vector2i],
 	stair_cells: Dictionary,
-	rng: RandomNumberGenerator
+	rng: RandomNumberGenerator,
+	floor_of: Dictionary = {},
+	zone_of: Dictionary = {},
+	steam_blocked: Dictionary = {},
+	start_cell: Vector2i = Vector2i.ZERO
 ) -> void:
+	var occupied := {}
+	for cell in open:
+		occupied[cell] = true
+	for cell in type_of:
+		occupied[cell] = true
+
+	var existing: Array[Vector2i] = []
 	for cell in type_of:
 		if String(type_of[cell]) == TYPE_LIBRARY:
-			return
-	var candidates: Array[Vector2i] = []
+			existing.append(cell)
+
+	var start_wing_edge: Array[Vector2i] = []
+	var start_multi: Array[Vector2i] = []
+	var wing_edge: Array[Vector2i] = []
+	var multi_door: Array[Vector2i] = []
+	var fallback: Array[Vector2i] = []
 	for cell in open:
-		if stair_cells.has(cell):
+		if cell == start_cell:
+			continue
+		if stair_cells.has(cell) or steam_blocked.has(cell):
 			continue
 		if String(type_of.get(cell, "")) in STEAM_ROOM_TYPES:
 			continue
-		candidates.append(cell)
-	if candidates.is_empty():
+		if not floor_of.is_empty() and int(floor_of.get(cell, 0)) != 0:
+			continue
+		fallback.append(cell)
+		var same_zone := _same_zone_neighbor_count(cell, occupied, zone_of)
+		if same_zone < 2:
+			continue
+		var in_start_zone := zone_of.is_empty() or int(zone_of.get(cell, 0)) == 0
+		multi_door.append(cell)
+		if in_start_zone:
+			start_multi.append(cell)
+		if not _has_leaf_neighbor(cell, occupied, zone_of):
+			continue
+		wing_edge.append(cell)
+		if in_start_zone:
+			start_wing_edge.append(cell)
+
+	var pool: Array[Vector2i] = start_wing_edge
+	if pool.is_empty():
+		pool = start_multi
+	if pool.is_empty():
+		pool = wing_edge
+	if pool.is_empty():
+		pool = multi_door
+	if pool.is_empty():
+		pool = fallback
+	if pool.is_empty():
+		for cell in open:
+			if cell == start_cell:
+				continue
+			if stair_cells.has(cell) or steam_blocked.has(cell):
+				continue
+			if String(type_of.get(cell, "")) in STEAM_ROOM_TYPES:
+				continue
+			pool.append(cell)
+	if pool.is_empty():
 		return
-	var pick: Vector2i = candidates[rng.randi_range(0, candidates.size() - 1)]
+
+	var kept := Vector2i.ZERO
+	var have_kept := false
+	for cell in existing:
+		if pool.has(cell):
+			kept = cell
+			have_kept = true
+			break
+	if have_kept:
+		for cell in existing:
+			if cell == kept:
+				continue
+			if String(type_of.get(cell, "")) == TYPE_LIBRARY:
+				type_of[cell] = "storage"
+		return
+
+	for cell in existing:
+		if String(type_of.get(cell, "")) == TYPE_LIBRARY:
+			type_of[cell] = ROOM_TYPES[rng.randi_range(0, ROOM_TYPES.size() - 1)]
+			if String(type_of[cell]) == TYPE_LIBRARY:
+				type_of[cell] = "storage"
+
+	var pick: Vector2i = pool[rng.randi_range(0, pool.size() - 1)]
 	type_of[pick] = TYPE_LIBRARY
+
+
+func _same_zone_neighbor_count(cell: Vector2i, occupied: Dictionary, zone_of: Dictionary) -> int:
+	var zone := int(zone_of.get(cell, 0))
+	var n := 0
+	for side in SIDES:
+		var neighbor: Vector2i = cell + SIDE_STEPS[side]
+		if not occupied.has(neighbor):
+			continue
+		if not zone_of.is_empty() and int(zone_of.get(neighbor, zone)) != zone:
+			continue
+		n += 1
+	return n
+
+
+func _has_leaf_neighbor(
+	cell: Vector2i,
+	occupied: Dictionary,
+	zone_of: Dictionary = {}
+) -> bool:
+	var zone := int(zone_of.get(cell, 0))
+	for side in SIDES:
+		var neighbor: Vector2i = cell + SIDE_STEPS[side]
+		if not occupied.has(neighbor):
+			continue
+		if not zone_of.is_empty() and int(zone_of.get(neighbor, zone)) != zone:
+			continue
+		if _occupied_neighbor_count(neighbor, occupied) == 1:
+			return true
+	return false
 
 
 ## Array.shuffle() draws from the global RNG, which would break seed replay.
@@ -1791,13 +1919,32 @@ func _plan_library_secret(
 		if locked_edges.has(edge_key(cell, neighbor)):
 			continue
 		neighbors.append({"side": side, "to": neighbor})
-	if neighbors.is_empty():
-		return {
-			"cell": cell,
-			"floor": active_floor,
-			"bookcase": "",
-		}
-	var pick: Dictionary = neighbors[rng.randi_range(0, neighbors.size() - 1)]
+	var base := {
+		"cell": cell,
+		"floor": active_floor,
+		"bookcase": "",
+	}
+	# Need an open entrance plus a sealed exit. A single neighbour would make
+	# the secret door the only way in and lock the player out of the stacks.
+	if neighbors.size() < 2:
+		return base
+
+	# Prefer sealing a doorway into a leaf room (the wing-tip exit). The
+	# entrance is any other unlocked neighbour — do not require reachability
+	# from the level start, because the library may sit behind a keyed wing.
+	var leaf_exits: Array[Dictionary] = []
+	var safe_exits: Array[Dictionary] = []
+	for spec in neighbors:
+		# Sealing this edge must leave at least one other unlocked doorway.
+		if neighbors.size() < 2:
+			continue
+		safe_exits.append(spec)
+		if _occupied_neighbor_count(spec["to"], occupied) == 1:
+			leaf_exits.append(spec)
+	var pool: Array[Dictionary] = leaf_exits if not leaf_exits.is_empty() else safe_exits
+	if pool.is_empty():
+		return base
+	var pick: Dictionary = pool[rng.randi_range(0, pool.size() - 1)]
 	return {
 		"cell": cell,
 		"floor": active_floor,
@@ -1829,6 +1976,8 @@ func _add_library_secret(
 	var bookcases: Array[Node3D] = []
 	_collect_bookcases(room, bookcases)
 	if not bookcases.is_empty():
+		# Button stays inside the stacks — the entrance is open, so the player
+		# walks in and hunts for it before the sealed exit will open.
 		var shelf: Node3D = bookcases[rng.randi_range(0, bookcases.size() - 1)]
 		var button := SecretBookshelf.new()
 		button.name = "SecretBookshelf"
@@ -1938,9 +2087,12 @@ func _room_node(layout: Dictionary, cell: Vector2i) -> Node3D:
 func _valve_marker_position(layout: Dictionary, cell: Vector2i, floor_of: Dictionary) -> Vector3:
 	var node := _room_node(layout, cell)
 	if node:
-		var marker := find_child_by_name(node, "ValveUse")
-		if marker is Node3D:
-			return (marker as Node3D).global_position
+		# Boiler v2 shuts steam from the wall control panel; fall back to the
+		# legacy valve-use marker / gauge board on older tiles.
+		for marker_name in ["NoCol_ControlPanel", "ControlPanel", "ValveUse", "GaugeBoard"]:
+			var marker := find_child_by_name(node, marker_name)
+			if marker is Node3D:
+				return (marker as Node3D).global_position
 	return _world_of(cell, floor_of) + Vector3(0.0, 1.0, 0.0)
 
 
@@ -2172,7 +2324,9 @@ func _describe_layout(
 	if steam.has("boiler_cell"):
 		steam["valve_position"] = _world_of(steam["boiler_cell"], floor_of) + Vector3(0.0, 1.0, 0.0)
 
-	var library := _plan_library_secret(rooms, floor_of, occupied, locked_edges, active_floor, rng)
+	var library := _plan_library_secret(
+		rooms, floor_of, occupied, locked_edges, active_floor, rng
+	)
 	if not library.is_empty() and library.has("from_cell"):
 		locked_edges[edge_key(library["from_cell"], library["to_cell"])] = true
 

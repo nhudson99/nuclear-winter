@@ -527,7 +527,12 @@ func _reachable_past(
 
 
 func _panel_stand(main: Node3D, valve: SteamValve) -> Vector3:
-	var board := MapGenerator.find_child_by_name(main.get_node("GeneratedMap"), "GaugeBoard") as Node3D
+	var board: Node3D = null
+	var map_root := main.get_node("GeneratedMap")
+	for panel_name in ["NoCol_ControlPanel", "ControlPanel", "GaugeBoard"]:
+		board = MapGenerator.find_child_by_name(map_root, panel_name) as Node3D
+		if board != null:
+			break
 	if board == null:
 		var fallback := valve.global_position
 		fallback.y = 0.05
@@ -640,11 +645,19 @@ func _check_live_steam() -> bool:
 	if lamp != null:
 		lamp_mat = lamp.material_override as StandardMaterial3D
 	var lamp_green := lamp_mat != null and lamp_mat.emission.g > lamp_mat.emission.r and lamp_mat.emission_energy_multiplier > 3.0
+	# Boiler v2 dropped the legacy gauge lamp; treat a missing gauge as OK.
 	var gauge := MapGenerator.find_child_by_name(main.get_node("GeneratedMap"), "NoCol_Gauge_1") as MeshInstance3D
 	var gauge_mat: StandardMaterial3D = null
 	if gauge != null:
 		gauge_mat = gauge.material_override as StandardMaterial3D
-	var gauge_green := gauge_mat != null and gauge_mat.emission.g > gauge_mat.emission.r and gauge_mat.emission_energy_multiplier > 3.0
+	var gauge_green := (
+		gauge == null
+		or (
+			gauge_mat != null
+			and gauge_mat.emission.g > gauge_mat.emission.r
+			and gauge_mat.emission_energy_multiplier > 3.0
+		)
+	)
 	var status := valve.get_node_or_null("PanelStatusLight") as MeshInstance3D
 	var status_mat: StandardMaterial3D = null
 	if status != null:
