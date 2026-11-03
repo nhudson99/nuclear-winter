@@ -347,10 +347,24 @@ func _check_level1_no_start_web() -> bool:
 			on_start = true
 	var clear := webs.is_empty() and not on_start
 	var spawn_clear := _spawn_floor_is_clear(main)
+	var player := main.get_node_or_null("Player") as Node3D
+	var exit_pos: Vector3 = layout.get("exit", Vector3.ZERO)
+	var spawn_at_exit := false
+	if player != null:
+		var gap := Vector2(
+			player.global_position.x - exit_pos.x,
+			player.global_position.z - exit_pos.z
+		).length()
+		spawn_at_exit = (
+			start == layout.get("exit_cell", Vector2i(-999, -999))
+			and gap > 0.5
+			and gap < 2.0
+		)
+		print("level1_spawn_at_exit=", spawn_at_exit, " gap=", gap)
 	print("level1_webs=", webs.size(), " on_start=", on_start, " start=", start)
 	print("level1_spawn_clear_ok=", spawn_clear)
 	main.queue_free()
-	return clear and spawn_clear
+	return clear and spawn_clear and spawn_at_exit
 
 
 func _spawn_floor_is_clear(main: Node3D) -> bool:

@@ -42,6 +42,10 @@ const SHELL_DRESSING_PREFIXES: Array[String] = [
 ]
 ## Radius around the player spawn that must stay free of floor decals.
 const SPAWN_CLEAR_RADIUS := 1.15
+## How far inside the exterior exit doorway the player stands (metres from the
+## room centre toward the open wall). Half-tile is the wall; keep clear of the
+## plug line and of furniture stacked on the room centre.
+const SPAWN_EXIT_INSET := 1.6
 ## Room floor slab thickness from the Blender modules.
 const FLOOR_THICKNESS := 0.1
 const GROUND_THICKNESS := 0.6
@@ -282,21 +286,14 @@ func generate(
 	var exit_info := {}
 	if wanted_floor == 0:
 		exit_info = _open_exterior_exit(rooms, start_cell, occupied, rng, floor_of)
+		# Spawn in the exit room so the player stands at the main doorway, not
+		# buried in centre-room furniture (library bookcases, desks, rubble).
+		if exit_info.has("cell"):
+			start_cell = exit_info["cell"]
 	await get_tree().process_frame
 
 	progress.emit(0.96, "РАССТАНОВКА / PLACING ASSETS")
 	planned["active_floor"] = wanted_floor
-	# The player stands on the start-room centre. Every module dresses that
-	# middle with a dark rubble decal, which reads as a blot directly under
-	# their feet. Other rooms keep the dressing.
-	if wanted_floor == 0:
-		for room_info in rooms:
-			if room_info.get("cell") != cells[0]:
-				continue
-			var start_room := room_info.get("node") as Node3D
-			if start_room:
-				_clear_spawn_floor_dressing(start_room)
-			break
 	var layout := _describe_layout(
 		rooms,
 		cells,
@@ -307,6 +304,15 @@ func generate(
 		planned,
 		rng
 	)
+	if wanted_floor == 0:
+		var spawn_room: Node3D = null
+		for room_info in rooms:
+			if room_info.get("cell") != start_cell:
+				continue
+			spawn_room = room_info.get("node") as Node3D
+			break
+		if spawn_room != null:
+			_clear_spawn_floor_dressing(spawn_room, layout.get("start", spawn_room.global_position))
 	_add_locked_doors(container, layout, wanted_floor)
 	_add_stairwells(container, layout, wanted_floor)
 	_add_steam(container, layout, wanted_floor)
@@ -1310,12 +1316,13 @@ static func debris_covers_point(mesh_instance: MeshInstance3D, origin: Vector3, 
 	return dx * dx + dz * dz <= radius * radius
 
 
-## Drops rubble decals that cover the room centre. The player spawns there, and
-## the decal otherwise sits under their boots for the whole opening of the level.
-func _clear_spawn_floor_dressing(room: Node3D) -> void:
-	var origin := room.global_position
+## Drops rubble decals that cover the spawn point (just inside the exit door).
+func _clear_spawn_floor_dressing(room: Node3D, origin: Vector3 = Vector3.ZERO) -> void:
+	var at := origin
+	if not at.is_finite() or at == Vector3.ZERO:
+		at = room.global_position
 	var doomed: Array[Node] = []
-	_collect_spawn_debris(room, origin, doomed)
+	_collect_spawn_debris(room, at, doomed)
 	for node in doomed:
 		node.queue_free()
 
@@ -1727,9 +1734,10 @@ func _add_monster_track(container: Node3D, track: Dictionary) -> void:
 
 
 ## Knocks the plug out of one outward-facing wall so the run has a way back out
-## into the ash. Usually that is the start room, but growth can bury the start
-## cell in the middle of the map, so the nearest room with an outward-facing wall
-## is used instead. Some room always has one.
+## into the ash. Usually that is the growth root, but the root can sit in the
+## middle of the map, so the nearest room with an outward-facing wall is used
+## instead. Prefer livable rooms over the dense library tile so the doorway
+## spawn is not boxed in by bookcases. Some room always has a free wall.
 func _open_exterior_exit(
 	rooms: Array[Dictionary],
 	start_cell: Vector2i,
@@ -1738,7 +1746,7 @@ func _open_exterior_exit(
 	floor_of: Dictionary = {}
 ) -> Dictionary:
 	var best: Dictionary = {}
-	var best_distance := 1 << 30
+	var best_score := 1 << 30
 	var floor_cells := _floor_occupied(occupied, floor_of, 0)
 	for room in rooms:
 		if room.get("node") == null:
@@ -1746,16 +1754,21 @@ func _open_exterior_exit(
 		var cell: Vector2i = room["cell"]
 		if int(floor_of.get(cell, 0)) != 0:
 			continue
-		var distance := absi(cell.x - start_cell.x) + absi(cell.y - start_cell.y)
-		if distance >= best_distance:
-			continue
 		var free_sides: Array[String] = []
 		for side in SIDES:
 			if not floor_cells.has(cell + SIDE_STEPS[side]):
 				free_sides.append(side)
 		if free_sides.is_empty():
 			continue
-		best_distance = distance
+		var distance := absi(cell.x - start_cell.x) + absi(cell.y - start_cell.y)
+		# Library furniture crowds the floor; demote it as an entrance room.
+		var library_penalty := 1000 if String(room.get("type", "")) == TYPE_LIBRARY else 0
+		var score := distance + library_penalty
+		if score > best_score:
+			continue
+		if score == best_score and not best.is_empty():
+			continue
+		best_score = score
 		# South reads as "the way you came in" under the isometric camera.
 		var side: String = (
 			"S" if free_sides.has("S")
@@ -2147,11 +2160,18 @@ func _describe_layout(
 	var widow_cell := _first_enemy_cell(enemies, LevelRules.KIND_WIDOW, objective_cell)
 	var toad_cell := _first_enemy_cell(enemies, LevelRules.KIND_TOAD, start_cell)
 
-	var start_center := _world_of(start_cell, floor_of)
 	var exit_position := _world_of(exit_cell, floor_of)
+	var start_position := _world_of(start_cell, floor_of) + Vector3(0.0, 0.05, 0.0)
 	if not exit_side.is_empty():
-		# Sit in the doorway itself rather than the wall's centre line.
-		exit_position += Vector3(SIDE_STEPS[exit_side].x, 0.0, SIDE_STEPS[exit_side].y) * (TILE * 0.5 - 0.4)
+		var outward: Vector2i = SIDE_STEPS[exit_side]
+		# ExitZone sits in the doorway itself.
+		exit_position += Vector3(outward.x, 0.0, outward.y) * (TILE * 0.5 - 0.4)
+		# Player stands just inside that doorway, clear of centre-room clutter.
+		start_position = (
+			_world_of(exit_cell, floor_of)
+			+ Vector3(outward.x, 0.0, outward.y) * (TILE * 0.5 - SPAWN_EXIT_INSET)
+			+ Vector3(0.0, 0.05, 0.0)
+		)
 
 	var room_summaries: Array[Dictionary] = []
 	for room in rooms:
@@ -2222,7 +2242,7 @@ func _describe_layout(
 		"floor_count": LevelRules.floor_count(level),
 		"rooms": room_summaries,
 		"start_cell": start_cell,
-		"start": start_center + Vector3(0.0, 0.05, 0.0),
+		"start": start_position,
 		"exit_side": exit_side,
 		"exit_cell": exit_cell,
 		"exit": exit_position,
