@@ -1,7 +1,7 @@
 extends SceneTree
 
-## Library secret button, pitch-black ambient, stalker freeze, void laser hook,
-## MonsterTracker floor records, melee attack cadence, and death despawn.
+## Library bookshelf unlocks a wing LockedDoor, pitch-black ambient, stalker
+## freeze, void laser hook, MonsterTracker, melee cadence, and death despawn.
 
 func _initialize() -> void:
 	call_deferred("_run")
@@ -27,83 +27,65 @@ func _run() -> void:
 		if String(room.get("type", "")) == MapGenerator.TYPE_LIBRARY:
 			has_library_room = true
 	var bookshelf_obj := false
+	var bookshelf_stage := 0
 	for spec in layout.get("objectives", []):
 		if String(spec.get("kind", "")) == LevelRules.KIND_BOOKSHELF:
 			bookshelf_obj = true
-	var library_cell: Vector2i = library.get("cell", Vector2i.ZERO)
-	var occupied := {}
-	for room in layout.get("rooms", []):
-		occupied[room["cell"]] = true
-	var neighbor_count := 0
-	var leaf_exit := false
-	for side in MapGenerator.SIDES:
-		var nxt: Vector2i = library_cell + MapGenerator.SIDE_STEPS[side]
-		if not occupied.has(nxt):
-			continue
-		neighbor_count += 1
-		var degree := 0
-		for side2 in MapGenerator.SIDES:
-			if occupied.has(nxt + MapGenerator.SIDE_STEPS[side2]):
-				degree += 1
-		if degree == 1:
-			leaf_exit = true
-	var entrance_open := neighbor_count >= 2 and library.has("from_cell")
-	var start_cell: Vector2i = layout.get("start_cell", Vector2i.ZERO)
-	var locked := {}
-	if library.has("from_cell") and library.has("to_cell"):
-		locked[MapGenerator.edge_key(library["from_cell"], library["to_cell"])] = true
-	var reachable := false
-	if occupied.has(start_cell) and occupied.has(library_cell):
-		if start_cell == library_cell:
-			reachable = true
-		else:
-			var seen := {start_cell: true}
-			var queue: Array[Vector2i] = [start_cell]
-			while not queue.is_empty() and not reachable:
-				var cell: Vector2i = queue.pop_back()
-				for side in MapGenerator.SIDES:
-					var nxt: Vector2i = cell + MapGenerator.SIDE_STEPS[side]
-					if not occupied.has(nxt) or seen.has(nxt):
-						continue
-					if locked.has(MapGenerator.edge_key(cell, nxt)):
-						continue
-					if nxt == library_cell:
-						reachable = true
-						break
-					seen[nxt] = true
-					queue.append(nxt)
+			bookshelf_stage = int(spec.get("stage", 0))
+	var unlock_stage := LevelRules.library_unlock_stage(4)
 	var library_ok: bool = (
 		has_library_room
 		and bookshelf_obj
 		and not library.is_empty()
-		and entrance_open
-		and reachable
-		and (leaf_exit or neighbor_count >= 2)
+		and unlock_stage > 0
+		and bookshelf_stage == unlock_stage
+		and int(library.get("unlock_stage", 0)) == unlock_stage
+		and not library.has("from_cell")
 	)
 	print(
 		"library_ok=", library_ok,
 		" room=", has_library_room,
 		" objective=", bookshelf_obj,
-		" neighbors=", neighbor_count,
-		" leaf_exit=", leaf_exit,
-		" reachable=", reachable,
+		" stage=", bookshelf_stage,
 		" secret=", library
 	)
+
+	var player: CharacterBody3D = main.get_node("Player")
+	if main.has_method("park_monsters"):
+		main.park_monsters()
+
+	# Library may sit on a higher storey (last-wing lock). Jump there so the
+	# secret button and matching LockedDoor are mounted.
+	var library_floor := int(library.get("floor", 0))
+	if library_floor != main.get_active_floor():
+		var dest_cell: Vector2i = library.get("cell", layout.get("start_cell", Vector2i.ZERO))
+		await main.change_floor(library_floor, dest_cell)
+		layout = main.get_layout()
+		library = layout.get("library", {})
 
 	var button: Node = null
 	for node in main.get_tree().get_nodes_in_group("secret_bookshelf"):
 		button = node
 		break
-	var door: Node = null
+	var metal_door := false
 	for node in main.get_tree().get_nodes_in_group("library_door"):
-		door = node
+		metal_door = true
 		break
-	var secret_nodes_ok: bool = button != null and (door != null or not library.has("from_cell"))
-	print("secret_nodes_ok=", secret_nodes_ok, " button=", button, " door=", door)
+	var stage_door: LockedDoor = null
+	for node in main.get_tree().get_nodes_in_group("locked_door"):
+		if node is LockedDoor and (node as LockedDoor).stage == unlock_stage:
+			stage_door = node as LockedDoor
+			break
+	var secret_nodes_ok: bool = button != null and not metal_door and stage_door != null
+	print(
+		"secret_nodes_ok=", secret_nodes_ok,
+		" button=", button,
+		" metal_door=", metal_door,
+		" locked_door=", stage_door,
+		" library_floor=", library_floor
+	)
 
-	var player: CharacterBody3D = main.get_node("Player")
-	if main.has_method("park_monsters"):
-		main.park_monsters()
+	var locked_before := stage_door != null and stage_door.is_locked()
 	if button != null:
 		player.global_position = (button as Node3D).global_position + Vector3(0.9, 0.05, 0.0)
 		await create_timer(0.05).timeout
@@ -112,10 +94,13 @@ func _run() -> void:
 		player._physics_process(0.033)
 		Input.action_release("interact")
 		await create_timer(0.1).timeout
-	var opened_ok: bool = main.bookshelf_is_opened()
-	if door != null and door.has_method("is_open"):
-		opened_ok = opened_ok and bool(door.is_open())
-	print("bookshelf_opened_ok=", opened_ok)
+	var opened_ok: bool = (
+		main.bookshelf_is_opened()
+		and locked_before
+		and stage_door != null
+		and not stage_door.is_locked()
+	)
+	print("bookshelf_unlock_ok=", opened_ok, " was_locked=", locked_before)
 
 	var world := main.get_node("WorldEnvironment") as WorldEnvironment
 	var ambient_ok: bool = (
@@ -146,11 +131,13 @@ func _run() -> void:
 	var tracker_ok: bool = tracker != null and tracked >= 1
 	print("tracker_ok=", tracker_ok, " alive=", tracked)
 
-	# Melee uses attack cadence, not instant body_entered damage.
 	slime.visible = true
 	slime.set_physics_process(false)
-	slime.global_position = layout["start"] + Vector3(3.0, 0.05, 0.0)
-	player.global_position = slime.global_position
+	if slime.has_method("set_off_floor"):
+		slime.set_off_floor(false)
+	if tracker != null:
+		tracker.set_floor(slime, main.get_active_floor())
+	slime.global_position = player.global_position + Vector3(1.5, 0.0, 0.0)
 	player.health = 100.0
 	slime.set("touch_damage", 5.0)
 	slime.set("attack_interval", 0.25)
@@ -163,7 +150,6 @@ func _run() -> void:
 	var gated: bool = is_equal_approx(player.health, 95.0)
 	print("melee_cadence_ok=", hit_once and gated, " hp=", player.health)
 
-	# Death despawns instead of leaving a corpse.
 	var probe := CharacterBody3D.new()
 	probe.name = "DespawnProbe"
 	var probe_mesh := Node3D.new()

@@ -60,12 +60,15 @@ func _run() -> void:
 
 	var reach1_ok := _check_steam(level1["layout"], true)
 	var reach2_blocked := not _reachable_without_locks(level2["layout"], level2["layout"]["objective_cell"])
-	var reach2_key := _reachable_without_locks(level2["layout"], (level2["layout"]["keys"] as Array)[0]["cell"])
+	var library_cell: Vector2i = (level2["layout"].get("library", {}) as Dictionary).get(
+		"cell", level2["layout"]["start_cell"]
+	)
+	var reach2_library := _reachable_without_locks(level2["layout"], library_cell)
 	var steam_higher_ok := _check_steam(level2["layout"], false) and _check_steam(level3["layout"], false)
 	print(
 		"steam_l1_ok=", reach1_ok,
 		" mission_l2_locked_ok=", reach2_blocked,
-		" key_l2_open_ok=", reach2_key,
+		" library_l2_open_ok=", reach2_library,
 		" steam_higher_ok=", steam_higher_ok
 	)
 
@@ -115,7 +118,7 @@ func _run() -> void:
 		and zones3_ok
 		and reach1_ok
 		and reach2_blocked
-		and reach2_key
+		and reach2_library
 		and steam_higher_ok
 		and floors_ok
 		and stairs_ok
@@ -177,19 +180,17 @@ func _check_formulas() -> bool:
 		]
 		var want: Array = expected[level]
 		var match_ok: bool = got == want and LevelRules.counts_match_cycle(level)
-		var valve_listed := false
 		var bookshelf_listed := false
 		for spec in LevelRules.objectives(level):
-			if String(spec.get("kind", "")) == LevelRules.KIND_VALVE:
-				valve_listed = true
 			if String(spec.get("kind", "")) == LevelRules.KIND_BOOKSHELF:
 				bookshelf_listed = true
+		var want_bookshelf := LevelRules.library_unlock_stage(level) > 0
 		var obj_ok: bool = (
-			LevelRules.objective_count(level) == level + 2
-			and LevelRules.key_count(level) == maxi(level - 1, 0)
-			and LevelRules.objectives(level).size() == level + 2
-			and valve_listed
-			and bookshelf_listed
+			LevelRules.objective_count(level) == level
+			and LevelRules.key_count(level) == maxi(level - 2, 0)
+			and LevelRules.locked_door_count(level) == maxi(level - 1, 0)
+			and LevelRules.objectives(level).size() == level
+			and bookshelf_listed == want_bookshelf
 		)
 		var floors_ok: bool = (
 			LevelRules.floor_count(level) == int(ceili(float(level) / 2.0))
@@ -265,20 +266,22 @@ func _objectives_match(layout: Dictionary, level: int) -> bool:
 	var keys: Array = layout.get("keys", [])
 	var locks: Array = layout.get("locks", [])
 	var objectives: Array = layout.get("objectives", [])
-	var valve := 0
+	var bookshelf := 0
 	for spec in objectives:
-		if String(spec.get("kind", "")) == LevelRules.KIND_VALVE:
-			valve += 1
+		if String(spec.get("kind", "")) == LevelRules.KIND_BOOKSHELF:
+			bookshelf += 1
+	var want_bookshelf := 1 if LevelRules.library_unlock_stage(level) > 0 else 0
 	var ok := (
 		keys.size() == LevelRules.key_count(level)
 		and locks.size() >= LevelRules.locked_door_count(level)
 		and objectives.size() == LevelRules.objective_count(level)
-		and valve == 1
+		and bookshelf == want_bookshelf
 	)
 	print(
 		"objectives level=", level,
 		" keys=", keys.size(),
 		" locks=", locks.size(),
+		" bookshelf=", bookshelf,
 		" list=", objectives.size(),
 		" ok=", ok
 	)
@@ -390,7 +393,10 @@ func _check_chained_zones(layout: Dictionary, level: int) -> bool:
 	var zones: Dictionary = layout.get("zones", {})
 	var locks: Array = layout.get("locks", [])
 	var keys: Array = layout.get("keys", [])
-	if locks.size() < level - 1 or keys.size() != level - 1:
+	if locks.size() < LevelRules.locked_door_count(level):
+		return false
+	if keys.size() != LevelRules.key_count(level):
+		print("key_count_wrong level=", level, " keys=", keys.size(), " want=", LevelRules.key_count(level))
 		return false
 	var stages := {}
 	for lock in locks:
@@ -415,8 +421,12 @@ func _check_chained_zones(layout: Dictionary, level: int) -> bool:
 		if int(zones.get(lock["to_cell"], -1)) != stage:
 			print("lock_to_wrong stage=", stage, " zone=", zones.get(lock["to_cell"], -1))
 			return false
+	var library_stage := LevelRules.library_unlock_stage(level)
 	for key in keys:
 		var stage := int(key.get("stage", 0))
+		if stage == library_stage:
+			print("key_for_library_stage=", stage)
+			return false
 		if int(zones.get(key["cell"], -1)) != stage - 1:
 			print("key_zone_wrong stage=", stage, " zone=", zones.get(key["cell"], -1))
 			return false
@@ -742,7 +752,7 @@ func _check_live_level_2() -> bool:
 
 	var layout: Dictionary = main.get_layout()
 	var doors: Array = main.locked_doors()
-	var keys_ok: bool = (layout.get("keys", []) as Array).size() == 1
+	var keys_ok: bool = (layout.get("keys", []) as Array).size() == LevelRules.key_count(2)
 	var door_ok: bool = doors.size() >= 1
 	for door in doors:
 		if not (door as LockedDoor).is_locked():
@@ -773,14 +783,17 @@ func _check_live_level_2() -> bool:
 	var blocked := _planar(player.global_position, to_center) > MapGenerator.TILE * 0.5
 	print("live_blocked_ok=", blocked, " dist=", _planar(player.global_position, to_center))
 
-	var key: Area3D = main.get_node_or_null("Key_1")
-	if key == null:
-		print("live_key_missing")
+	var button: Node = null
+	for node in main.get_tree().get_nodes_in_group("secret_bookshelf"):
+		button = node
+		break
+	if button == null:
+		print("live_bookshelf_missing")
 		main.queue_free()
 		OS.set_environment("NW_LEVEL", "")
 		return false
 	player.set_physics_process(true)
-	player.global_position = key.global_position + Vector3(0.8, 0.05, 0.0)
+	player.global_position = (button as Node3D).global_position + Vector3(0.8, 0.05, 0.0)
 	player.velocity = Vector3.ZERO
 	await create_timer(0.05).timeout
 	Input.action_press("interact")
@@ -789,12 +802,12 @@ func _check_live_level_2() -> bool:
 	Input.action_release("interact")
 	await create_timer(0.1).timeout
 
-	var key_taken: bool = main.collected_key_stages().has(1)
+	var bookshelf_ok: bool = main.bookshelf_is_opened()
 	var unlocked := doors.size() >= 1
 	for door in doors:
 		if int((door as LockedDoor).stage) == 1 and (door as LockedDoor).is_locked():
 			unlocked = false
-	print("live_key_taken=", key_taken, " unlocked=", unlocked)
+	print("live_bookshelf_ok=", bookshelf_ok, " unlocked=", unlocked)
 
 	player.set_physics_process(false)
 	await _walk_from(player, from_center, walk_dir, WALK_STEPS)
@@ -819,7 +832,7 @@ func _check_live_level_2() -> bool:
 	await create_timer(0.05).timeout
 	OS.set_environment("NW_LEVEL", "")
 	OS.set_environment("NW_LEVEL_SEED", "")
-	return keys_ok and door_ok and roster_ok and blocked and key_taken and unlocked and opened and mission_ok
+	return keys_ok and door_ok and roster_ok and blocked and bookshelf_ok and unlocked and opened and mission_ok
 
 
 func _count_active_kinds(main: Node) -> Dictionary:
@@ -976,7 +989,7 @@ func _check_live_floor_change() -> bool:
 		return false
 
 	var blocked := not up.can_use()
-	for stage in range(1, LevelRules.key_count(3) + 1):
+	for stage in range(1, LevelRules.locked_door_count(3) + 1):
 		main.unlock_stage(stage)
 	var unlocked := up.can_use()
 	print("live_stair_lock blocked=", blocked, " unlocked=", unlocked)

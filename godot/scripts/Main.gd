@@ -256,7 +256,7 @@ func _apply_layout(layout: Dictionary, arrival_cell = null) -> void:
 	if _valve_shut:
 		_open_steam_passage()
 	if _bookshelf_opened:
-		_open_library_door()
+		_apply_library_unlock()
 	_refresh_objective_hud()
 	_snap_camera()
 
@@ -760,29 +760,20 @@ func _on_bookshelf_opened() -> void:
 	if _state != GameState.PLAYING and _state != GameState.LOADING:
 		return
 	_bookshelf_opened = true
-	_open_library_door()
+	_apply_library_unlock()
 	_refresh_objective_hud()
 
 
-func _open_library_door() -> void:
-	for node in get_tree().get_nodes_in_group("library_door"):
-		if node != null and is_instance_valid(node) and node.has_method("open"):
-			node.open()
-	var library: Dictionary = _layout.get("library", {})
-	if library.is_empty() or not library.has("from_cell"):
+## Secret bookshelf opens the wing lock the same way a key pickup does.
+func _apply_library_unlock() -> void:
+	var stage := LevelRules.library_unlock_stage(_resolved_level)
+	if stage <= 0:
+		var library: Dictionary = _layout.get("library", {})
+		stage = int(library.get("unlock_stage", 0))
+	if stage <= 0:
 		return
-	var track: Dictionary = _layout.get("monster_track", {})
-	MapGenerator.add_unlocked_door_to_track(
-		track,
-		library["from_cell"],
-		String(library.get("side", "E")),
-		library["to_cell"],
-		int(library.get("floor", _active_floor))
-	)
-	_layout["monster_track"] = track
-	for body in monsters():
-		if body.has_method("apply_monster_track"):
-			body.apply_monster_track(track)
+	_collected_keys[stage] = true
+	_unlock_door(stage)
 
 
 func valve_is_shut() -> bool:

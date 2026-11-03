@@ -6,8 +6,9 @@ extends RefCounted
 ##
 ## Monsters cycle easy → moderate → dangerous as the level index grows:
 ##   slime → stalker(hare) → tank → void → tarantula → widow → toad…
-## Objectives: keys, steam valve, library secret bookshelf, then the mission
-## item in the last locked wing.
+## Objectives: exactly `n` on level `n`. Level 1 is the mission item alone.
+## Higher levels add sector keys, the library bookshelf (unlocks a wing lock),
+## then the mission item. Floors grow on odd levels (`ceil(n / 2)`).
 
 const KIND_SLIME := "slime"
 const KIND_HARE := "hare"
@@ -102,16 +103,23 @@ static func monster_counts(level: int) -> Dictionary:
 
 
 static func objective_count(level: int) -> int:
-	# Keys, the steam valve, the library bookshelf, and the mission item.
-	return clamp_level(level) + 2
+	return clamp_level(level)
 
 
 static func locked_door_count(level: int) -> int:
 	return maxi(clamp_level(level) - 1, 0)
 
 
+## Physical key pickups. One wing lock is opened by the library bookshelf
+## instead of a key, so pickups are one fewer than locked doors when n > 1.
 static func key_count(level: int) -> int:
-	return locked_door_count(level)
+	return maxi(clamp_level(level) - 2, 0)
+
+
+## Wing lock stage unlocked by finding the secret bookshelf (0 = none).
+static func library_unlock_stage(level: int) -> int:
+	var locked := locked_door_count(level)
+	return locked if locked > 0 else 0
 
 
 static func zone_count(level: int) -> int:
@@ -137,8 +145,9 @@ static func zone_room_counts(level: int) -> Array[int]:
 	return zones
 
 
+## Every odd level adds another floor: 1→1, 2→1, 3→2, 4→2, …
 static func floor_count(level: int) -> int:
-	return int(ceili(float(zone_count(level)) / float(MAX_WINGS_PER_FLOOR)))
+	return int(ceili(float(clamp_level(level)) / float(MAX_WINGS_PER_FLOOR)))
 
 
 static func floor_for_zone(zone: int) -> int:
@@ -182,27 +191,25 @@ static func randomize_monster_spawns(level: int) -> bool:
 	return clamp_level(level) >= 2
 
 
-## n keys-or-mission steps, plus the steam valve, the secret library bookshelf,
-## then the item: key 1..n-1 (if any), valve, bookshelf, mission.
+## Exactly n objectives on level n: sector keys (if any), the library bookshelf
+## when there is a wing lock for it to open, then the mission item.
 static func objectives(level: int) -> Array[Dictionary]:
 	var n := clamp_level(level)
 	var out: Array[Dictionary] = []
-	for stage in range(1, n):
+	var keys := key_count(n)
+	for stage in range(1, keys + 1):
 		out.append({
 			"kind": KIND_KEY,
 			"stage": stage,
-			"label": _key_label(stage, n - 1),
+			"label": _key_label(stage, keys),
 		})
-	out.append({
-		"kind": KIND_VALVE,
-		"stage": 0,
-		"label": "Follow the pipes and shut the steam valve",
-	})
-	out.append({
-		"kind": KIND_BOOKSHELF,
-		"stage": 0,
-		"label": "Find the secret bookshelf button in the library",
-	})
+	var library_stage := library_unlock_stage(n)
+	if library_stage > 0:
+		out.append({
+			"kind": KIND_BOOKSHELF,
+			"stage": library_stage,
+			"label": "Find the secret bookshelf button in the library",
+		})
 	out.append({
 		"kind": KIND_MISSION,
 		"stage": 0,
