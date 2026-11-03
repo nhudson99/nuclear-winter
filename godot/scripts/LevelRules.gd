@@ -6,10 +6,9 @@ extends RefCounted
 ##
 ## Monsters cycle easy → moderate → dangerous as the level index grows:
 ##   slime → stalker(hare) → tank → void → tarantula → widow → toad…
-## Objectives: exactly `n` on level `n`. Level 1 is the mission item alone.
-## Higher levels add one sector key per wing lock, then the mission item.
-## The first wing's key and LockedDoor live in the library room. Floors grow
-## on odd levels (`ceil(n / 2)`).
+## Objectives: one sector key per wing lock (from level 2), the steam valve,
+## then the mission item. The first wing's key and LockedDoor live in the
+## library room. Floors grow on odd levels (`ceil(n / 2)`).
 
 const KIND_SLIME := "slime"
 const KIND_HARE := "hare"
@@ -103,8 +102,9 @@ static func monster_counts(level: int) -> Dictionary:
 	}
 
 
+## Keys (if any) + steam valve + mission item.
 static func objective_count(level: int) -> int:
-	return clamp_level(level)
+	return key_count(level) + 2
 
 
 static func locked_door_count(level: int) -> int:
@@ -196,8 +196,7 @@ static func randomize_monster_spawns(level: int) -> bool:
 	return clamp_level(level) >= 2
 
 
-## Exactly n objectives on level n: one sector key per lock, then the mission.
-## The library-hosted key is still a KIND_KEY — the room is just its spawn.
+## Sector keys (library hosts stage 1), steam valve, then the mission item.
 static func objectives(level: int) -> Array[Dictionary]:
 	var n := clamp_level(level)
 	var out: Array[Dictionary] = []
@@ -209,6 +208,11 @@ static func objectives(level: int) -> Array[Dictionary]:
 			"stage": stage,
 			"label": _key_label(stage, keys, library_stage),
 		})
+	out.append({
+		"kind": KIND_VALVE,
+		"stage": 0,
+		"label": "Follow the pipes and shut the steam valve",
+	})
 	out.append({
 		"kind": KIND_MISSION,
 		"stage": 0,

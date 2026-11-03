@@ -181,20 +181,26 @@ func _check_formulas() -> bool:
 		var want: Array = expected[level]
 		var match_ok: bool = got == want and LevelRules.counts_match_cycle(level)
 		var library_key_listed := false
+		var valve_listed := false
 		for spec in LevelRules.objectives(level):
+			var kind := String(spec.get("kind", ""))
 			if (
-				String(spec.get("kind", "")) == LevelRules.KIND_KEY
+				kind == LevelRules.KIND_KEY
 				and int(spec.get("stage", 0)) == LevelRules.library_key_stage(level)
 				and LevelRules.library_key_stage(level) > 0
 			):
 				library_key_listed = true
+			if kind == LevelRules.KIND_VALVE:
+				valve_listed = true
 		var want_library_key := LevelRules.library_key_stage(level) > 0
+		var want_count := LevelRules.key_count(level) + 2
 		var obj_ok: bool = (
-			LevelRules.objective_count(level) == level
+			LevelRules.objective_count(level) == want_count
 			and LevelRules.key_count(level) == maxi(level - 1, 0)
 			and LevelRules.locked_door_count(level) == maxi(level - 1, 0)
-			and LevelRules.objectives(level).size() == level
+			and LevelRules.objectives(level).size() == want_count
 			and library_key_listed == want_library_key
+			and valve_listed
 		)
 		var floors_ok: bool = (
 			LevelRules.floor_count(level) == int(ceili(float(level) / 2.0))
