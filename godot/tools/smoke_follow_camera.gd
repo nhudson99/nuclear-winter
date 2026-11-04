@@ -148,19 +148,46 @@ func _run() -> void:
 	await physics_frame
 
 	var touch := main.get_node_or_null("TouchControls")
-	var latch_ok := false
-	if touch != null and touch.has_method("set_aim_stick") and touch.has_method("aim_planar"):
+	var no_snap_ok := false
+	if touch != null and touch.has_method("set_aim_stick"):
 		visual.rotation.y = 0.0
+		player.velocity = Vector3.ZERO
 		if cam.has_method("snap"):
 			cam.snap()
+		var yaw_before_aim := visual.rotation.y
+		var cam_before := _planar_yaw(cam)
+		touch.set_move_stick(Vector2.ZERO)
 		touch.set_aim_stick(Vector2(1.0, 0.0))
-		var first: Vector3 = touch.aim_planar()
-		for _i in 18:
+		for _i in 36:
 			await physics_frame
-		var later: Vector3 = touch.aim_planar()
-		latch_ok = first.length() > 0.5 and first.normalized().dot(later.normalized()) > 0.99
+		var yaw_held := visual.rotation.y
+		var turned := absf(angle_difference(yaw_held, yaw_before_aim)) > 0.35
 		touch.set_aim_stick(Vector2.ZERO)
-		print("latch_ok=", latch_ok, " first=", first, " later=", later)
+		var yaw_release := visual.rotation.y
+		var cam_release := _planar_yaw(cam)
+		for _i in 24:
+			await physics_frame
+		var yaw_after := visual.rotation.y
+		var cam_after := _planar_yaw(cam)
+		var facing_held := absf(angle_difference(yaw_after, yaw_release)) < 0.06
+		var cam_stayed := absf(angle_difference(cam_after, cam_release)) < 0.08
+		var not_back := absf(angle_difference(cam_after, cam_before)) > 0.3
+		var behind_release := _behind_player(cam, player, visual)
+		no_snap_ok = turned and facing_held and cam_stayed and not_back and behind_release
+		print(
+			"no_snap_ok=", no_snap_ok,
+			" turned=", turned,
+			" facing_held=", facing_held,
+			" cam_stayed=", cam_stayed,
+			" not_back=", not_back,
+			" behind_release=", behind_release,
+			" yaw_before=", yaw_before_aim,
+			" yaw_release=", yaw_release,
+			" yaw_after=", yaw_after,
+			" cam_before=", cam_before,
+			" cam_release=", cam_release,
+			" cam_after=", cam_after
+		)
 	else:
 		push_error("Missing aim stick")
 
@@ -180,10 +207,24 @@ func _run() -> void:
 		and west_behind
 		and move_ok
 		and look_ok
-		and latch_ok
+		and no_snap_ok
 	)
 	print("follow_camera_smoke_ok=", all_ok)
 	quit(0 if all_ok else 1)
+
+
+func _planar_yaw(cam: Camera3D) -> float:
+	var forward := -cam.global_transform.basis.z
+	return atan2(forward.x, forward.z)
+
+
+func _behind_player(cam: Camera3D, player: Node3D, visual: Node3D) -> bool:
+	var facing := Vector3(-sin(visual.rotation.y), 0.0, -cos(visual.rotation.y))
+	var behind := cam.global_position - player.global_position
+	behind.y = 0.0
+	if behind.length() < 1.0:
+		return false
+	return behind.normalized().dot(-facing) > 0.85
 
 
 func _closest_room(map: Node, point: Vector3) -> Node3D:

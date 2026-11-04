@@ -22,11 +22,6 @@ const CENTER_SHIFT := 0.25
 
 var move_stick := Vector2.ZERO
 var aim_stick := Vector2.ZERO
-## Aim axes latched when the stick leaves rest, so the follow camera can swing
-## behind that facing without the stick direction spinning with it.
-var _aim_latched := false
-var _latched_right := Vector3(1.0, 0.0, -1.0)
-var _latched_forward := Vector3(-1.0, 0.0, -1.0)
 
 var _root: Control
 var _move: TouchStick
@@ -125,19 +120,11 @@ func is_aiming() -> bool:
 
 
 func aim_planar() -> Vector3:
-	if aim_stick.length_squared() <= 0.000001:
-		_aim_latched = false
-		return Vector3.ZERO
-	if not _aim_latched:
-		var axes := planar_axes(_viewport_camera())
-		_latched_right = axes[0]
-		_latched_forward = axes[1]
-		_aim_latched = true
-	var direction := _latched_right * aim_stick.x + _latched_forward * aim_stick.y
+	## Live camera axes. The stick turns the player; it does not store a view
+	## to swing back to when the thumb comes off.
+	var direction := stick_to_planar(aim_stick, _viewport_camera())
 	if direction.length_squared() < 0.0001:
 		return Vector3.ZERO
-	if direction.length() > 1.0:
-		direction = direction.normalized()
 	return direction.normalized()
 
 
@@ -191,8 +178,6 @@ func set_move_stick(stick: Vector2) -> void:
 
 func set_aim_stick(stick: Vector2) -> void:
 	aim_stick = _clamp_stick(stick)
-	if aim_stick.length_squared() <= 0.000001:
-		_aim_latched = false
 	if _aim:
 		_aim.set_stick(aim_stick)
 
