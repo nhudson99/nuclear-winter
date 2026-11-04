@@ -19,6 +19,8 @@ extends Node
 
 signal progress(fraction: float, label: String)
 
+const HideSpotScript := preload("res://scripts/HideSpot.gd")
+
 const TILE := 12.0
 ## Wall height of the Blender modules; only used to give the level bounds depth.
 const ROOM_HEIGHT := 2.4
@@ -71,15 +73,22 @@ const STEAM_PIPE_RADIUS := 0.065
 
 ## Pripyat-dressed tiles. The plain room_*.glb modules stay beside them so the
 ## Blender rebuild path and the preview diff still have the undecorated shells.
+##
+## Bedroom, living room, office, and storage use the v2 scenes. Those are the
+## same 12 m shells with a HideSpot_* prop added. The generator stores one
+## scene per type, so v2 replaces v1 here; the v1 glbs and preview scenes stay
+## on disk for the artist. The boiler is v3 (v2 plus the locker bank). The
+## wrapped .tscn files are what get instanced; their PreviewLight is removed
+## at spawn so the level stays dark.
 const ROOM_SCENES := {
-	"bedroom": "res://assets/rooms/room_bedroom_decorated.glb",
-	"living_room": "res://assets/rooms/room_living_room_decorated.glb",
-	"office": "res://assets/rooms/room_office_decorated.glb",
-	"storage": "res://assets/rooms/room_storage_decorated.glb",
+	"bedroom": "res://scenes/rooms/Bedroom_Decorated_v2.tscn",
+	"living_room": "res://scenes/rooms/LivingRoom_Decorated_v2.tscn",
+	"office": "res://scenes/rooms/Office_Decorated_v2.tscn",
+	"storage": "res://scenes/rooms/Storage_Decorated_v2.tscn",
 	"library": "res://assets/rooms/room_library_decorated.glb",
 	"stairwell_up": "res://assets/rooms/room_stairwell_up_decorated.glb",
 	"stairwell_down": "res://assets/rooms/room_stairwell_down_decorated.glb",
-	"boiler": "res://assets/rooms/room_boiler_decorated_v2.glb",
+	"boiler": "res://scenes/rooms/Boiler_Decorated_v3.tscn",
 	"pipe_gallery": "res://assets/rooms/room_pipe_gallery_decorated.glb",
 }
 
@@ -989,6 +998,8 @@ func _spawn_room(
 	room.name = "Room_%d_%d_%s" % [cell.x, cell.y, type_name]
 	room.position = _world_of(cell, floor_of)
 	container.add_child(room)
+	# Preview scenes carry a warm fill light for Blender/Godot inspection.
+	_strip_preview_lights(room)
 
 	var room_floor := int(floor_of.get(cell, 0))
 	var floor_cells := _floor_occupied(occupied, floor_of, room_floor)
@@ -1006,12 +1017,42 @@ func _spawn_room(
 
 	_center_stair_flight(room, type_name)
 	_build_room_collision(room)
+	HideSpotScript.attach_in(room)
 	_silence_shell_dressing_shadows(room)
 	# Neighbor floors are built under a hidden parent. Drop collision before
 	# the next frame so the player does not walk into a storey they are not on.
 	if container.has_meta("nw_dormant"):
 		_sleep_colliders(room)
 	return room
+
+
+func _strip_preview_lights(node: Node) -> void:
+	var doomed: Array[Node] = []
+	_collect_named(node, "PreviewLight", doomed)
+	for item in doomed:
+		item.free()
+
+
+func _collect_named(node: Node, node_name: String, doomed: Array[Node]) -> void:
+	if String(node.name) == node_name:
+		doomed.append(node)
+		return
+	for child in node.get_children():
+		_collect_named(child, node_name, doomed)
+
+
+## Door leaves, the dark cavity, and the swapped *_Doors.glb. The baked
+## HideSpot / Locker mesh keeps the single root-bounds box.
+func _is_hide_door_piece(mesh: Node) -> bool:
+	var label := String(mesh.name)
+	if label == "Door" or label.begins_with("Door_") or label == "Interior":
+		return true
+	var walker := mesh.get_parent()
+	while walker != null:
+		if String(walker.name) == "HideDoors":
+			return true
+		walker = walker.get_parent()
+	return false
 
 
 func _sleep_colliders(node: Node) -> void:
@@ -1357,6 +1398,10 @@ func _build_room_collision(room: Node3D) -> int:
 	var treads: Array[MeshInstance3D] = []
 	for mesh_instance in meshes:
 		if mesh_instance.name.begins_with(NO_COLLISION_PREFIX):
+			continue
+		# Hinged doors and the dark cavity are visual. One box on the baked
+		# shell is the root bounds. HideDoors is the swapped *_Doors.glb.
+		if _is_hide_door_piece(mesh_instance):
 			continue
 		if mesh_instance.mesh == null:
 			continue

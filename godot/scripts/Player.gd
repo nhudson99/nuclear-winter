@@ -46,7 +46,7 @@ signal stair_used(stair: Node)
 const LOOPING_CLIPS := ["Idle", "Walk", "Run"]
 const TOUCH_CONTROLS := preload("res://scripts/TouchControls.gd")
 const BULLET_SCRIPT := preload("res://scripts/Bullet.gd")
-
+const CharacterMeshScript := preload("res://scripts/CharacterMesh.gd")
 var _anim: AnimationPlayer
 var _clip: String = ""
 var health: float = 100.0
@@ -65,12 +65,22 @@ var _base_run_speed: float = 5.5
 var _base_max_health: float = 100.0
 ## Frames after a floor change during which another stair cannot fire.
 var _stair_grace: int = 0
+var _hidden: bool = false
+var _hide_spot: Node
+var _hide_floor_y: float = 0.0
+var _hide_return_position: Vector3 = Vector3.ZERO
+var _hide_collision_layer: int = 2
+var _hide_collision_mask: int = 1
+## Seconds left on hide_ejected so locomotion does not cut the stagger off.
+var _action_anim_left: float = 0.0
 
 func current_clip() -> String:
 	return _clip
 
 
 func _ready() -> void:
+	# Warden is the player. hide_ejected plays when that file has the clip.
+	CharacterMeshScript.drop_stray_meshes(visual)
 	add_to_group("player")
 	_ensure_key_action("sprint", KEY_SHIFT)
 	_ensure_key_action("sneak", KEY_CTRL)
@@ -113,6 +123,11 @@ func _ready() -> void:
 
 func _physics_process(delta: float) -> void:
 	_fire_cooldown = maxf(0.0, _fire_cooldown - delta)
+	if _hidden and _alive:
+		_hold_hiding()
+		if not _input_locked and Input.is_action_just_pressed("interact"):
+			exit_hiding()
+		return
 	_poll_weapon_input()
 	if not _alive or _input_locked:
 		set_flashlight_on(false)
@@ -132,6 +147,9 @@ func _physics_process(delta: float) -> void:
 
 	if Input.is_action_just_pressed("interact"):
 		_try_interact()
+	if _hidden:
+		_hold_hiding()
+		return
 	# Touch taps are also delivered as mouse clicks. On a phone that click is
 	# not an attack; aiming the right stick at a monster is.
 	if Input.is_action_just_pressed("fire") and not _click_fire_blocked(touch):
@@ -176,7 +194,9 @@ func _physics_process(delta: float) -> void:
 		# glTF forward is -Z, so the yaw that points the model down the travel
 		# direction is half a turn from atan2 of the velocity.
 		_face_planar(planar, delta)
-	if speed > 0.15:
+	if _action_anim_left > 0.0:
+		_action_anim_left = maxf(0.0, _action_anim_left - delta)
+	elif speed > 0.15:
 		var clip := "Run" if speed >= run_threshold else "Walk"
 		var metres: float = run_cycle_metres if clip == "Run" else walk_cycle_metres
 		_play(clip, _cycle_speed(clip, speed, metres))
@@ -184,7 +204,7 @@ func _physics_process(delta: float) -> void:
 		_play("Idle", 1.0)
 
 func take_damage(amount: float) -> void:
-	if not _alive or amount <= 0.0:
+	if not _alive or _hidden or amount <= 0.0:
 		return
 	health = maxf(0.0, health - amount)
 	if _health_bar:
@@ -212,11 +232,143 @@ func lock_input() -> void:
 func unlock_input() -> void:
 	_input_locked = false
 
-## E / the on-screen USE button. Picks up a nearby objective or uses stairs.
+## E / the on-screen USE button. Picks up a nearby objective, hides, or uses stairs.
 func interact() -> void:
 	if not _alive or _input_locked:
 		return
+	if _hidden:
+		exit_hiding()
+		return
 	_try_interact()
+
+
+func is_hidden() -> bool:
+	return _hidden
+
+
+func hiding_spot() -> Node:
+	return _hide_spot
+
+
+## Park inside a hide spot. The body stays on the shell's floor, the mesh is
+## hidden, and collision is dropped so the closet box does not shove the capsule.
+## A monster already chasing with a clear view of this moment is told to break
+## the spot; every other monster loses the player.
+func enter_hiding(spot: Node3D, inside: Vector3) -> bool:
+	if _hidden or not _alive or _input_locked or spot == null:
+		return false
+	var witnesses := _hiding_witnesses()
+	_hide_spot = spot
+	_hide_floor_y = global_position.y
+	_hide_return_position = global_position
+	_hide_collision_layer = collision_layer
+	_hide_collision_mask = collision_mask
+	_hidden = true
+	velocity = Vector3.ZERO
+	set_flashlight_on(false)
+	collision_layer = 0
+	collision_mask = 0
+	if visual:
+		visual.visible = false
+	if _health_bar:
+		_health_bar.visible = false
+	var parked := inside
+	parked.y = _hide_floor_y
+	global_position = parked
+	_play("Idle", 1.0)
+	if spot.has_method("on_player_entered"):
+		spot.on_player_entered()
+	for monster in witnesses:
+		if monster.has_method("commit_hide_breach"):
+			monster.commit_hide_breach(spot)
+	return true
+
+
+## Step back onto the door side and turn the mesh, collision, and controls back on.
+## `forced` is a monster smash: the caller already burst the doors.
+func exit_hiding(forced: bool = false) -> void:
+	if not _hidden:
+		return
+	if not forced and _spot_is_breaking():
+		return
+	var spot := _hide_spot
+	var back := _hide_return_position
+	var forward := Vector3.ZERO
+	if spot != null and is_instance_valid(spot):
+		if spot.has_method("entry_global"):
+			back = spot.entry_global()
+			back.y = _hide_floor_y
+		if spot.has_method("exit_forward"):
+			forward = spot.exit_forward()
+		if spot.has_method("on_occupant_left"):
+			spot.on_occupant_left(self, forced)
+	global_position = back
+	collision_layer = _hide_collision_layer
+	collision_mask = _hide_collision_mask
+	velocity = Vector3.ZERO
+	_hidden = false
+	_hide_spot = null
+	if visual:
+		visual.visible = true
+		if forward.length() > 0.1:
+			visual.rotation.y = atan2(forward.x, forward.z) + PI
+	if _health_bar:
+		_health_bar.visible = true
+	_play("Idle", 1.0)
+
+
+## Thrown out through the door. Plays hide_ejected when that clip exists.
+func eject_from_hiding(_attacker: Node, damage: float) -> void:
+	if not _hidden:
+		return
+	exit_hiding(true)
+	_play_action("hide_ejected")
+	if damage > 0.0:
+		take_damage(damage)
+
+
+func _hiding_witnesses() -> Array:
+	var seen: Array = []
+	if not is_inside_tree():
+		return seen
+	for node in get_tree().get_nodes_in_group("monster"):
+		if node != null and node.has_method("saw_player_enter_hiding") and node.saw_player_enter_hiding():
+			seen.append(node)
+	return seen
+
+
+func _spot_is_breaking() -> bool:
+	return (
+		_hide_spot != null
+		and is_instance_valid(_hide_spot)
+		and _hide_spot.has_method("is_being_broken")
+		and _hide_spot.is_being_broken()
+	)
+
+
+func _play_action(clip: String) -> bool:
+	if _anim == null or not _anim.has_animation(clip):
+		return false
+	_action_anim_left = maxf(_anim.get_animation(clip).length, 0.05)
+	_play(clip, 1.0)
+	return true
+
+
+func _hold_hiding() -> void:
+	velocity = Vector3.ZERO
+	set_flashlight_on(false)
+	if _hide_spot == null or not is_instance_valid(_hide_spot):
+		exit_hiding()
+		return
+	if _hide_spot.has_method("inside_global"):
+		var parked: Vector3 = _hide_spot.inside_global()
+		parked.y = _hide_floor_y
+		global_position = parked
+	if visual:
+		visual.visible = false
+	if _health_bar:
+		_health_bar.visible = false
+	_play("Idle", 1.0)
 
 func is_flashlight_on() -> bool:
 	return _flashlight_on
@@ -550,6 +702,10 @@ func _try_interact() -> void:
 		bookshelf_opened.emit()
 		return
 
+	var hiding := _nearest_hide_spot()
+	if hiding != null and hiding.has_method("try_enter") and hiding.try_enter(self):
+		return
+
 	_use_stair(_nearest_stairwell())
 
 
@@ -568,6 +724,27 @@ func _nearest_secret_bookshelf() -> Node:
 			var to_shelf: Vector3 = (node as Node3D).global_position - global_position
 			to_shelf.y = 0.0
 			dist = to_shelf.length()
+		if dist < best_dist:
+			best_dist = dist
+			best = node
+	return best
+
+
+func _nearest_hide_spot() -> Node:
+	var best: Node = null
+	var best_dist := INF
+	for node in get_tree().get_nodes_in_group("hide_spot"):
+		if node == null or not is_instance_valid(node):
+			continue
+		if not node.has_method("can_interact") or not node.can_interact(global_position):
+			continue
+		var dist := interact_range
+		if node.has_method("interact_distance"):
+			dist = float(node.interact_distance(global_position))
+		elif node is Node3D:
+			var to_spot: Vector3 = (node as Node3D).global_position - global_position
+			to_spot.y = 0.0
+			dist = to_spot.length()
 		if dist < best_dist:
 			best_dist = dist
 			best = node
@@ -649,8 +826,11 @@ func _play(clip: String, speed: float) -> void:
 	_anim.speed_scale = speed
 	if _clip == clip:
 		return
+	# hide_ejected is authored at the rest pose on both ends. Blend across the
+	# cut so the warden does not pop into or out of the stagger.
+	var blend := 0.18 if clip == "hide_ejected" or _clip == "hide_ejected" else 0.15
 	_clip = clip
-	_anim.play(clip, 0.15, speed)
+	_anim.play(clip, blend, speed)
 
 func _cycle_speed(clip: String, speed: float, cycle_metres: float) -> float:
 	if _anim == null or not _anim.has_animation(clip) or cycle_metres <= 0.0:
