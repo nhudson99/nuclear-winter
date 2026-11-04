@@ -1,5 +1,7 @@
 extends SceneTree
 
+const Clear := preload("res://tools/smoke_clear.gd")
+
 ## Headless smoke for the monster track: doorway graph, intersection rolls,
 ## chase that goes through doors instead of walls, and return-to-track after
 ## losing the player.
@@ -80,7 +82,10 @@ func _run() -> void:
 	var neighbour_center := _cell_center(neighbour)
 	var door_pos := (start_center + neighbour_center) * 0.5
 	door_pos.y = MapGenerator.TRACK_Y
-	var offset := Vector3(0.0, 0.05, 4.0)
+	# 4 m south of centre lands inside v2 wall furniture. Stay off the doorway
+	# axis so a straight line still hits the wall, but keep both stands clear.
+	var offset := Clear.lateral(monster.get_world_3d(), start_center, neighbour_center)
+	offset.y = 0.05
 	monster.global_position = start_center + offset
 	player.global_position = neighbour_center + offset
 	player.velocity = Vector3.ZERO

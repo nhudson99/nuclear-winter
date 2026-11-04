@@ -63,14 +63,19 @@ func _run() -> void:
 		angle_difference(yaw2, yaw1)
 	)
 
+	# v2 furniture sits a couple of metres off the room centre. The sprint check
+	# is the clip and the distance, so the body does not stop on a wardrobe.
+	var saved_mask := player.collision_mask
+	player.collision_mask = 0
 	var run_start := player.global_position
 	Input.action_press("sprint")
 	Input.action_press("move_up")
 	for _i in range(20):
 		await physics_frame
+	var run_clip := anim.current_animation if anim else ""
 	Input.action_release("move_up")
 	Input.action_release("sprint")
-	var run_clip := anim.current_animation if anim else ""
+	player.collision_mask = saved_mask
 	var ran := player.global_position.distance_to(run_start) > 1.2
 	print("run_clip=", run_clip, " ran=", ran, " dist=", player.global_position.distance_to(run_start))
 

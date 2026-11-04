@@ -1,5 +1,7 @@
 extends SceneTree
 
+const Clear := preload("res://tools/smoke_clear.gd")
+
 ## Headless smoke: zoom, dim ambient, hidden monster HP until flashlight,
 ## pistol damage, sneak sight immunity, speed bonus, exit glow.
 
@@ -35,6 +37,7 @@ func _run() -> void:
 		await main.level_ready
 
 	var player: CharacterBody3D = main.get_node("Player")
+	player._stair_grace = 100000
 	var monster: CharacterBody3D = main.get_node("Monster")
 	var slime: CharacterBody3D = main.get_node("Slime")
 	var exit_zone: Area3D = main.get_node("ExitZone")
@@ -79,9 +82,12 @@ func _run() -> void:
 	print("hp_hidden_ok=", hidden_ok, " stalker_bar_gone=", stalker_bar_gone)
 
 	var start: Vector3 = main.get_layout()["start"]
-	player.global_position = start + Vector3(0.0, 0.05, 0.0)
+	start.y = 0.05
+	start = Clear.nudge(player.get_world_3d(), start)
+	var lane: Vector3 = Clear.offset(player.get_world_3d(), start, 4.0)
+	player.global_position = start
 	slime.visible = true
-	slime.global_position = start + Vector3(4.0, 0.05, 0.0)
+	slime.global_position = lane
 	monster.global_position = start + Vector3(80.0, 0.05, 80.0)
 	var visual: Node3D = player.get_node("Model")
 	visual.rotation.y = atan2(1.0, 0.0) + PI
@@ -124,8 +130,8 @@ func _run() -> void:
 	var pistol_ok: bool = spawned and is_equal_approx(float(slime.health), 35.0)
 	print("pistol_hit_ok=", pistol_ok, " hp=", slime.health, " spawned=", spawned)
 
-	slime.global_position = start + Vector3(4.0, 0.05, 0.0)
-	player.global_position = start + Vector3(0.0, 0.05, 0.0)
+	slime.global_position = lane
+	player.global_position = start
 	player.set_aim_world_override(slime.global_position)
 	player._fire_cooldown = 0.0
 	var slime_before: float = slime.health
@@ -147,9 +153,9 @@ func _run() -> void:
 	wall_shape.position = Vector3(0.0, 1.2, 0.0)
 	wall.add_child(wall_shape)
 	main.add_child(wall)
-	player.global_position = start + Vector3(0.0, 0.05, 0.0)
-	wall.global_position = start + Vector3(2.0, 0.0, 0.0)
-	slime.global_position = start + Vector3(4.0, 0.05, 0.0)
+	player.global_position = start
+	wall.global_position = (start + lane) * 0.5
+	slime.global_position = lane
 	player.set_aim_world_override(slime.global_position)
 	await physics_frame
 	player._fire_cooldown = 0.0
@@ -165,9 +171,11 @@ func _run() -> void:
 	var mesh: Node3D = monster.get_node("MonsterMesh")
 	monster.proximity_radius = 0.15
 	monster.detect_range = 16.0
-	player.global_position = start + Vector3(5.0, 0.05, 0.0)
-	monster.global_position = start + Vector3(0.0, 0.05, 0.0)
-	mesh.rotation.y = atan2(1.0, 0.0) + PI
+	var sight: Vector3 = Clear.offset(player.get_world_3d(), start, 5.0)
+	player.global_position = sight
+	monster.global_position = start
+	var look := sight - start
+	mesh.rotation.y = atan2(look.x, look.z) + PI
 	player.set_flashlight_on(false)
 	Input.action_press("sneak")
 	await physics_frame
@@ -237,18 +245,23 @@ func _run() -> void:
 	Input.action_release("slot_2")
 	await physics_frame
 	slime.health = 45.0
-	slime.global_position = start + Vector3(4.0, 0.05, 0.0)
-	player.global_position = start + Vector3(0.0, 0.05, 0.0)
+	slime.global_position = lane
+	player.global_position = start
 	player.set_aim_world_override(slime.global_position)
+	# Collecting the objective, or brushing a stair, locks input and turns the
+	# light off. These shots and the beam check are not that flow.
+	player.unlock_input()
+	player.set_physics_process(false)
 	player._fire_cooldown = 0.0
 	var before_bullets := _bullet_count(main)
 	var shotgun_shot: Node3D = player.fire_weapon()
 	var spawned_pellets := _bullet_count(main) - before_bullets
 	var spread_ok := _pellets_inside_cone(player, main)
-	var shotgun_hit: bool = shotgun_shot != null and slime.health < 45.0
+	var shotgun_spawned: bool = shotgun_shot != null
 	for _i in 8:
 		await physics_frame
-	shotgun_hit = shotgun_shot != null and slime.health < 45.0
+	# A pellet that already hit is freed and compares equal to null.
+	var shotgun_hit: bool = shotgun_spawned and slime.health < 45.0
 	var rates_ok: bool = (
 		is_equal_approx(player.pistol_cooldown, 0.4)
 		and is_equal_approx(player.ak_cooldown, 0.1)
@@ -265,8 +278,21 @@ func _run() -> void:
 	)
 
 	gp.select_weapon(GameProgress.WeaponId.AK)
+	player.unlock_input()
+	player.set_physics_process(false)
 	player._fire_cooldown = 0.0
 	slime.health = 100.0
+	slime.global_position = lane
+	player.global_position = start
+	player.set_aim_world_override(slime.global_position)
+	print(
+		"ak2 lock=", player.is_input_locked(),
+		" sel=", gp.selected_weapon,
+		" own=", gp.owns_weapon(gp.selected_weapon),
+		" ammo=", gp.loaded_ammo(gp.selected_weapon),
+		" cd=", player._fire_cooldown,
+		" alive=", player.is_alive()
+	)
 	var ak_shot: Node3D = player.fire_weapon()
 	# Freed bullets compare equal to null, so remember the spawn before they land.
 	# 10 rounds/sec is 0.1s. Waiting a dozen frames would let that cooldown expire.
@@ -279,8 +305,8 @@ func _run() -> void:
 
 	# Slime still aggroes on shot / beam and shows a health bar.
 	mesh = slime.get_node("MonsterMesh")
-	slime.global_position = start + Vector3(4.0, 0.05, 0.0)
-	player.global_position = start + Vector3(0.0, 0.05, 0.0)
+	slime.global_position = lane
+	player.global_position = start
 	mesh.rotation.y = -PI * 0.5
 	slime.proximity_radius = 0.1
 	slime.detect_range = 0.4
@@ -293,10 +319,13 @@ func _run() -> void:
 	slime.take_damage(1.0)
 	await physics_frame
 	var shot_chase: bool = slime.get_ai_mode_name() == "chase"
+	slime.global_position = lane
+	player.global_position = start
 	slime.configure_patrol_for_test(30.0)
 	slime.health = 80.0
 	mesh.rotation.y = -PI * 0.5
-	visual.rotation.y = atan2(1.0, 0.0) + PI
+	var face := lane - start
+	visual.rotation.y = atan2(face.x, face.z) + PI
 	player.set_aim_world_override(slime.global_position)
 	Input.action_press("flashlight")
 	player.set_flashlight_on(true)
@@ -311,7 +340,13 @@ func _run() -> void:
 	slime.set_physics_process(false)
 
 	# Stalker freezes while lit and only moves in the dark.
-	monster.global_position = start + Vector3(4.0, 0.05, 0.0)
+	slime.set_physics_process(false)
+	slime.global_position = start + Vector3(0.0, 40.0, 0.0)
+	monster.visible = true
+	monster.global_position = lane
+	player.global_position = start
+	visual.rotation.y = atan2(face.x, face.z) + PI
+	player.set_aim_world_override(monster.global_position)
 	monster.configure_patrol_for_test(30.0)
 	monster.set_physics_process(true)
 	player.set_aim_world_override(monster.global_position)
