@@ -1,9 +1,11 @@
 class_name FollowCamera
 extends Camera3D
 
-## Third-person isometric follow. The lens sits behind the player at a fixed
-## elevated pitch and yaws with their facing. Orthographic size is unchanged
-## (`Camera3D.size`); distance only places the lens, it does not zoom.
+## Third-person isometric follow. The lens stays behind the player's facing at
+## a fixed elevated pitch and eases its yaw to match. It has no look of its
+## own: aim input turns the body, and releasing aim leaves that facing in
+## place. Orthographic size is unchanged (`Camera3D.size`); distance only
+## places the lens, it does not zoom.
 ##
 ## A wall side fades when it separates the lens from the player. Each side X
 ## is the shell pieces the rooms already ship: Wall_X_A, Wall_X_B, Wall_X_L,
@@ -19,8 +21,9 @@ extends Camera3D
 @export_range(4.0, 18.0, 0.1) var follow_distance: float = 11.0
 ## Look-at height above the player's feet.
 @export_range(0.4, 2.2, 0.05) var look_height: float = 1.15
-## How quickly yaw catches the player's facing. Higher is snappier.
-@export_range(1.0, 24.0, 0.1) var yaw_smooth: float = 7.0
+## Eases only a large yaw gap (a teleport). While the body turns, the lens
+## stays locked behind it, so releasing aim does not leave the view swinging.
+@export_range(1.0, 40.0, 0.1) var yaw_smooth: float = 14.0
 ## How quickly the lens catches the orbit point while the player runs.
 @export_range(1.0, 24.0, 0.1) var position_smooth: float = 12.0
 ## How see-through a blocking wall becomes. 1 cuts it away.
@@ -56,6 +59,8 @@ const _BLOCKER_GROUPS: PackedStringArray = [
 
 var _yaw: float = 0.0
 var _has_yaw: bool = false
+var _smooth_focus: Vector3 = Vector3.ZERO
+var _has_focus: bool = false
 var _map_sig: String = ""
 var _rooms: Array[Dictionary] = []
 var _safety_meshes: Array[MeshInstance3D] = []
@@ -77,6 +82,8 @@ func snap() -> void:
 	_yaw = _visual_yaw(player)
 	_has_yaw = true
 	var focus := _focus_point(player)
+	_smooth_focus = focus
+	_has_focus = true
 	global_position = _orbit_position(focus, _yaw)
 	if global_position.distance_squared_to(focus) > 0.0001:
 		look_at(focus, Vector3.UP)
@@ -97,14 +104,27 @@ func _physics_process(delta: float) -> void:
 		_yaw = target_yaw
 		_has_yaw = true
 	else:
-		var yaw_t := 1.0 - exp(-yaw_smooth * delta)
-		_yaw = lerp_angle(_yaw, target_yaw, clampf(yaw_t, 0.0, 1.0))
+		var gap := absf(angle_difference(target_yaw, _yaw))
+		# A stick or mouse step is well under this. Locking those keeps the
+		# lens on the body when aim is released. Bigger gaps still ease in.
+		if gap <= deg_to_rad(40.0):
+			_yaw = target_yaw
+		else:
+			var yaw_t := 1.0 - exp(-yaw_smooth * delta)
+			_yaw = lerp_angle(_yaw, target_yaw, clampf(yaw_t, 0.0, 1.0))
 	var focus := _focus_point(player)
-	var desired := _orbit_position(focus, _yaw)
-	var pos_t := 1.0 - exp(-position_smooth * delta)
-	global_position = global_position.lerp(desired, clampf(pos_t, 0.0, 1.0))
-	if global_position.distance_squared_to(focus) > 0.0001:
-		look_at(focus, Vector3.UP)
+	# Ease the point we look at when the player runs. The behind-offset is
+	# applied after that, so turning does not drag the lens around the arc
+	# after aim is released.
+	if not _has_focus:
+		_smooth_focus = focus
+		_has_focus = true
+	else:
+		var pos_t := 1.0 - exp(-position_smooth * delta)
+		_smooth_focus = _smooth_focus.lerp(focus, clampf(pos_t, 0.0, 1.0))
+	global_position = _orbit_position(_smooth_focus, _yaw)
+	if global_position.distance_squared_to(_smooth_focus) > 0.0001:
+		look_at(_smooth_focus, Vector3.UP)
 	_fade_occluders(delta, player.global_position, focus)
 
 

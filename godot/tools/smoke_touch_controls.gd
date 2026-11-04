@@ -119,24 +119,36 @@ func _run() -> void:
 	print("moved_ok=", moved_ok, " run_ok=", run_ok, " delta=", delta, " clip=", player.current_clip())
 
 	var visual: Node3D = player.get_node("Model")
-	touch.set_aim_stick(Vector2(1.0, 0.0))
-	var aim_expected: Vector3 = touch.aim_planar()
-	var expected_yaw := atan2(aim_expected.x, aim_expected.z) + PI
-	for _i in range(30):
+	touch.set_move_stick(Vector2.ZERO)
+	for _i in range(3):
 		await physics_frame
-	var aim_err := absf(angle_difference(visual.rotation.y, expected_yaw))
-	var aim_ok: bool = bool(player.is_flashlight_on()) and aim_err < 0.2
+	var yaw_at_aim := visual.rotation.y
+	touch.set_aim_stick(Vector2(1.0, 0.0))
+	for _i in range(24):
+		await physics_frame
+	var yaw_while := visual.rotation.y
+	var aim_ok: bool = (
+		bool(player.is_flashlight_on())
+		and absf(angle_difference(yaw_while, yaw_at_aim)) > 0.25
+	)
 	var pos1 := player.global_position
-	for _i in range(15):
+	touch.set_move_stick(Vector2(0.0, 1.0))
+	for _i in range(12):
 		await physics_frame
 	var strafe := player.global_position - pos1
 	strafe.y = 0.0
-	var still_aimed := absf(angle_difference(visual.rotation.y, expected_yaw)) < 0.25
-	var strafe_ok := strafe.length() > 0.3 and still_aimed
+	touch.set_move_stick(Vector2.ZERO)
+	touch.set_aim_stick(Vector2.ZERO)
+	var yaw_release := visual.rotation.y
+	for _i in range(18):
+		await physics_frame
+	var no_snap := absf(angle_difference(visual.rotation.y, yaw_release)) < 0.08
+	var strafe_ok := strafe.length() > 0.25 and no_snap
 	print(
 		"aim_ok=", aim_ok,
 		" strafe_ok=", strafe_ok,
-		" yaw_err=", aim_err,
+		" yaw_delta=", angle_difference(yaw_while, yaw_at_aim),
+		" no_snap=", no_snap,
 		" light=", player.is_flashlight_on(),
 		" strafe=", strafe
 	)

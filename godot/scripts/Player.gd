@@ -65,9 +65,6 @@ var _base_run_speed: float = 5.5
 var _base_max_health: float = 100.0
 ## Frames after a floor change during which another stair cannot fire.
 var _stair_grace: int = 0
-## Yaw driven by mouse motion while the flashlight button is held.
-var _mouse_look_yaw: float = 0.0
-var _mouse_look_seeded: bool = false
 const _MOUSE_LOOK_FALLBACK := 0.0035
 var _hidden: bool = false
 var _hide_spot: Node
@@ -188,17 +185,19 @@ func _physics_process(delta: float) -> void:
 
 	var planar := Vector3(velocity.x, 0.0, velocity.z)
 	var speed := planar.length()
-	_update_mouse_look(aiming and not stick_aim)
+	# Aim turns the body. The camera only follows that facing, so releasing
+	# the stick or RMB leaves the yaw where it is.
 	var aim_dir := Vector3.ZERO
+	var hold_facing := false
 	if stick_aim and touch.has_method("aim_planar"):
 		aim_dir = touch.aim_planar()
 	elif aiming and _aim_override_enabled:
 		aim_dir = _aim_planar()
-	elif aiming and _mouse_look_seeded:
-		aim_dir = _forward_from_yaw(_mouse_look_yaw)
+	elif aiming:
+		hold_facing = true
 	if aim_dir.length() > 0.2:
 		_face_planar(aim_dir, delta)
-	elif speed > 0.15:
+	elif not hold_facing and speed > 0.15:
 		# glTF forward is -Z, so the yaw that points the model down the travel
 		# direction is half a turn from atan2 of the velocity.
 		_face_planar(planar, delta)
@@ -660,13 +659,10 @@ func _unhandled_input(event: InputEvent) -> void:
 		return
 	if event is InputEventMouseMotion and Input.is_action_pressed("flashlight") and not _aim_override_enabled:
 		var touch := _touch_controls()
-		if not _stick_is_aiming(touch):
+		if not _stick_is_aiming(touch) and visual != null:
 			var motion := event as InputEventMouseMotion
-			if not _mouse_look_seeded:
-				_mouse_look_yaw = _current_visual_yaw()
-				_mouse_look_seeded = true
-			_mouse_look_yaw = wrapf(
-				_mouse_look_yaw - motion.relative.x * _mouse_look_sensitivity(),
+			visual.rotation.y = wrapf(
+				visual.rotation.y - motion.relative.x * _mouse_look_sensitivity(),
 				-PI,
 				PI
 			)
@@ -863,25 +859,6 @@ func _cycle_speed(clip: String, speed: float, cycle_metres: float) -> float:
 func _face_planar(dir: Vector3, delta: float) -> void:
 	var target_yaw := atan2(dir.x, dir.z) + PI
 	visual.rotation.y = lerp_angle(visual.rotation.y, target_yaw, clampf(turn_speed * delta, 0.0, 1.0))
-
-
-func _forward_from_yaw(yaw: float) -> Vector3:
-	return Vector3(-sin(yaw), 0.0, -cos(yaw))
-
-
-func _current_visual_yaw() -> float:
-	if visual == null:
-		return global_rotation.y
-	return visual.rotation.y
-
-
-func _update_mouse_look(active: bool) -> void:
-	if not active:
-		_mouse_look_seeded = false
-		return
-	if not _mouse_look_seeded:
-		_mouse_look_yaw = _current_visual_yaw()
-		_mouse_look_seeded = true
 
 
 func _mouse_look_sensitivity() -> float:
