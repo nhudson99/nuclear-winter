@@ -129,9 +129,26 @@ else:
     pitch = [0, +18, +38, +45, +12, 0]
     for t, y, z in zip(tl, fwd, drop): key_loc(body.name, round(t*fps)+1, (0, y, z))
     for t, p in zip(tl, pitch): key_rot(body.name, round(t*fps)+1, X, p)
+    # Prisoner rig names -> Mixamo/Meshy rig names (Warden)
+    alias = {'Spine': ['Spine', 'mixamorig:Spine'], 'Chest': ['Chest', 'mixamorig:Spine2'],
+             'Head': ['Head', 'mixamorig:Head'],
+             'UpperArm_R': ['UpperArm_R', 'mixamorig:RightArm'], 'UpperArm_L': ['UpperArm_L', 'mixamorig:LeftArm'],
+             'Forearm_R': ['Forearm_R', 'mixamorig:RightForeArm'], 'Forearm_L': ['Forearm_L', 'mixamorig:LeftForeArm'],
+             'Thigh_R': ['Thigh_R', 'mixamorig:RightUpLeg'], 'Thigh_L': ['Thigh_L', 'mixamorig:LeftUpLeg'],
+             'Shin_R': ['Shin_R', 'mixamorig:RightLeg'], 'Shin_L': ['Shin_L', 'mixamorig:LeftLeg'],
+             'Foot_R': ['Foot_R', 'mixamorig:RightFoot'], 'Foot_L': ['Foot_L', 'mixamorig:LeftFoot']}
     def kb(n, vals, axis=X):
-        if n in bones:
-            for t, v in zip(tl, vals): key_rot(n, round(t*fps)+1, axis, v)
+        n = next((c for c in alias.get(n, [n]) if c in bones), None)
+        if n is None: return
+        b = bones[n]; d = (wtail(b) - whead(b)).normalized()
+        if abs(d.x) > 0.7 and 'Arm' in n:  # T-pose arm: drop it down (about Y) then apply the swing about X
+            pb = arm.pose.bones[n]; R = wrest(b).to_quaternion()
+            for t, v in zip(tl, vals):
+                qw = Quaternion(X, math.radians(v)) @ Quaternion(Y, math.radians(65 if d.x > 0 else -65))
+                pb.rotation_quaternion = R.inverted() @ qw @ R
+                pb.keyframe_insert('rotation_quaternion', frame=round(t*fps)+1, group=n)
+            return
+        for t, v in zip(tl, vals): key_rot(n, round(t*fps)+1, axis, v)
     kb('Spine', [0, 8, 12, 10, 4, 0]); kb('Chest', [0, 6, 8, 8, 2, 0])
     kb('Head', [0, -20, -25, -15, -5, 0])
     # arms flail forward/out to catch the fall
