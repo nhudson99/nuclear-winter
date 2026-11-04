@@ -22,6 +22,11 @@ const CENTER_SHIFT := 0.25
 
 var move_stick := Vector2.ZERO
 var aim_stick := Vector2.ZERO
+## Aim axes latched when the stick leaves rest, so the follow camera can swing
+## behind that facing without the stick direction spinning with it.
+var _aim_latched := false
+var _latched_right := Vector3(1.0, 0.0, -1.0)
+var _latched_forward := Vector3(-1.0, 0.0, -1.0)
 
 var _root: Control
 var _move: TouchStick
@@ -120,21 +125,62 @@ func is_aiming() -> bool:
 
 
 func aim_planar() -> Vector3:
-	var direction := stick_to_planar(aim_stick)
+	if aim_stick.length_squared() <= 0.000001:
+		_aim_latched = false
+		return Vector3.ZERO
+	if not _aim_latched:
+		var axes := planar_axes(_viewport_camera())
+		_latched_right = axes[0]
+		_latched_forward = axes[1]
+		_aim_latched = true
+	var direction := _latched_right * aim_stick.x + _latched_forward * aim_stick.y
 	if direction.length_squared() < 0.0001:
 		return Vector3.ZERO
+	if direction.length() > 1.0:
+		direction = direction.normalized()
 	return direction.normalized()
 
 
 ## Camera-relative planar direction. +x is screen right, +y is screen up.
 ## Length is preserved up to 1 so a half-thrown stick walks at half speed.
-static func stick_to_planar(stick: Vector2) -> Vector3:
-	var right := Vector3(1.0, 0.0, -1.0).normalized()
-	var forward := Vector3(-1.0, 0.0, -1.0).normalized()
-	var direction := right * stick.x + forward * stick.y
+## With no camera, the legacy fixed isometric axes are used.
+static func stick_to_planar(stick: Vector2, camera: Camera3D = null) -> Vector3:
+	var axes := planar_axes(camera)
+	var direction := axes[0] * stick.x + axes[1] * stick.y
 	if direction.length() > 1.0:
 		direction = direction.normalized()
 	return direction
+
+
+## Index 0 is screen right, index 1 is screen forward, both flattened.
+static func planar_axes(camera: Camera3D) -> Array[Vector3]:
+	var axes: Array[Vector3] = []
+	if camera == null:
+		axes.append(Vector3(1.0, 0.0, -1.0).normalized())
+		axes.append(Vector3(-1.0, 0.0, -1.0).normalized())
+		return axes
+	var forward := -camera.global_transform.basis.z
+	forward.y = 0.0
+	if forward.length_squared() < 0.0001:
+		forward = Vector3(0.0, 0.0, -1.0)
+	else:
+		forward = forward.normalized()
+	var right := camera.global_transform.basis.x
+	right.y = 0.0
+	if right.length_squared() < 0.0001:
+		right = Vector3(-forward.z, 0.0, forward.x)
+	else:
+		right = right.normalized()
+	axes.append(right)
+	axes.append(forward)
+	return axes
+
+
+func _viewport_camera() -> Camera3D:
+	var vp := get_viewport()
+	if vp == null:
+		return null
+	return vp.get_camera_3d()
 
 
 func set_move_stick(stick: Vector2) -> void:
@@ -145,6 +191,8 @@ func set_move_stick(stick: Vector2) -> void:
 
 func set_aim_stick(stick: Vector2) -> void:
 	aim_stick = _clamp_stick(stick)
+	if aim_stick.length_squared() <= 0.000001:
+		_aim_latched = false
 	if _aim:
 		_aim.set_stick(aim_stick)
 

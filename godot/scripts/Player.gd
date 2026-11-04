@@ -65,6 +65,10 @@ var _base_run_speed: float = 5.5
 var _base_max_health: float = 100.0
 ## Frames after a floor change during which another stair cannot fire.
 var _stair_grace: int = 0
+## Yaw driven by mouse motion while the flashlight button is held.
+var _mouse_look_yaw: float = 0.0
+var _mouse_look_seeded: bool = false
+const _MOUSE_LOOK_FALLBACK := 0.0035
 
 func current_clip() -> String:
 	return _clip
@@ -151,7 +155,8 @@ func _physics_process(delta: float) -> void:
 			stick = touch_stick
 			touch_running = touch_stick.length() >= 0.85
 
-	var direction := TOUCH_CONTROLS.stick_to_planar(stick)
+	# W / stick-up is up the screen: the follow camera's ground forward.
+	var direction := TOUCH_CONTROLS.stick_to_planar(stick, _gameplay_camera())
 
 	# Digital WASD is otherwise always full speed, which would skip Walk.
 	# A full left-stick shove runs, since the touch HUD has no sprint key.
@@ -165,11 +170,14 @@ func _physics_process(delta: float) -> void:
 
 	var planar := Vector3(velocity.x, 0.0, velocity.z)
 	var speed := planar.length()
+	_update_mouse_look(aiming and not stick_aim)
 	var aim_dir := Vector3.ZERO
 	if stick_aim and touch.has_method("aim_planar"):
 		aim_dir = touch.aim_planar()
-	elif aiming:
+	elif aiming and _aim_override_enabled:
 		aim_dir = _aim_planar()
+	elif aiming and _mouse_look_seeded:
+		aim_dir = _forward_from_yaw(_mouse_look_yaw)
 	if aim_dir.length() > 0.2:
 		_face_planar(aim_dir, delta)
 	elif speed > 0.15:
@@ -498,6 +506,20 @@ func _poll_weapon_input() -> void:
 func _unhandled_input(event: InputEvent) -> void:
 	if not _alive or _input_locked:
 		return
+	if event is InputEventMouseMotion and Input.is_action_pressed("flashlight") and not _aim_override_enabled:
+		var touch := _touch_controls()
+		if not _stick_is_aiming(touch):
+			var motion := event as InputEventMouseMotion
+			if not _mouse_look_seeded:
+				_mouse_look_yaw = _current_visual_yaw()
+				_mouse_look_seeded = true
+			_mouse_look_yaw = wrapf(
+				_mouse_look_yaw - motion.relative.x * _mouse_look_sensitivity(),
+				-PI,
+				PI
+			)
+			get_viewport().set_input_as_handled()
+			return
 	if event is InputEventMouseButton and event.pressed:
 		var button := event as InputEventMouseButton
 		if button.button_index == MOUSE_BUTTON_WHEEL_UP:
@@ -661,6 +683,39 @@ func _cycle_speed(clip: String, speed: float, cycle_metres: float) -> float:
 func _face_planar(dir: Vector3, delta: float) -> void:
 	var target_yaw := atan2(dir.x, dir.z) + PI
 	visual.rotation.y = lerp_angle(visual.rotation.y, target_yaw, clampf(turn_speed * delta, 0.0, 1.0))
+
+
+func _forward_from_yaw(yaw: float) -> Vector3:
+	return Vector3(-sin(yaw), 0.0, -cos(yaw))
+
+
+func _current_visual_yaw() -> float:
+	if visual == null:
+		return global_rotation.y
+	return visual.rotation.y
+
+
+func _update_mouse_look(active: bool) -> void:
+	if not active:
+		_mouse_look_seeded = false
+		return
+	if not _mouse_look_seeded:
+		_mouse_look_yaw = _current_visual_yaw()
+		_mouse_look_seeded = true
+
+
+func _mouse_look_sensitivity() -> float:
+	var cam := _gameplay_camera()
+	if cam != null and "mouse_look_sensitivity" in cam:
+		return float(cam.get("mouse_look_sensitivity"))
+	return _MOUSE_LOOK_FALLBACK
+
+
+func _gameplay_camera() -> Camera3D:
+	var vp := get_viewport()
+	if vp == null:
+		return null
+	return vp.get_camera_3d()
 
 func _touch_controls() -> Node:
 	var parent := get_parent()

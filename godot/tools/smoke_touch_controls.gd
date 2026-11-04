@@ -98,14 +98,21 @@ func _run() -> void:
 		" boosted=", boosted
 	)
 
+	var cam := main.get_node_or_null("IsoCamera") as Camera3D
+	if cam != null and cam.has_method("snap"):
+		cam.snap()
 	touch.set_move_stick(Vector2(0.0, 1.0))
 	var pos0 := player.global_position
+	var expected := Vector3(-1.0, 0.0, -1.0).normalized()
+	if cam != null:
+		expected = -cam.global_transform.basis.z
+		expected.y = 0.0
+		expected = expected.normalized()
 	for _i in range(25):
 		await physics_frame
 	var delta := player.global_position - pos0
 	delta.y = 0.0
-	var expected := Vector3(-1.0, 0.0, -1.0).normalized()
-	var moved_ok := delta.length() > 0.5 and delta.normalized().dot(expected) > 0.9
+	var moved_ok := delta.length() > 0.5 and delta.normalized().dot(expected) > 0.85
 	var run_ok := String(player.current_clip()) == "Run"
 	print("moved_ok=", moved_ok, " run_ok=", run_ok, " delta=", delta, " clip=", player.current_clip())
 

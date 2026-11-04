@@ -90,10 +90,12 @@ func _run() -> void:
 	print("aim_yaw_ok=", aim_ok, " yaw=", visual.rotation.y, " expected=", expected_yaw, " err=", aim_err)
 
 	var pos0 := player.global_position
-	Input.action_press("move_up")
+	# Screen-right while the lens has swung behind the +X aim, so travel
+	# stays off the facing direction.
+	Input.action_press("move_right")
 	for _i in range(20):
 		await physics_frame
-	Input.action_release("move_up")
+	Input.action_release("move_right")
 	var moved := player.global_position.distance_to(pos0) > 0.4
 	var still_aimed := absf(angle_difference(visual.rotation.y, expected_yaw)) < 0.25
 	var walk_yaw := atan2(

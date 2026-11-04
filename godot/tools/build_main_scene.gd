@@ -313,6 +313,7 @@ func _build() -> void:
 
 	var camera := Camera3D.new()
 	camera.name = "IsoCamera"
+	camera.set_script(load("res://scripts/FollowCamera.gd"))
 	camera.projection = Camera3D.PROJECTION_ORTHOGONAL
 	camera.size = 20.0 / 1.5
 	camera.current = true

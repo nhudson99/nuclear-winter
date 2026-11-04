@@ -22,10 +22,11 @@ func _run() -> void:
 	var start := player.global_position
 	var yaw0 := visual.rotation.y
 
-	Input.action_press("move_up")
+	# Screen-right, not the spawn facing, so the mesh has to yaw.
+	Input.action_press("move_right")
 	for _i in range(20):
 		await physics_frame
-	Input.action_release("move_up")
+	Input.action_release("move_right")
 
 	var walked := player.global_position.distance_to(start) > 0.4
 	var clip := anim.current_animation if anim else ""

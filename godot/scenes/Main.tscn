@@ -1,4 +1,4 @@
-[gd_scene load_steps=28 format=3]
+[gd_scene load_steps=29 format=3]
 
 [ext_resource type="Script" path="res://scripts/Main.gd" id="1_ft6cd"]
 [ext_resource type="Script" path="res://scripts/Player.gd" id="2_bb450"]
@@ -17,6 +17,7 @@
 [ext_resource type="PackedScene" path="res://assets/characters/Toad.glb" id="15_v0vrg"]
 [ext_resource type="Script" path="res://scripts/PickupItem.gd" id="16_dg70y"]
 [ext_resource type="Script" path="res://scripts/ExitZone.gd" id="17_pnhog"]
+[ext_resource type="Script" path="res://scripts/FollowCamera.gd" id="18_follow"]
 
 [sub_resource type="Environment" id="Environment_2c4at"]
 background_mode = 1
@@ -276,6 +277,7 @@ projection = 1
 current = true
 size = 13.3333
 far = 250.0
+script = ExtResource("18_follow")
 
 [node name="PickupItem" type="Area3D" parent="."]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.05, -24)
