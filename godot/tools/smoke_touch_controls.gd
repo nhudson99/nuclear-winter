@@ -1,5 +1,7 @@
 extends SceneTree
 
+const Clear := preload("res://tools/smoke_clear.gd")
+
 const TouchControlsScript := preload("res://scripts/TouchControls.gd")
 
 ## Headless smoke for the on-screen sticks and USE button.
@@ -156,10 +158,12 @@ func _run() -> void:
 	if monsters.is_empty():
 		push_error("No monster to attack")
 	else:
-		var monster: CharacterBody3D = monsters[0]
+		var monster: CharacterBody3D = _fighter(monsters)
 		monster.visible = true
 		monster.set_physics_process(false)
 		monster.touch_damage = 0.0
+		var stand := Clear.nudge(player.get_world_3d(), player.global_position)
+		player.global_position = stand
 		touch.set_mobile_combat(true)
 		touch.set_aim_stick(Vector2(1.0, 0.0))
 		await physics_frame
@@ -200,7 +204,9 @@ func _run() -> void:
 		monster.health = 80.0
 		var gun_dir := Vector3.ZERO
 		var gun_dist := 0.0
-		for aim_stick in [Vector2(1, 0), Vector2(0, 1), Vector2(-1, 0), Vector2(0, -1)]:
+		var clear_lane := Clear.offset(player.get_world_3d(), player.global_position, 3.0)
+		var clear_stick := _stick_toward(clear_lane - player.global_position)
+		for aim_stick in [clear_stick, Vector2(1, 0), Vector2(0, 1), Vector2(-1, 0), Vector2(0, -1)]:
 			touch.set_aim_stick(aim_stick)
 			var dir: Vector3 = touch.aim_planar()
 			for step in range(5, 16):
@@ -316,6 +322,28 @@ func _center_shift(corner: Vector2, size: float, vp: Vector2) -> Vector2:
 	var box := Vector2(size, size)
 	var stick_center := corner + box * 0.5
 	return stick_center + (vp * 0.5 - stick_center) * TouchControlsScript.CENTER_SHIFT
+
+
+func _fighter(monsters: Array) -> CharacterBody3D:
+	for node in monsters:
+		if not (node is CharacterBody3D):
+			continue
+		var body := node as CharacterBody3D
+		if body.name == "Slime":
+			return body
+		if body.get("indestructible") != true:
+			return body
+	return monsters[0] as CharacterBody3D
+
+
+func _stick_toward(dir: Vector3) -> Vector2:
+	var right := Vector3(1.0, 0.0, -1.0).normalized()
+	var forward := Vector3(-1.0, 0.0, -1.0).normalized()
+	dir.y = 0.0
+	if dir.length() < 0.01:
+		return Vector2(1.0, 0.0)
+	dir = dir.normalized()
+	return Vector2(dir.dot(right), dir.dot(forward))
 
 
 func _bullet_count(main: Node) -> int:

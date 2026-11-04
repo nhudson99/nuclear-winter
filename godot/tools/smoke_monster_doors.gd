@@ -1,5 +1,7 @@
 extends SceneTree
 
+const Clear := preload("res://tools/smoke_clear.gd")
+
 ## Headless gameplay smoke: doors, proximity chase, track patrol, touch damage,
 ## health bars. Positions are read from the generated layout rather than authored
 ## coordinates, since every run rolls a different floorplan.
@@ -25,13 +27,15 @@ func _run() -> void:
 		await main.level_ready
 
 	var player: CharacterBody3D = main.get_node("Player")
-	var monster: CharacterBody3D = main.get_node("Monster")
+	# The node named Monster is the stalker: no health bar and no damage taken.
+	# Combat and patrol checks use the slime, which has both.
+	var monster: CharacterBody3D = main.get_node("Slime")
 	if player == null or monster == null:
-		push_error("Player or Monster missing")
+		push_error("Player or Slime missing")
 		quit(1)
 		return
 	if main.has_method("park_monsters"):
-		main.park_monsters(monster)
+		main.park_monsters()
 
 	var layout: Dictionary = main.get_layout()
 	var start_cell: Vector2i = layout["start_cell"]
@@ -42,7 +46,10 @@ func _run() -> void:
 	var bars_ok := player_bar != null and monster_bar != null
 	print("health_bars_ok=", bars_ok)
 
-	var hp_ok := is_equal_approx(float(player.health), 100.0) and is_equal_approx(float(monster.health), 100.0)
+	var hp_ok := (
+		is_equal_approx(float(player.health), float(player.max_health))
+		and is_equal_approx(float(monster.health), float(monster.max_health))
+	)
 	print("starting_hp_ok=", hp_ok, " player=", player.health, " monster=", monster.health)
 
 	# Park the monster far away so it cannot interfere with the walk tests.
@@ -90,8 +97,10 @@ func _run() -> void:
 		)
 
 	# Proximity chase: player beside the monster, outside its FOV cone.
-	monster.global_position = start_center + Vector3(0.0, 0.05, 0.0)
-	player.global_position = start_center + Vector3(2.4, 0.05, 0.0)
+	monster.visible = true
+	var prox_at := Clear.nudge(monster.get_world_3d(), start_center + Vector3(0.0, 0.05, 0.0))
+	monster.global_position = prox_at
+	player.global_position = Clear.offset(monster.get_world_3d(), prox_at, 2.2)
 	var mesh: Node3D = monster.get_node("MonsterMesh")
 	# Face north (-Z); player is due east → outside 75° FOV, inside proximity radius.
 	mesh.rotation.y = 0.0
@@ -115,17 +124,20 @@ func _run() -> void:
 	)
 
 	# Touch damage: approach from outside the touch radius so body_entered fires.
-	monster.set_physics_process(false)
+	# Melee damage is applied from _physics_process while the bodies overlap.
 	monster.touch_damage = 100.0
 	player._alive = true
-	player.health = 100.0
+	player.health = player.max_health
 	if player_bar and player_bar.has_method("set_health"):
-		player_bar.set_health(100.0, 100.0)
-	monster.global_position = start_center + Vector3(0.0, 0.05, 0.0)
-	player.global_position = start_center + Vector3(3.0, 0.05, 0.0)
+		player_bar.set_health(player.health, player.max_health)
+	var touch_at := Clear.nudge(monster.get_world_3d(), start_center + Vector3(0.0, 0.05, 0.0))
+	monster.global_position = touch_at
+	player.global_position = touch_at + Vector3(2.4, 0.0, 0.0)
+	monster.set_physics_process(true)
 	await create_timer(0.15).timeout
-	player.global_position = start_center + Vector3(0.15, 0.05, 0.0)
-	await create_timer(0.35).timeout
+	player.global_position = Clear.offset(monster.get_world_3d(), touch_at, 0.45)
+	await create_timer(0.6).timeout
+	monster.set_physics_process(false)
 	var touch_ok: bool = float(player.health) <= 0.0 or not player.is_alive()
 	print("touch_damage_ok=", touch_ok, " player_hp=", player.health)
 
@@ -134,7 +146,10 @@ func _run() -> void:
 	player._alive = true
 	player.health = 100.0
 	player.global_position = start_center + Vector3(0.0, 0.05, 0.0) + Vector3(500.0, 0.0, 500.0)
-	monster.global_position = _southernmost_center(layout) + Vector3(0.0, 0.05, 0.0)
+	monster.global_position = Clear.nudge(
+		monster.get_world_3d(),
+		_southernmost_center(layout) + Vector3(0.0, 0.05, 0.0)
+	)
 	monster.configure_patrol_for_test(1.0, 0)
 	print("patrol_setup mode=", monster.get_ai_mode_name(), " grace=", monster.lose_sight_grace)
 	monster.set_physics_process(true)

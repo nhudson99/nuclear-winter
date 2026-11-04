@@ -2,19 +2,19 @@
 
 [ext_resource type="Script" path="res://scripts/Main.gd" id="1_ft6cd"]
 [ext_resource type="Script" path="res://scripts/Player.gd" id="2_bb450"]
-[ext_resource type="PackedScene" path="res://assets/characters/Meshy_AI_Gulag_Winter_Warden_All_Animations.glb" id="3_nfivy"]
+[ext_resource type="PackedScene" path="res://assets/characters/Meshy_AI_Gulag_Winter_Warden_All_Animations_hb.glb" id="3_nfivy"]
 [ext_resource type="Script" path="res://scripts/Stalker.gd" id="4_1nqs0"]
 [ext_resource type="PackedScene" path="res://assets/characters/IrradiatedMaskMonster.glb" id="5_1iba3"]
 [ext_resource type="Script" path="res://scripts/Monster.gd" id="6_yxlcp"]
-[ext_resource type="PackedScene" path="res://assets/characters/SovietSlime.glb" id="7_ebg2g"]
-[ext_resource type="PackedScene" path="res://assets/characters/SovietTankMan.glb" id="8_2ofn6"]
+[ext_resource type="PackedScene" path="res://assets/characters/SovietSlime_hb.glb" id="7_ebg2g"]
+[ext_resource type="PackedScene" path="res://assets/characters/SovietTankMan_hb.glb" id="8_2ofn6"]
 [ext_resource type="Script" path="res://scripts/VoidMonster.gd" id="9_xa025"]
-[ext_resource type="PackedScene" path="res://assets/characters/Void_walking.glb" id="10_36rkl"]
+[ext_resource type="PackedScene" path="res://assets/characters/Void_full.glb" id="10_36rkl"]
 [ext_resource type="Script" path="res://scripts/Tarantula.gd" id="11_fs0b5"]
-[ext_resource type="PackedScene" path="res://assets/characters/Tarantula.glb" id="12_ma7h6"]
+[ext_resource type="PackedScene" path="res://assets/characters/Tarantula_hb.glb" id="12_ma7h6"]
 [ext_resource type="PackedScene" path="res://assets/characters/enemy_widow.glb" id="13_e2s0e"]
 [ext_resource type="Script" path="res://scripts/Toad.gd" id="14_gsxep"]
-[ext_resource type="PackedScene" path="res://assets/characters/Toad.glb" id="15_v0vrg"]
+[ext_resource type="PackedScene" path="res://assets/characters/Toad_hb.glb" id="15_v0vrg"]
 [ext_resource type="Script" path="res://scripts/PickupItem.gd" id="16_dg70y"]
 [ext_resource type="Script" path="res://scripts/ExitZone.gd" id="17_pnhog"]
 [ext_resource type="Script" path="res://scripts/FollowCamera.gd" id="18_follow"]
@@ -177,8 +177,8 @@ touch_damage = 25.0
 health_bar_height = 2.1
 section_dwell_time = 26.0
 idle_clip = "Idle"
-walk_clip = "walking_man"
-attack_clip = "walking_man"
+walk_clip = "Walk"
+attack_clip = "Walk"
 walk_cycle_metres = 2.0
 
 [node name="CollisionShape3D" type="CollisionShape3D" parent="Void"]
