@@ -141,15 +141,15 @@ func _run() -> void:
 	var touch_ok: bool = float(player.health) <= 0.0 or not player.is_alive()
 	print("touch_damage_ok=", touch_ok, " player_hp=", player.health)
 
-	# Track patrol: hide the player and walk from the southern room centre. The
-	# monster should move and stay on the generated doorway track.
+	# Track patrol: hide the player and walk from an open doorway. The monster
+	# should move and stay on the generated doorway track.
 	player._alive = true
 	player.health = 100.0
 	player.global_position = start_center + Vector3(0.0, 0.05, 0.0) + Vector3(500.0, 0.0, 500.0)
-	monster.global_position = Clear.nudge(
-		monster.get_world_3d(),
-		_southernmost_center(layout) + Vector3(0.0, 0.05, 0.0)
-	)
+	# Room centres sit inside v2 furniture, and nudging off them leaves the
+	# slime wedged off the track. A linked doorway is open floor on the graph.
+	monster.visible = true
+	monster.global_position = _track_patrol_start(layout)
 	monster.configure_patrol_for_test(1.0, 0)
 	print("patrol_setup mode=", monster.get_ai_mode_name(), " grace=", monster.lose_sight_grace)
 	monster.set_physics_process(true)
@@ -242,6 +242,22 @@ func _first_neighbour(layout: Dictionary, cell: Vector2i) -> Vector2i:
 		if occupied.has(candidate):
 			return candidate
 	return cell
+
+
+func _track_patrol_start(layout: Dictionary) -> Vector3:
+	var fallback := _southernmost_center(layout) + Vector3(0.0, 0.05, 0.0)
+	var nodes: Dictionary = layout.get("monster_track", {}).get("nodes", {})
+	for id in nodes:
+		var info: Dictionary = nodes[id]
+		if str(info.get("kind", "")) != "door":
+			continue
+		var exits: Dictionary = info.get("exits", {})
+		if exits.is_empty():
+			continue
+		var pos: Vector3 = info["position"]
+		pos.y = 0.05
+		return pos
+	return fallback
 
 
 func _southernmost_center(layout: Dictionary) -> Vector3:

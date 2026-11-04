@@ -90,7 +90,13 @@ func _run() -> void:
 	slime.global_position = lane
 	monster.global_position = start + Vector3(80.0, 0.05, 80.0)
 	var visual: Node3D = player.get_node("Model")
-	visual.rotation.y = atan2(1.0, 0.0) + PI
+	# Clear.offset is +X only when that lane is free. The beam is parented to
+	# the mesh, so the yaw has to match the lane the slime actually occupies.
+	var lane_dir := lane - start
+	lane_dir.y = 0.0
+	if lane_dir.length() < 0.05:
+		lane_dir = Vector3(1.0, 0.0, 0.0)
+	visual.rotation.y = atan2(lane_dir.x, lane_dir.z) + PI
 	player.set_aim_world_override(slime.global_position)
 	var camera_before: float = main.camera.size
 	var pickup_visible_before: bool = pickup != null and pickup.visible
@@ -154,7 +160,16 @@ func _run() -> void:
 	wall.add_child(wall_shape)
 	main.add_child(wall)
 	player.global_position = start
+	player.velocity = Vector3.ZERO
+	player.set_physics_process(false)
 	wall.global_position = (start + lane) * 0.5
+	var shot := lane - start
+	shot.y = 0.0
+	if shot.length() > 0.05:
+		shot = shot.normalized()
+		var side := Vector3(-shot.z, 0.0, shot.x)
+		# Thickness (local X) lies along the shot. Identity when the lane is +X.
+		wall.global_transform = Transform3D(Basis(shot, Vector3.UP, side), wall.global_position)
 	slime.global_position = lane
 	player.set_aim_world_override(slime.global_position)
 	await physics_frame
@@ -167,6 +182,7 @@ func _run() -> void:
 	var wall_ok: bool = blocked_spawned and is_equal_approx(slime.health, blocked_before)
 	print("bullet_wall_ok=", wall_ok, " hp=", slime.health)
 	wall.free()
+	player.set_physics_process(true)
 
 	var mesh: Node3D = monster.get_node("MonsterMesh")
 	monster.proximity_radius = 0.15
