@@ -33,6 +33,9 @@ const VOID_SCENE_PATH := "res://assets/characters/Void_walking.glb"
 @onready var toad: CharacterBody3D = get_node_or_null("Toad")
 @onready var void_monster: CharacterBody3D = get_node_or_null("Void")
 
+@export var camera_distance: float = 22.0
+@export var camera_height: float = 22.0
+@export var follow_lerp: float = 10.0
 @export var room_count: int = 0
 ## Zero reads GameProgress.current_level (or NW_LEVEL). Any other value forces that level.
 @export var play_level: int = 0
@@ -70,6 +73,8 @@ var _floor_swap_busy: bool = false
 var _tracker: MonsterTracker
 var _void_dimension: VoidDimension
 var _roster_seeded: bool = false
+const ROOM_WALL_FADE := preload("res://scripts/RoomWallFade.gd")
+var _wall_fade: Node
 
 const PARKED_GROUPS: Array[String] = [
 	"stairwell",
@@ -83,6 +88,9 @@ const PARKED_GROUPS: Array[String] = [
 
 func _ready() -> void:
 	add_to_group("main_level")
+	_wall_fade = ROOM_WALL_FADE.new()
+	_wall_fade.name = "RoomWallFade"
+	add_child(_wall_fade)
 	camera.projection = Camera3D.PROJECTION_ORTHOGONAL
 	camera.size = PLAY_CAMERA_SIZE
 	camera.near = 0.05
@@ -103,7 +111,13 @@ func _ready() -> void:
 	set_monsters_processing(false)
 	_build_level()
 
-func _physics_process(_delta: float) -> void:
+func _physics_process(delta: float) -> void:
+	# High isometric look similar to the Blender reference render.
+	var target := player.global_position + Vector3(camera_distance * 0.55, camera_height, camera_distance)
+	camera.global_position = camera.global_position.lerp(target, clampf(follow_lerp * delta, 0.0, 1.0))
+	camera.look_at(player.global_position + Vector3(0.0, 0.6, 0.0), Vector3.UP)
+	if _wall_fade and _wall_fade.has_method("update_fade"):
+		_wall_fade.update_fade(delta)
 	if OS.get_environment("NW_PREVIEW_PLAYER") == "1" and _status_label and player.has_method("current_clip"):
 		_status_label.text = player.current_clip()
 
@@ -636,9 +650,8 @@ func _apply_preview_overrides() -> void:
 		return
 	park_monsters()
 	camera.size = 4.2
-	if "follow_distance" in camera:
-		camera.set("follow_distance", 6.5)
-		camera.set("pitch_degrees", 40.0)
+	camera_distance = 5.5
+	camera_height = 5.5
 	_snap_camera()
 	_status_label.visible = true
 	_status_label.add_theme_font_size_override("font_size", 36)
@@ -660,8 +673,8 @@ func _apply_level_lighting() -> void:
 
 
 func _snap_camera() -> void:
-	if camera.has_method("snap"):
-		camera.snap()
+	camera.global_position = player.global_position + Vector3(camera_distance * 0.55, camera_height, camera_distance)
+	camera.look_at(player.global_position + Vector3(0.0, 0.6, 0.0), Vector3.UP)
 
 func _wire_game_loop() -> void:
 	if player.has_signal("died") and not player.died.is_connected(_on_player_died):

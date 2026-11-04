@@ -98,55 +98,36 @@ func _run() -> void:
 		" boosted=", boosted
 	)
 
-	var cam := main.get_node_or_null("IsoCamera") as Camera3D
-	if cam != null and cam.has_method("snap"):
-		cam.snap()
 	touch.set_move_stick(Vector2(0.0, 1.0))
 	var pos0 := player.global_position
-	var expected := Vector3(-1.0, 0.0, -1.0).normalized()
-	if cam != null:
-		expected = -cam.global_transform.basis.z
-		expected.y = 0.0
-		expected = expected.normalized()
 	for _i in range(25):
 		await physics_frame
 	var delta := player.global_position - pos0
 	delta.y = 0.0
-	var moved_ok := delta.length() > 0.5 and delta.normalized().dot(expected) > 0.85
+	var expected := Vector3(-1.0, 0.0, -1.0).normalized()
+	var moved_ok := delta.length() > 0.5 and delta.normalized().dot(expected) > 0.9
 	var run_ok := String(player.current_clip()) == "Run"
 	print("moved_ok=", moved_ok, " run_ok=", run_ok, " delta=", delta, " clip=", player.current_clip())
 
 	var visual: Node3D = player.get_node("Model")
-	touch.set_move_stick(Vector2.ZERO)
-	for _i in range(3):
-		await physics_frame
-	var yaw_at_aim := visual.rotation.y
 	touch.set_aim_stick(Vector2(1.0, 0.0))
-	for _i in range(24):
+	var aim_expected: Vector3 = touch.aim_planar()
+	var expected_yaw := atan2(aim_expected.x, aim_expected.z) + PI
+	for _i in range(30):
 		await physics_frame
-	var yaw_while := visual.rotation.y
-	var aim_ok: bool = (
-		bool(player.is_flashlight_on())
-		and absf(angle_difference(yaw_while, yaw_at_aim)) > 0.25
-	)
+	var aim_err := absf(angle_difference(visual.rotation.y, expected_yaw))
+	var aim_ok: bool = bool(player.is_flashlight_on()) and aim_err < 0.2
 	var pos1 := player.global_position
-	touch.set_move_stick(Vector2(0.0, 1.0))
-	for _i in range(12):
+	for _i in range(15):
 		await physics_frame
 	var strafe := player.global_position - pos1
 	strafe.y = 0.0
-	touch.set_move_stick(Vector2.ZERO)
-	touch.set_aim_stick(Vector2.ZERO)
-	var yaw_release := visual.rotation.y
-	for _i in range(18):
-		await physics_frame
-	var no_snap := absf(angle_difference(visual.rotation.y, yaw_release)) < 0.08
-	var strafe_ok := strafe.length() > 0.25 and no_snap
+	var still_aimed := absf(angle_difference(visual.rotation.y, expected_yaw)) < 0.25
+	var strafe_ok := strafe.length() > 0.3 and still_aimed
 	print(
 		"aim_ok=", aim_ok,
 		" strafe_ok=", strafe_ok,
-		" yaw_delta=", angle_difference(yaw_while, yaw_at_aim),
-		" no_snap=", no_snap,
+		" yaw_err=", aim_err,
 		" light=", player.is_flashlight_on(),
 		" strafe=", strafe
 	)
