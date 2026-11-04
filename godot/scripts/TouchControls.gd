@@ -120,9 +120,7 @@ func is_aiming() -> bool:
 
 
 func aim_planar() -> Vector3:
-	## Live camera axes. The stick turns the player; it does not store a view
-	## to swing back to when the thumb comes off.
-	var direction := stick_to_planar(aim_stick, _viewport_camera())
+	var direction := stick_to_planar(aim_stick)
 	if direction.length_squared() < 0.0001:
 		return Vector3.ZERO
 	return direction.normalized()
@@ -130,44 +128,13 @@ func aim_planar() -> Vector3:
 
 ## Camera-relative planar direction. +x is screen right, +y is screen up.
 ## Length is preserved up to 1 so a half-thrown stick walks at half speed.
-## With no camera, the legacy fixed isometric axes are used.
-static func stick_to_planar(stick: Vector2, camera: Camera3D = null) -> Vector3:
-	var axes := planar_axes(camera)
-	var direction := axes[0] * stick.x + axes[1] * stick.y
+static func stick_to_planar(stick: Vector2) -> Vector3:
+	var right := Vector3(1.0, 0.0, -1.0).normalized()
+	var forward := Vector3(-1.0, 0.0, -1.0).normalized()
+	var direction := right * stick.x + forward * stick.y
 	if direction.length() > 1.0:
 		direction = direction.normalized()
 	return direction
-
-
-## Index 0 is screen right, index 1 is screen forward, both flattened.
-static func planar_axes(camera: Camera3D) -> Array[Vector3]:
-	var axes: Array[Vector3] = []
-	if camera == null:
-		axes.append(Vector3(1.0, 0.0, -1.0).normalized())
-		axes.append(Vector3(-1.0, 0.0, -1.0).normalized())
-		return axes
-	var forward := -camera.global_transform.basis.z
-	forward.y = 0.0
-	if forward.length_squared() < 0.0001:
-		forward = Vector3(0.0, 0.0, -1.0)
-	else:
-		forward = forward.normalized()
-	var right := camera.global_transform.basis.x
-	right.y = 0.0
-	if right.length_squared() < 0.0001:
-		right = Vector3(-forward.z, 0.0, forward.x)
-	else:
-		right = right.normalized()
-	axes.append(right)
-	axes.append(forward)
-	return axes
-
-
-func _viewport_camera() -> Camera3D:
-	var vp := get_viewport()
-	if vp == null:
-		return null
-	return vp.get_camera_3d()
 
 
 func set_move_stick(stick: Vector2) -> void:

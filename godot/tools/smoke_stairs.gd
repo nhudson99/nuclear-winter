@@ -100,17 +100,8 @@ func _walk_flight(main: Node, player: CharacterBody3D, room: Node3D, ascending: 
 		" low=", flight["low"],
 		" high=", flight["high"]
 	)
-	# Movement is camera-relative. Face the flight, snap the lens behind the
-	# player, and hold W so the world direction does not curve as they turn.
-	var cam := main.get_node_or_null("IsoCamera")
-	_release_walk()
-	Input.action_press("move_up")
+	_press_walk(direction)
 	for _i in WALK_FRAMES:
-		var visual := player.get_node_or_null("Model") as Node3D
-		if visual != null:
-			visual.rotation.y = atan2(direction.x, direction.z) + PI
-		if cam != null and cam.has_method("snap"):
-			cam.snap()
 		await physics_frame
 		if main.get_active_floor() != floor_before:
 			break
@@ -147,6 +138,20 @@ func _room_ending(main: Node, suffix: String) -> Node3D:
 		if String(child.name).ends_with(suffix):
 			return child as Node3D
 	return null
+
+
+func _press_walk(direction: Vector3) -> void:
+	_release_walk()
+	var sx := (direction.x - direction.z) * 0.5
+	var sy := -(direction.x + direction.z) * 0.5
+	if sx > 0.2:
+		Input.action_press("move_right")
+	elif sx < -0.2:
+		Input.action_press("move_left")
+	if sy > 0.2:
+		Input.action_press("move_up")
+	elif sy < -0.2:
+		Input.action_press("move_down")
 
 
 func _release_walk() -> void:
