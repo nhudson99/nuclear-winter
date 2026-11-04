@@ -18,6 +18,9 @@ func _ready() -> void:
 func _physics_process(delta: float) -> void:
 	if not _alive:
 		return
+	if is_breaching_hide():
+		super._physics_process(delta)
+		return
 	var lit := _lit_by_flashlight()
 	if lit:
 		velocity.x = 0.0

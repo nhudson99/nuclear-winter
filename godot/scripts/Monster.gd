@@ -2,13 +2,17 @@ extends CharacterBody3D
 
 ## Patrols a generated monster track (room centres linked through doorway
 ## centres), detects nearby players in a radius, and chases on FOV + line of
-## sight, when shot, or while the flashlight beam is on them. It path-follows
-## the track so walls and furniture do not trap it. After losing detection for
+## sight, when shot, or while the flashlight beam is on them. A player inside
+## a hide spot is concealed: no proximity, sight, flashlight, or melee. A monster
+## that was already chasing and could see the entry walks to the spot and
+## smashes it. It path-follows the track so walls and furniture do not trap it. After losing detection for
 ## `lose_sight_grace` seconds it returns to the track. Damage uses an attack
 ## swing on a cooldown (not instant touch). Dead monsters despawn. Off-floor
 ## bodies keep patrolling through MonsterTracker.
 
 enum AiMode { PATROL, CHASE, RETURN }
+
+const CharacterMeshScript := preload("res://scripts/CharacterMesh.gd")
 
 @export var move_speed: float = 3.8
 @export var gravity: float = 20.0
@@ -105,12 +109,19 @@ var _base_touch_sphere_radius: float = 0.95
 var _base_touch_pos: Vector3 = Vector3.ZERO
 var _player_in_touch: bool = false
 var _attack_cooldown_left: float = 0.0
+var _breach_spot: Node3D
+var _breach_striking: bool = false
+var _breach_time_left: float = 0.0
+## Unrigged bodies (stalker, void) have no hide_break clip. They lunge instead.
+var _breach_lunge: bool = false
+var _visual_rest: Vector3 = Vector3.ZERO
 var _tracker: MonsterTracker
 var _off_floor: bool = false
 var _current_floor: int = 0
 var _despawn_armed: bool = false
 
 func _ready() -> void:
+	CharacterMeshScript.upgrade(visual)
 	add_to_group("monster")
 	health = max_health
 	if fast_attacker or grow_and_split:
@@ -150,6 +161,10 @@ func _physics_process(delta: float) -> void:
 		return
 
 	_attack_cooldown_left = maxf(0.0, _attack_cooldown_left - delta)
+	if _breach_spot != null:
+		if _tick_hide_breach(delta):
+			_finish_move(delta)
+			return
 	_try_melee_attack()
 	_try_use_stairs()
 
@@ -159,7 +174,7 @@ func _physics_process(delta: float) -> void:
 		_finish_move(delta)
 		return
 
-	var can_sense := _same_floor_as_player() and not _off_floor
+	var can_sense := _same_floor_as_player() and not _off_floor and not _player_is_hidden()
 	_near_player = can_sense and _is_player_in_proximity()
 	var lit := can_sense and _lit_by_flashlight()
 	_seeing_player = can_sense and (
@@ -207,6 +222,7 @@ func take_damage(amount: float) -> void:
 	if health <= 0.0:
 		_alive = false
 		velocity = Vector3.ZERO
+		_drop_breach()
 		_anim_locked = true
 		_play_clip(death_clip, 1.0)
 		_on_died()
@@ -366,6 +382,8 @@ func _on_touch_body_entered(body: Node3D) -> void:
 		return
 	if body == null or not body.is_in_group("player"):
 		return
+	if body.has_method("is_hidden") and body.is_hidden():
+		return
 	_player_in_touch = true
 
 func _on_touch_body_exited(body: Node3D) -> void:
@@ -386,6 +404,8 @@ func _try_melee_attack() -> void:
 	if player == null or not is_instance_valid(player):
 		return
 	if player.has_method("is_alive") and not player.is_alive():
+		return
+	if _player_is_hidden():
 		return
 	_attack_cooldown_left = attack_interval
 	_play_clip(attack_clip, 1.0)
@@ -726,8 +746,19 @@ func _update_stuck_recovery(delta: float) -> void:
 	else:
 		_stuck_time = 0.0
 
+func _player_is_hidden() -> bool:
+	return (
+		player != null
+		and is_instance_valid(player)
+		and player.has_method("is_hidden")
+		and player.is_hidden()
+	)
+
+
 func _is_player_in_proximity() -> bool:
 	if player == null:
+		return false
+	if _player_is_hidden():
 		return false
 	if player.has_method("is_alive") and not player.is_alive():
 		return false
@@ -737,7 +768,153 @@ func _is_player_in_proximity() -> bool:
 	to_player.y = 0.0
 	return to_player.length() <= proximity_radius
 
+## True when this monster is chasing and can see the player enter a hide spot.
+## Sight is the usual cone and ray, checked before the player is marked hidden.
+func saw_player_enter_hiding() -> bool:
+	if not _alive or _ai_mode != AiMode.CHASE:
+		return false
+	return _has_clear_sight()
+
+
+## Walk to the spot, play hide_break when that clip exists, then smash it open.
+func commit_hide_breach(spot: Node3D) -> void:
+	if spot == null or not _alive:
+		return
+	_breach_spot = spot
+	_breach_striking = false
+	_breach_time_left = 0.0
+	_ai_mode = AiMode.CHASE
+	_time_since_seen = 0.0
+
+
+func is_breaching_hide() -> bool:
+	return _breach_spot != null and is_instance_valid(_breach_spot)
+
+
+func _tick_hide_breach(delta: float) -> bool:
+	if not is_instance_valid(_breach_spot) or not _breach_still_valid():
+		_drop_breach()
+		return false
+	var dest := _breach_spot.global_position
+	if _breach_spot.has_method("entry_global"):
+		dest = _breach_spot.entry_global()
+	if not _breach_striking:
+		var to_dest := dest - global_position
+		to_dest.y = 0.0
+		if to_dest.length() > 0.8:
+			_move_toward(dest, delta)
+			return true
+		if _breach_spot.has_method("begin_break") and not _breach_spot.begin_break():
+			velocity = Vector3.ZERO
+			return true
+		_breach_striking = true
+		velocity = Vector3.ZERO
+		_face_point(dest)
+		_play_hide_break()
+		_breach_time_left = _hide_break_duration()
+		return true
+	velocity = Vector3.ZERO
+	_face_point(dest)
+	_animate_walk(_walk_phase, 0.0)
+	_apply_breach_lunge()
+	_breach_time_left -= delta
+	if _breach_time_left > 0.0:
+		return true
+	_force_player_from_hide()
+	_drop_breach()
+	return false
+
+
+func _breach_still_valid() -> bool:
+	if player == null or not is_instance_valid(player):
+		return false
+	if not player.has_method("is_hidden") or not player.is_hidden():
+		return false
+	if player.has_method("hiding_spot"):
+		return player.hiding_spot() == _breach_spot
+	return true
+
+
+func _force_player_from_hide() -> void:
+	if player != null and player.has_method("eject_from_hiding"):
+		player.eject_from_hiding(self, touch_damage)
+
+
+func _drop_breach() -> void:
+	var spot := _breach_spot
+	_breach_spot = null
+	_breach_striking = false
+	_breach_time_left = 0.0
+	if _breach_lunge and visual != null:
+		visual.position = _visual_rest
+	_breach_lunge = false
+	if spot != null and is_instance_valid(spot) and spot.has_method("cancel_break"):
+		spot.cancel_break()
+
+
+func _play_hide_break() -> void:
+	if _anim != null and _anim.has_animation("hide_break"):
+		_breach_lunge = false
+		_play_clip("hide_break", 1.0)
+		return
+	# No rigged smash. Lunge into the door while DoorBurst plays on the prop.
+	_breach_lunge = true
+	_visual_rest = visual.position if visual != null else Vector3.ZERO
+	_play_clip(attack_clip, 1.0)
+
+
+func _hide_break_duration() -> float:
+	if _anim != null and _anim.has_animation("hide_break"):
+		return maxf(_anim.get_animation("hide_break").length, 0.35)
+	return 0.7
+
+
+## Reach into the door, around the leaf's height, then shake. Used when the
+## mesh has no hide_break clip (stalker, void).
+func _apply_breach_lunge() -> void:
+	if not _breach_lunge or visual == null or _breach_spot == null:
+		return
+	var duration := _hide_break_duration()
+	var t := 1.0 - clampf(_breach_time_left / duration, 0.0, 1.0)
+	var lunge := 0.0
+	if t < 0.3:
+		lunge = -0.1 * (t / 0.3)
+	elif t < 0.55:
+		lunge = lerpf(-0.1, 0.42, (t - 0.3) / 0.25)
+	else:
+		lunge = lerpf(0.42, 0.0, (t - 0.55) / 0.45)
+	var into := Vector3.ZERO
+	if _breach_spot.has_method("exit_forward"):
+		into = -(_breach_spot.exit_forward())
+	into.y = 0.0
+	if into.length() < 0.01:
+		into = Vector3(0.0, 0.0, -1.0)
+	else:
+		into = into.normalized()
+	var shake := sin(t * TAU * 5.0) * 0.035 * sin(t * PI)
+	# Door leaves sit around a metre up. A small lift keeps the shove off the floor.
+	var lift := sin(clampf((t - 0.25) / 0.4, 0.0, 1.0) * PI) * 0.18
+	var sideways := Vector3(-into.z, 0.0, into.x)
+	visual.position = _visual_rest + into * lunge + sideways * shake + Vector3(0.0, lift, 0.0)
+
+
+func _face_point(point: Vector3) -> void:
+	if visual == null:
+		return
+	var dir := point - global_position
+	dir.y = 0.0
+	if dir.length() < 0.05:
+		return
+	visual.rotation.y = atan2(dir.x, dir.z) + facing_yaw_offset
+
+
 func _can_see_player() -> bool:
+	if _player_is_hidden():
+		return false
+	return _has_clear_sight()
+
+
+func _has_clear_sight() -> bool:
 	if player == null or not is_instance_valid(player):
 		return false
 	if player.has_method("is_alive") and not player.is_alive():
@@ -1021,7 +1198,9 @@ func _add_held_frame(dest: String, source: String) -> void:
 
 
 func _is_one_shot(clip: String) -> bool:
-	return clip != "" and (clip == hit_clip or clip == attack_clip or clip == action_clip)
+	return clip != "" and (
+		clip == hit_clip or clip == attack_clip or clip == action_clip or clip == "hide_break"
+	)
 
 
 func _play_clip(clip: String, speed: float) -> void:

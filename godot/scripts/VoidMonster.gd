@@ -28,6 +28,11 @@ func _on_level_configured() -> void:
 
 
 func _physics_process(delta: float) -> void:
+	if is_breaching_hide():
+		_laser_charging = false
+		_hide_beam()
+		super._physics_process(delta)
+		return
 	if not _alive:
 		super._physics_process(delta)
 		return

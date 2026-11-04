@@ -15,12 +15,14 @@ func _build() -> void:
 	var monster_path := "res://assets/characters/IrradiatedMaskMonster.glb"
 	# Rigged exports. The static SovietSlime.glb / SovietTankMan.glb in blender/
 	# have no clips; these are the animated twins.
-	var slime_path := "res://assets/characters/SovietSlime.glb"
-	var tank_path := "res://assets/characters/SovietTankMan.glb"
+	# Superset of the original clips plus hide_break. The unrigged stalker and
+	# the walking void stay on their current files and lunge in code.
+	var slime_path := "res://assets/characters/SovietSlime_hb.glb"
+	var tank_path := "res://assets/characters/SovietTankMan_hb.glb"
 	var void_path := "res://assets/characters/Void_walking.glb"
-	var tarantula_path := "res://assets/characters/Tarantula.glb"
+	var tarantula_path := "res://assets/characters/Tarantula_hb.glb"
 	var widow_path := "res://assets/characters/enemy_widow.glb"
-	var toad_path := "res://assets/characters/Toad.glb"
+	var toad_path := "res://assets/characters/Toad_hb.glb"
 
 	for path in [player_path, monster_path, slime_path, tank_path, void_path, tarantula_path, widow_path, toad_path]:
 		if not ResourceLoader.exists(path):
