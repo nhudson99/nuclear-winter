@@ -46,6 +46,7 @@ signal stair_used(stair: Node)
 const LOOPING_CLIPS := ["Idle", "Walk", "Run"]
 const TOUCH_CONTROLS := preload("res://scripts/TouchControls.gd")
 const BULLET_SCRIPT := preload("res://scripts/Bullet.gd")
+const CharacterMeshScript := preload("res://scripts/CharacterMesh.gd")
 var _anim: AnimationPlayer
 var _clip: String = ""
 var health: float = 100.0
@@ -78,7 +79,8 @@ func current_clip() -> String:
 
 
 func _ready() -> void:
-	# The warden mesh stays. hide_ejected plays only when this model has the clip.
+	# Warden is the player. hide_ejected plays when that file has the clip.
+	CharacterMeshScript.drop_stray_meshes(visual)
 	add_to_group("player")
 	_ensure_key_action("sprint", KEY_SHIFT)
 	_ensure_key_action("sneak", KEY_CTRL)
@@ -824,8 +826,11 @@ func _play(clip: String, speed: float) -> void:
 	_anim.speed_scale = speed
 	if _clip == clip:
 		return
+	# hide_ejected is authored at the rest pose on both ends. Blend across the
+	# cut so the warden does not pop into or out of the stagger.
+	var blend := 0.18 if clip == "hide_ejected" or _clip == "hide_ejected" else 0.15
 	_clip = clip
-	_anim.play(clip, 0.15, speed)
+	_anim.play(clip, blend, speed)
 
 func _cycle_speed(clip: String, speed: float, cycle_metres: float) -> float:
 	if _anim == null or not _anim.has_animation(clip) or cycle_metres <= 0.0:

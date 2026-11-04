@@ -122,6 +122,7 @@ var _despawn_armed: bool = false
 
 func _ready() -> void:
 	CharacterMeshScript.upgrade(visual)
+	CharacterMeshScript.drop_stray_meshes(visual)
 	add_to_group("monster")
 	health = max_health
 	if fast_attacker or grow_and_split:

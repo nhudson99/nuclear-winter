@@ -24,6 +24,26 @@ static func with_hide_anims(path: String) -> String:
 
 ## Swap an instanced character glb for its _hb variant, keeping the node
 ## name and transform. No change when the variant is absent.
+## Meshy exports sometimes leave a hidden Icosphere in the glb. Drop it so it
+## cannot draw or grow a collider. No-op when the node is absent.
+static func drop_stray_meshes(root: Node) -> void:
+	if root == null:
+		return
+	var doomed: Array[Node] = []
+	_collect_strays(root, doomed)
+	for node in doomed:
+		node.free()
+
+
+static func _collect_strays(node: Node, doomed: Array[Node]) -> void:
+	for child in node.get_children():
+		var label := String(child.name).to_lower()
+		if label == "icosphere" or label.begins_with("icosphere"):
+			doomed.append(child)
+			continue
+		_collect_strays(child, doomed)
+
+
 static func upgrade(visual: Node3D) -> void:
 	var source := _instanced_glb(visual)
 	if source == null:

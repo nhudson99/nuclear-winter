@@ -24,7 +24,8 @@ func _run() -> void:
 	var rooms_ok := _check_rooms()
 	var doors_ok := _check_door_fallback_and_clips()
 	var breach_ok := await _check_breach()
-	var all_ok: bool = paths_ok and rooms_ok and doors_ok and breach_ok
+	var clips_ok := await _check_warden_and_void()
+	var all_ok: bool = paths_ok and rooms_ok and doors_ok and breach_ok and clips_ok
 	print("hiding_smoke_ok=", all_ok)
 	quit(0 if all_ok else 1)
 
@@ -94,7 +95,7 @@ func _check_rooms() -> bool:
 	var warden_kept := String(CharacterMeshScript.with_hide_anims(warden))
 	hb_ok = hb_ok and tarantula.ends_with("Tarantula_hb.glb")
 	hb_ok = hb_ok and void_kept.ends_with("Void_walking.glb")
-	hb_ok = hb_ok and warden_kept == warden
+	hb_ok = hb_ok and warden_kept.ends_with("Meshy_AI_Gulag_Winter_Warden_All_Animations_hb.glb")
 	print("hb_fallback_ok=", hb_ok)
 	ok = ok and hb_ok
 	container.queue_free()
@@ -451,6 +452,110 @@ func _bone_points(skel: Skeleton3D) -> Dictionary:
 		var origin: Vector3 = skel.get_bone_global_pose(index).origin
 		points[skel.get_bone_name(index)] = skel.to_global(origin)
 	return points
+
+
+func _check_warden_and_void() -> bool:
+	var warden_ok := await _check_warden_eject()
+	var void_ok := await _check_void_clips()
+	print("warden_void_ok=", warden_ok and void_ok)
+	return warden_ok and void_ok
+
+
+func _check_warden_eject() -> bool:
+	var path := "res://assets/characters/Meshy_AI_Gulag_Winter_Warden_All_Animations_hb.glb"
+	var packed := load(path) as PackedScene
+	if packed == null:
+		print("warden_hb_ok=false")
+		return false
+	var body := CharacterBody3D.new()
+	body.set_script(load("res://scripts/Player.gd"))
+	var model := Node3D.new()
+	model.name = "Model"
+	body.add_child(model)
+	var character := packed.instantiate() as Node3D
+	character.name = "Character"
+	model.add_child(character)
+	root.add_child(body)
+	await physics_frame
+	var anim := _anim_under(body)
+	var names_ok := (
+		anim != null
+		and anim.has_animation("Walk")
+		and anim.has_animation("Run")
+		and anim.has_animation("Idle")
+		and anim.has_animation("Die")
+		and anim.has_animation("hide_ejected")
+	)
+	var ico := _find_named(body, "Icosphere")
+	var host := _make_host("HideSpot_Warden")
+	root.add_child(host)
+	HideSpot.attach_in(host)
+	var spot := host.get_node("HideSpotUse") as HideSpot
+	body.global_position = spot.entry_global()
+	var entered: bool = spot.try_enter(body)
+	var ejected := false
+	if entered:
+		body.eject_from_hiding(null, 0.0)
+		ejected = body.current_clip() == "hide_ejected" and not body.is_hidden()
+	print("warden_hb_ok=", names_ok and ejected and ico == null, " clip=", body.current_clip() if body.has_method("current_clip") else "")
+	body.queue_free()
+	host.queue_free()
+	return names_ok and ejected and ico == null
+
+
+func _check_void_clips() -> bool:
+	var path := "res://assets/characters/Void_full.glb"
+	var packed := load(path) as PackedScene
+	if packed == null:
+		print("void_full_ok=false")
+		return false
+	var body := packed.instantiate() as Node3D
+	root.add_child(body)
+	await physics_frame
+	CharacterMeshScript.drop_stray_meshes(body)
+	var anim := _anim_under(body)
+	var names_ok := (
+		anim != null
+		and anim.has_animation("Walk")
+		and anim.has_animation("Run")
+		and anim.has_animation("hide_break")
+	)
+	var walked := false
+	var ran := false
+	if names_ok:
+		walked = _clip_moves(body, anim, "Walk")
+		ran = _clip_moves(body, anim, "Run")
+	var ico := _find_named(body, "Icosphere")
+	print("void_full_ok=", names_ok and walked and ran and ico == null, " walk=", walked, " run=", ran)
+	body.queue_free()
+	return names_ok and walked and ran and ico == null
+
+
+func _clip_moves(body: Node, anim: AnimationPlayer, clip_name: String) -> bool:
+	var skel := _find_skeleton(body)
+	if skel == null:
+		return false
+	anim.play(clip_name)
+	anim.seek(0.0, true)
+	var rest := _bone_points(skel)
+	anim.seek(0.25, true)
+	var later := _bone_points(skel)
+	for bone_name in rest:
+		var a: Vector3 = rest[bone_name]
+		var b: Vector3 = later[bone_name]
+		if a.distance_to(b) > 0.02:
+			return true
+	return false
+
+
+func _find_named(node: Node, node_name: String) -> Node:
+	if String(node.name) == node_name:
+		return node
+	for child in node.get_children():
+		var found := _find_named(child, node_name)
+		if found != null:
+			return found
+	return null
 
 
 func _make_host(host_name: String) -> MeshInstance3D:

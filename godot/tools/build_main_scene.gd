@@ -11,7 +11,7 @@ func _initialize() -> void:
 	call_deferred("_build")
 
 func _build() -> void:
-	var player_path := "res://assets/characters/Meshy_AI_Gulag_Winter_Warden_All_Animations.glb"
+	var player_path := "res://assets/characters/Meshy_AI_Gulag_Winter_Warden_All_Animations_hb.glb"
 	var monster_path := "res://assets/characters/IrradiatedMaskMonster.glb"
 	# Rigged exports. The static SovietSlime.glb / SovietTankMan.glb in blender/
 	# have no clips; these are the animated twins.
@@ -19,7 +19,7 @@ func _build() -> void:
 	# the walking void stay on their current files and lunge in code.
 	var slime_path := "res://assets/characters/SovietSlime_hb.glb"
 	var tank_path := "res://assets/characters/SovietTankMan_hb.glb"
-	var void_path := "res://assets/characters/Void_walking.glb"
+	var void_path := "res://assets/characters/Void_full.glb"
 	var tarantula_path := "res://assets/characters/Tarantula_hb.glb"
 	var widow_path := "res://assets/characters/enemy_widow.glb"
 	var toad_path := "res://assets/characters/Toad_hb.glb"
@@ -212,8 +212,8 @@ func _build() -> void:
 			"eye_height": 1.5,
 			"section_dwell_time": 26.0,
 			"idle_clip": "Idle",
-			"walk_clip": "walking_man",
-			"attack_clip": "walking_man",
+			"walk_clip": "Walk",
+			"attack_clip": "Walk",
 			"walk_cycle_metres": 2.0,
 		},
 		0.4,

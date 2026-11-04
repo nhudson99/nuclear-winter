@@ -20,9 +20,8 @@ const DARK_AMBIENT_ENERGY := 0.0
 const SLIME_SCENE_PATH := "res://scenes/Slime.tscn"
 const MAX_LIVING_SLIMES := 16
 const SLIME_SPLIT_SPREAD := 0.6
-## Void_rigged_hb.glb is hide_break only (no walk). Keep the walking mesh
-## until a combined walk/run/hide_break file exists. Smash is a code lunge.
-const VOID_SCENE_PATH := "res://assets/characters/Void_walking.glb"
+## Walk, Run, and hide_break on one rig. Void_walking.glb is the older walk-only mesh.
+const VOID_SCENE_PATH := "res://assets/characters/Void_full.glb"
 
 @onready var camera: Camera3D = $IsoCamera
 @onready var player: CharacterBody3D = $Player

@@ -1,7 +1,8 @@
 extends "res://scripts/Monster.gd"
 
 ## Mid-tier void entity. Fires a void laser; a hit pulls the player into the
-## void dimension instead of dealing normal contact damage.
+## void dimension instead of dealing normal contact damage. The mesh is
+## Void_full.glb (`Walk`, `Run`, `hide_break`); a witnessed hide plays that clip.
 
 @export var laser_range: float = 11.0
 @export var laser_cooldown: float = 3.2
