@@ -144,9 +144,10 @@ func _run() -> void:
 	print("weapon_attack_ok=", weapon_ok, " shot=", shot)
 
 	var cycle_ok := (
-		LevelRules.toad_count(6) == 0
-		and LevelRules.toad_count(7) == 1
-		and LevelRules.monster_kinds(7).has(LevelRules.KIND_TOAD)
+		LevelRules.kind_in_tier(LevelRules.KIND_TOAD, LevelRules.TIER_EASY)
+		and LevelRules.unique_kinds_for_tier(LevelRules.TIER_EASY).has(LevelRules.KIND_TOAD)
+		and LevelRules.monster_slot_tiers(1) == [LevelRules.TIER_EASY]
+		and not LevelRules.kind_in_tier(LevelRules.KIND_TOAD, LevelRules.TIER_HARD)
 	)
 	print("toad_cycle_ok=", cycle_ok)
 

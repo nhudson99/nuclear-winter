@@ -4,15 +4,19 @@ extends RefCounted
 ## Pure rules for how a play level scales. Kept free of nodes so smokes can
 ## check the formulas without booting a map.
 ##
-## Monsters cycle easy → moderate → dangerous as the level index grows:
-##   slime → stalker(hare) → tank → void → tarantula → widow → toad…
-## Objectives: one sector key per wing lock (from level 2), the steam valve,
-## then the mission item. The first wing's key and LockedDoor live in the
-## library room. Floors grow on odd levels (`ceil(n / 2)`).
+## Monsters spawn by difficulty tier (random pick within the tier):
+##   Easy: slime, toad
+##   Med:  hare, stalker, tarantula
+##   Hard: tank, widow, void
+## Levels 1–3: one slot per level, cycling easy → med → hard.
+## After level 3: total = ceil(n/2), hard = floor(n/3), remaining from the
+## easy/med cycle. Objectives: one sector key per wing lock (from level 2), the
+## steam valve, then the mission item. The first wing's key and LockedDoor
+## live in the library room. Floors grow on odd levels (`ceil(n / 2)`).
 
 const KIND_SLIME := "slime"
 const KIND_HARE := "hare"
-const KIND_STALKER := "hare" # radiation-mask stalker; kept as "hare" for saves/smokes
+const KIND_STALKER := "hare" # radiation-mask stalker; kept as "hare" for saves/smokes until hare/stalker split lands
 const KIND_TANK := "tank"
 const KIND_VOID := "void"
 const KIND_TARANTULA := "tarantula"
@@ -23,6 +27,20 @@ const KIND_KEY := "key"
 const KIND_VALVE := "valve"
 const KIND_BOOKSHELF := "bookshelf"
 
+const TIER_EASY := "easy"
+const TIER_MED := "med"
+const TIER_HARD := "hard"
+
+## Random pick within each tier. On main, KIND_STALKER aliases "hare" so the
+## med pool de-dupes to hare + tarantula until the hare/stalker split merges.
+const MONSTER_TIER_EASY: Array[String] = [KIND_SLIME, KIND_TOAD]
+const MONSTER_TIER_MED: Array[String] = [KIND_HARE, KIND_STALKER, KIND_TARANTULA]
+const MONSTER_TIER_HARD: Array[String] = [KIND_TANK, KIND_WIDOW, KIND_VOID]
+
+## Early levels / leftover slots walk this difficulty order.
+const DIFFICULTY_CYCLE: Array[String] = [TIER_EASY, TIER_MED, TIER_HARD]
+
+## Kept for call-site compatibility; normal generation no longer walks this list.
 const MONSTER_CYCLE: Array[String] = [
 	KIND_SLIME, KIND_HARE, KIND_TANK, KIND_VOID, KIND_TARANTULA, KIND_WIDOW, KIND_TOAD
 ]
@@ -43,12 +61,86 @@ static func clamp_level(level: int) -> int:
 	return maxi(level, 1)
 
 
-static func kind_count(kind: String, level: int) -> int:
+static func monster_count(level: int) -> int:
 	var n := clamp_level(level)
+	if n <= 3:
+		return n
+	return int(ceili(float(n) / 2.0))
+
+
+static func hard_monster_count(level: int) -> int:
+	var n := clamp_level(level)
+	if n <= 3:
+		return 1 if n >= 3 else 0
+	return int(floor(float(n) / 3.0))
+
+
+static func kinds_for_tier(tier: String) -> Array[String]:
+	match tier:
+		TIER_EASY:
+			return MONSTER_TIER_EASY.duplicate()
+		TIER_MED:
+			return MONSTER_TIER_MED.duplicate()
+		TIER_HARD:
+			return MONSTER_TIER_HARD.duplicate()
+		_:
+			return []
+
+
+static func unique_kinds_for_tier(tier: String) -> Array[String]:
+	var out: Array[String] = []
+	for kind in kinds_for_tier(tier):
+		if not out.has(kind):
+			out.append(kind)
+	return out
+
+
+static func kind_in_tier(kind: String, tier: String) -> bool:
+	return unique_kinds_for_tier(tier).has(kind)
+
+
+static func tier_for_kind(kind: String) -> String:
+	if kind_in_tier(kind, TIER_EASY):
+		return TIER_EASY
+	if kind_in_tier(kind, TIER_MED):
+		return TIER_MED
+	if kind_in_tier(kind, TIER_HARD):
+		return TIER_HARD
+	return ""
+
+
+## Deterministic difficulty slots for a level (not the random kind inside a tier).
+static func monster_slot_tiers(level: int) -> Array[String]:
+	var n := clamp_level(level)
+	var tiers: Array[String] = []
+	if n <= 3:
+		for i in n:
+			tiers.append(DIFFICULTY_CYCLE[i % DIFFICULTY_CYCLE.size()])
+		return tiers
+	var total := monster_count(n)
+	var hard_n := hard_monster_count(n)
+	var remaining := maxi(total - hard_n, 0)
+	for i in remaining:
+		# Leftover slots only walk easy → med (hard is reserved by hard_n).
+		tiers.append(DIFFICULTY_CYCLE[i % 2])
+	for _i in hard_n:
+		tiers.append(TIER_HARD)
+	return tiers
+
+
+static func _pick_tier_kind(tier: String, rng: RandomNumberGenerator = null) -> String:
+	var pool := unique_kinds_for_tier(tier)
+	if pool.is_empty():
+		return KIND_SLIME
+	if rng == null:
+		return pool[0]
+	return pool[rng.randi_range(0, pool.size() - 1)]
+
+
+static func kind_count(kind: String, level: int) -> int:
 	var count := 0
-	var cycle_size := MONSTER_CYCLE.size()
-	for i in n:
-		if MONSTER_CYCLE[i % cycle_size] == kind:
+	for entry in monster_kinds(level):
+		if entry == kind:
 			count += 1
 	return count
 
@@ -81,12 +173,12 @@ static func void_count(level: int) -> int:
 	return kind_count(KIND_VOID, level)
 
 
-## One kind per spawned monster, in cycle order: slime, stalker, tank, void…
-static func monster_kinds(level: int) -> Array[String]:
-	var n := clamp_level(level)
+## One kind per spawn slot. With `rng`, each slot rolls inside its tier; without
+## `rng`, each slot takes the first unique kind in that tier (stable for smokes).
+static func monster_kinds(level: int, rng: RandomNumberGenerator = null) -> Array[String]:
 	var kinds: Array[String] = []
-	for i in n:
-		kinds.append(MONSTER_CYCLE[i % MONSTER_CYCLE.size()])
+	for tier in monster_slot_tiers(level):
+		kinds.append(_pick_tier_kind(tier, rng))
 	return kinds
 
 
@@ -230,27 +322,16 @@ static func _key_label(stage: int, total_keys: int, library_stage: int = 0) -> S
 
 
 static func counts_match_cycle(level: int) -> bool:
+	var tiers := monster_slot_tiers(level)
 	var kinds := monster_kinds(level)
-	var counted := {
-		KIND_SLIME: 0,
-		KIND_HARE: 0,
-		KIND_TANK: 0,
-		KIND_VOID: 0,
-		KIND_TARANTULA: 0,
-		KIND_WIDOW: 0,
-		KIND_TOAD: 0,
-	}
-	for kind in kinds:
-		if not counted.has(kind):
+	if kinds.size() != tiers.size() or kinds.size() != monster_count(level):
+		return false
+	var hard_n := 0
+	for i in kinds.size():
+		var kind: String = kinds[i]
+		var tier: String = tiers[i]
+		if not kind_in_tier(kind, tier):
 			return false
-		counted[kind] += 1
-	return (
-		int(counted[KIND_SLIME]) == slime_count(level)
-		and int(counted[KIND_HARE]) == hare_count(level)
-		and int(counted[KIND_TANK]) == tank_count(level)
-		and int(counted[KIND_VOID]) == void_count(level)
-		and int(counted[KIND_TARANTULA]) == tarantula_count(level)
-		and int(counted[KIND_WIDOW]) == widow_count(level)
-		and int(counted[KIND_TOAD]) == toad_count(level)
-		and kinds.size() == clamp_level(level)
-	)
+		if tier == TIER_HARD:
+			hard_n += 1
+	return hard_n == hard_monster_count(level)
