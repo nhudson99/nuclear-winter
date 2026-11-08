@@ -12,7 +12,11 @@ extends Node3D
 ## The room generator finds hosts by name. `HideSpot_*` is the contract.
 ## Boiler v3 still exports its bank as `Locker_1`..`Locker_5`, so those names
 ## are accepted until the artist renames them.
+##
+## Entering lights only the generator room this prop sits in (25% of the
+## stripped preview fill). Leaving puts that room back.
 
+const HideRoomLightScript := preload("res://scripts/HideRoomLight.gd")
 const HIDE_PREFIX := "HideSpot_"
 const LOCKER_PREFIX := "Locker_"
 const DOOR_VISUALS := {
@@ -182,9 +186,22 @@ func try_enter(body: Node3D) -> bool:
 
 
 func on_player_entered() -> void:
+	_raise_room_light()
 	if _play_door_clip(CLIP_DOOR_OPEN):
 		return
 	_swing_doors(OPEN_YAW)
+
+
+func _raise_room_light() -> void:
+	var room := HideRoomLightScript.room_of(self)
+	if room == null:
+		return
+	if room.get_node_or_null(HideRoomLightScript.NODE_NAME) != null:
+		return
+	var light: Node = HideRoomLightScript.new()
+	light.name = HideRoomLightScript.NODE_NAME
+	light.call("configure")
+	room.add_child(light)
 
 
 ## True the first time a monster starts the smash. A second monster waits.
@@ -209,6 +226,7 @@ func on_occupant_left(body: Node, forced: bool = false) -> void:
 	if _occupant == body:
 		_occupant = null
 	_breaking = false
+	HideRoomLightScript.restore(self)
 	if forced:
 		return
 	if _play_door_clip(CLIP_DOOR_OPEN):
