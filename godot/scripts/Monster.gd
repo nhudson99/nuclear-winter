@@ -7,8 +7,9 @@ extends CharacterBody3D
 ## that was already chasing and could see the entry walks to the spot and
 ## smashes it. It path-follows the track so walls and furniture do not trap it. After losing detection for
 ## `lose_sight_grace` seconds it returns to the track. Damage uses an attack
-## swing on a cooldown (not instant touch). Dead monsters despawn. Off-floor
-## bodies keep patrolling through MonsterTracker.
+## swing on a cooldown (not instant touch). A player hit shoves the body away
+## from the player. Dead monsters despawn. Off-floor bodies keep patrolling
+## through MonsterTracker.
 
 enum AiMode { PATROL, CHASE, RETURN }
 
@@ -30,6 +31,12 @@ const CharacterMeshScript := preload("res://scripts/CharacterMesh.gd")
 @export var touch_damage: float = 100.0
 ## Seconds between melee swings. Fast monsters (slime) use 0.25; others 0.5.
 @export var attack_interval: float = 0.5
+## Peak planar speed of a shove from a player hit. Just under a sprint (5.5)
+## so the body steps back instead of leaving the fight.
+@export var knockback_speed: float = 4.5
+## Linear bleed-off of that shove, in m/s². 4.5 / 18 lasts about a quarter
+## second and covers ~0.6 m, inside the 0.45 s melee cooldown.
+@export var knockback_decay: float = 18.0
 @export var fast_attacker: bool = false
 @export var health_bar_height: float = 2.35
 @export var section_dwell_time: float = 30.0
@@ -109,6 +116,9 @@ var _base_touch_sphere_radius: float = 0.95
 var _base_touch_pos: Vector3 = Vector3.ZERO
 var _player_in_touch: bool = false
 var _attack_cooldown_left: float = 0.0
+## Remaining planar shove from the last player hit. Decays to zero; a new hit
+## replaces it instead of stacking, so a shotgun blast is still one shove.
+var _knockback: Vector3 = Vector3.ZERO
 var _breach_spot: Node3D
 var _breach_striking: bool = false
 var _breach_time_left: float = 0.0
@@ -149,6 +159,7 @@ func _physics_process(delta: float) -> void:
 	if not _alive:
 		velocity.x = 0.0
 		velocity.z = 0.0
+		_apply_knockback_motion(delta)
 		if not _off_floor:
 			_apply_gravity(delta)
 			move_and_slide()
@@ -220,6 +231,7 @@ func take_damage(amount: float) -> void:
 	_time_since_seen = 0.0
 	if player != null and is_instance_valid(player):
 		_last_seen_pos = player.global_position
+	apply_hit_knockback()
 	if health <= 0.0:
 		_alive = false
 		velocity = Vector3.ZERO
@@ -418,7 +430,65 @@ func _allows_attack() -> bool:
 	return true
 
 
+## Shove this body straight away from the player on the floor plane.
+## A fresh hit replaces any shove still in progress.
+func apply_hit_knockback() -> void:
+	if not _alive or knockback_speed <= 0.0:
+		return
+	if not _resolve_player():
+		return
+	var away := global_position - player.global_position
+	away.y = 0.0
+	if away.length_squared() < 0.0004:
+		away = _knockback_fallback_dir()
+	else:
+		away = away.normalized()
+	_knockback = away * knockback_speed
+
+
+func _resolve_player() -> bool:
+	if player != null and is_instance_valid(player):
+		return true
+	if not is_inside_tree():
+		return false
+	var body := get_tree().get_first_node_in_group("player") as CharacterBody3D
+	if body == null:
+		return false
+	player = body
+	return true
+
+
+func _knockback_fallback_dir() -> Vector3:
+	if player != null and is_instance_valid(player) and player.has_method("get_aim_direction"):
+		var aim: Vector3 = player.get_aim_direction()
+		aim.y = 0.0
+		if aim.length_squared() > 0.0001:
+			return aim.normalized()
+	return Vector3(0.0, 0.0, 1.0)
+
+
+func _clear_knockback() -> void:
+	_knockback = Vector3.ZERO
+
+
+## Replace planar velocity with the remaining shove, then bleed it off.
+## No-op when nothing is pending, so chase and patrol keep the velocity they set.
+func _apply_knockback_motion(delta: float) -> void:
+	if _knockback.length_squared() < 0.0001:
+		_knockback = Vector3.ZERO
+		return
+	velocity.x = _knockback.x
+	velocity.z = _knockback.z
+	var speed := _knockback.length()
+	var next := speed - knockback_decay * delta
+	if next <= 0.05:
+		_knockback = Vector3.ZERO
+	else:
+		_knockback = _knockback * (next / speed)
+
+
 func _finish_move(delta: float) -> void:
+	_apply_knockback_motion(delta)
 	if _off_floor:
 		# Abstract slide along the track — no collision on parked floors.
 		global_position.x += velocity.x * delta
