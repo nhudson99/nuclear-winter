@@ -183,6 +183,9 @@ func _check_formulas() -> bool:
 		var match_ok: bool = got == want and LevelRules.counts_match_cycle(level)
 		var library_key_listed := false
 		var valve_listed := false
+		var key_lines := 0
+		var mission_count := 0
+		var mission_label := ""
 		for spec in LevelRules.objectives(level):
 			var kind := String(spec.get("kind", ""))
 			if (
@@ -191,17 +194,27 @@ func _check_formulas() -> bool:
 				and LevelRules.library_key_stage(level) > 0
 			):
 				library_key_listed = true
-			if kind == LevelRules.KIND_VALVE:
+			if kind == LevelRules.KIND_KEY:
+				key_lines += 1
+			if kind == LevelRules.KIND_VALVE or String(spec.get("label", "")) == LevelRules.LABEL_VALVE:
 				valve_listed = true
+			if kind == LevelRules.KIND_MISSION:
+				mission_count += 1
+				mission_label = String(spec.get("label", ""))
 		var want_library_key := LevelRules.library_key_stage(level) > 0
-		var want_count := LevelRules.key_count(level) + 2
+		var want_mission := (
+			LevelRules.LABEL_FIND_AND_LEAVE if level <= 1 else LevelRules.LABEL_MISSION
+		)
 		var obj_ok: bool = (
-			LevelRules.objective_count(level) == want_count
+			LevelRules.objective_count(level) == level
 			and LevelRules.key_count(level) == maxi(level - 1, 0)
 			and LevelRules.locked_door_count(level) == maxi(level - 1, 0)
-			and LevelRules.objectives(level).size() == want_count
+			and LevelRules.objectives(level).size() == level
+			and key_lines == LevelRules.key_count(level)
+			and mission_count == 1
+			and mission_label == want_mission
 			and library_key_listed == want_library_key
-			and valve_listed
+			and not valve_listed
 		)
 		var floors_ok: bool = (
 			LevelRules.floor_count(level) == int(ceili(float(level) / 2.0))
@@ -293,12 +306,24 @@ func _objectives_match(layout: Dictionary, level: int) -> bool:
 			and library.has("to_cell")
 			and library.get("cell") == library.get("from_cell")
 		)
+	var listed: Array = LevelRules.objectives(level)
+	var list_ok := objectives.size() == listed.size()
+	if list_ok:
+		for index in listed.size():
+			var got: Dictionary = objectives[index]
+			var want: Dictionary = listed[index]
+			if String(got.get("kind", "")) != String(want.get("kind", "")):
+				list_ok = false
+			if String(got.get("label", "")) != String(want.get("label", "")):
+				list_ok = false
+			if int(got.get("stage", -1)) != int(want.get("stage", -2)):
+				list_ok = false
 	var ok: bool = true
 	if keys.size() != LevelRules.key_count(level):
 		ok = false
 	if locks.size() < LevelRules.locked_door_count(level):
 		ok = false
-	if objectives.size() != LevelRules.objective_count(level):
+	if not list_ok or objectives.size() != LevelRules.objective_count(level):
 		ok = false
 	if library_key != want_library:
 		ok = false

@@ -23,6 +23,8 @@ func _physics_process(delta: float) -> void:
 		return
 	var lit := _lit_by_flashlight()
 	if lit:
+		# The beam still pins the body. A hit while lit does not slide it.
+		_clear_knockback()
 		velocity.x = 0.0
 		velocity.z = 0.0
 		_apply_gravity(delta)
@@ -38,5 +40,6 @@ func _allows_attack() -> bool:
 
 
 func take_damage(_amount: float) -> void:
-	# Indestructible: beam and bullets do not hurt it, but light still freezes it.
-	pass
+	# Indestructible: beam and bullets do not hurt it, but a hit still shoves
+	# it. The light pin clears that shove while the beam is on it.
+	apply_hit_knockback()

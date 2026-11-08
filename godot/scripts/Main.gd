@@ -16,6 +16,7 @@ const HOTBAR_SCRIPT := preload("res://scripts/Hotbar.gd")
 ## 50% more zoom onto the player than the original 20 m ortho height.
 const PLAY_CAMERA_SIZE := 20.0 / 1.5
 ## Pitch black: only the flashlight and green objective lights illuminate.
+## A hiding player also gets HideRoomLight in the one room they climbed into.
 const DARK_AMBIENT_ENERGY := 0.0
 const SLIME_SCENE_PATH := "res://scenes/Slime.tscn"
 const MAX_LIVING_SLIMES := 16
