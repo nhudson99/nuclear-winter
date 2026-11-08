@@ -50,6 +50,9 @@ func _physics_process(delta: float) -> void:
 			_fire_laser()
 			_laser_charging = false
 			_laser_cooldown_left = laser_cooldown
+		velocity.x = 0.0
+		velocity.z = 0.0
+		_apply_knockback_motion(delta)
 		_apply_gravity(delta)
 		move_and_slide()
 		return
@@ -68,6 +71,7 @@ func _physics_process(delta: float) -> void:
 		_show_beam()
 		_aim_beam_at_player()
 		_play_clip(attack_clip, 1.0)
+		_apply_knockback_motion(delta)
 		_apply_gravity(delta)
 		move_and_slide()
 		return
