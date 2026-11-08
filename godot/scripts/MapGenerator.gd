@@ -2497,7 +2497,12 @@ func _place_enemy_roster(
 	reserved: Dictionary = {},
 	rng: RandomNumberGenerator = null
 ) -> Array[Dictionary]:
-	var kinds := LevelRules.monster_kinds(level)
+	# Separate stream so tier rolls do not disturb room-layout RNG consumption.
+	var kind_rng: RandomNumberGenerator = null
+	if rng != null:
+		kind_rng = RandomNumberGenerator.new()
+		kind_rng.seed = rng.seed ^ 0x4D0E57E4
+	var kinds := LevelRules.monster_kinds(level, kind_rng)
 	var forbidden := reserved.duplicate()
 	forbidden[start_cell] = true
 	forbidden[objective_cell] = true

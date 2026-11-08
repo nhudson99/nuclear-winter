@@ -155,32 +155,74 @@ func _same_ints(got: Array, want: Array) -> bool:
 
 
 func _check_formulas() -> bool:
-	# slime, hare, stalker, tank, void, tarantula, widow, toad
+	# total monsters, hard slots, and difficulty-tier sequence (deterministic kinds)
 	var expected := {
-		1: [1, 0, 0, 0, 0, 0, 0, 0],
-		2: [1, 1, 0, 0, 0, 0, 0, 0],
-		3: [1, 1, 1, 0, 0, 0, 0, 0],
-		4: [1, 1, 1, 1, 0, 0, 0, 0],
-		5: [1, 1, 1, 1, 1, 0, 0, 0],
-		6: [1, 1, 1, 1, 1, 1, 0, 0],
-		7: [1, 1, 1, 1, 1, 1, 1, 0],
-		8: [1, 1, 1, 1, 1, 1, 1, 1],
-		9: [2, 1, 1, 1, 1, 1, 1, 1],
+		1: {"total": 1, "hard": 0, "tiers": [LevelRules.TIER_EASY]},
+		2: {"total": 2, "hard": 0, "tiers": [LevelRules.TIER_EASY, LevelRules.TIER_MED]},
+		3: {
+			"total": 3,
+			"hard": 1,
+			"tiers": [LevelRules.TIER_EASY, LevelRules.TIER_MED, LevelRules.TIER_HARD],
+		},
+		4: {"total": 2, "hard": 1, "tiers": [LevelRules.TIER_EASY, LevelRules.TIER_HARD]},
+		5: {
+			"total": 3,
+			"hard": 1,
+			"tiers": [LevelRules.TIER_EASY, LevelRules.TIER_MED, LevelRules.TIER_HARD],
+		},
+		6: {
+			"total": 3,
+			"hard": 2,
+			"tiers": [LevelRules.TIER_EASY, LevelRules.TIER_HARD, LevelRules.TIER_HARD],
+		},
+		7: {
+			"total": 4,
+			"hard": 2,
+			"tiers": [
+				LevelRules.TIER_EASY,
+				LevelRules.TIER_MED,
+				LevelRules.TIER_HARD,
+				LevelRules.TIER_HARD,
+			],
+		},
+		8: {
+			"total": 4,
+			"hard": 2,
+			"tiers": [
+				LevelRules.TIER_EASY,
+				LevelRules.TIER_MED,
+				LevelRules.TIER_HARD,
+				LevelRules.TIER_HARD,
+			],
+		},
+		9: {
+			"total": 5,
+			"hard": 3,
+			"tiers": [
+				LevelRules.TIER_EASY,
+				LevelRules.TIER_MED,
+				LevelRules.TIER_HARD,
+				LevelRules.TIER_HARD,
+				LevelRules.TIER_HARD,
+			],
+		},
 	}
 	var ok := true
 	for level in expected:
+		var want: Dictionary = expected[level]
+		var tiers := LevelRules.monster_slot_tiers(level)
+		var match_ok: bool = (
+			LevelRules.monster_count(level) == int(want["total"])
+			and LevelRules.hard_monster_count(level) == int(want["hard"])
+			and tiers == want["tiers"]
+			and LevelRules.counts_match_cycle(level)
+			and LevelRules.kind_in_tier(LevelRules.KIND_VOID, LevelRules.TIER_HARD)
+		)
 		var got := [
-			LevelRules.slime_count(level),
-			LevelRules.hare_count(level),
-			LevelRules.stalker_count(level),
-			LevelRules.tank_count(level),
-			LevelRules.void_count(level),
-			LevelRules.tarantula_count(level),
-			LevelRules.widow_count(level),
-			LevelRules.toad_count(level),
+			LevelRules.monster_count(level),
+			LevelRules.hard_monster_count(level),
+			tiers,
 		]
-		var want: Array = expected[level]
-		var match_ok: bool = got == want and LevelRules.counts_match_cycle(level)
 		var bookshelf_listed := false
 		var valve_listed := false
 		var key_lines := 0
@@ -248,39 +290,35 @@ func _generate_level(level: int, level_seed: int) -> Dictionary:
 
 
 func _roster_matches(layout: Dictionary, level: int) -> bool:
-	var counts := {
-		LevelRules.KIND_SLIME: 0,
-		LevelRules.KIND_HARE: 0,
-		LevelRules.KIND_STALKER: 0,
-		LevelRules.KIND_TANK: 0,
-		LevelRules.KIND_VOID: 0,
-		LevelRules.KIND_TARANTULA: 0,
-		LevelRules.KIND_WIDOW: 0,
-		LevelRules.KIND_TOAD: 0,
-	}
-	for spec in layout.get("enemies", []):
+	var enemies: Array = layout.get("enemies", [])
+	var tiers := LevelRules.monster_slot_tiers(level)
+	if enemies.size() != LevelRules.monster_count(level) or enemies.size() != tiers.size():
+		print(
+			"roster_size_wrong level=", level,
+			" enemies=", enemies.size(),
+			" want=", LevelRules.monster_count(level)
+		)
+		return false
+	var counts := {}
+	var hard_n := 0
+	for i in enemies.size():
+		var spec: Dictionary = enemies[i]
 		var kind := String(spec.get("kind", ""))
-		if not counts.has(kind):
-			print("unknown_enemy=", kind, " level=", level)
+		var tier: String = tiers[i]
+		if not LevelRules.kind_in_tier(kind, tier):
+			print("bad_enemy_tier kind=", kind, " tier=", tier, " level=", level)
 			return false
-		counts[kind] += 1
+		if tier == LevelRules.TIER_HARD:
+			hard_n += 1
+		counts[kind] = int(counts.get(kind, 0)) + 1
 		if spec.get("cell") == layout.get("start_cell"):
 			print("enemy_on_start kind=", kind, " level=", level)
 			return false
-	if not _roster_stays_clear(layout, layout.get("enemies", [])):
+	if not _roster_stays_clear(layout, enemies):
 		print("roster_not_clear level=", level)
 		return false
-	var ok := (
-		int(counts[LevelRules.KIND_SLIME]) == LevelRules.slime_count(level)
-		and int(counts[LevelRules.KIND_HARE]) == LevelRules.hare_count(level)
-		and int(counts[LevelRules.KIND_STALKER]) == LevelRules.stalker_count(level)
-		and int(counts[LevelRules.KIND_TANK]) == LevelRules.tank_count(level)
-		and int(counts[LevelRules.KIND_VOID]) == LevelRules.void_count(level)
-		and int(counts[LevelRules.KIND_TARANTULA]) == LevelRules.tarantula_count(level)
-		and int(counts[LevelRules.KIND_WIDOW]) == LevelRules.widow_count(level)
-		and int(counts[LevelRules.KIND_TOAD]) == LevelRules.toad_count(level)
-	)
-	print("roster level=", level, " counts=", counts, " ok=", ok)
+	var ok := hard_n == LevelRules.hard_monster_count(level)
+	print("roster level=", level, " counts=", counts, " tiers=", tiers, " ok=", ok)
 	return ok
 
 
@@ -833,16 +871,7 @@ func _check_live_level_2() -> bool:
 	for door in doors:
 		if not (door as LockedDoor).is_locked():
 			door_ok = false
-	var roster_ok := _count_active_kinds(main) == {
-		LevelRules.KIND_SLIME: 1,
-		LevelRules.KIND_HARE: 1,
-		LevelRules.KIND_STALKER: 0,
-		LevelRules.KIND_TANK: 0,
-		LevelRules.KIND_VOID: 0,
-		LevelRules.KIND_TARANTULA: 0,
-		LevelRules.KIND_WIDOW: 0,
-		LevelRules.KIND_TOAD: 0,
-	}
+	var roster_ok := _live_roster_matches_tiers(main, 2)
 	print("live_nodes keys=", keys_ok, " door=", door_ok, " roster=", roster_ok, " play_level=", main.get_play_level())
 
 	var player: CharacterBody3D = main.get_node("Player")
@@ -960,6 +989,22 @@ func _count_active_kinds(main: Node) -> Dictionary:
 	for spec in main.get_layout().get("enemies", []):
 		counts[String(spec.get("kind", ""))] = int(counts.get(String(spec.get("kind", "")), 0)) + 1
 	return counts
+
+
+func _live_roster_matches_tiers(main: Node, level: int) -> bool:
+	var enemies: Array = main.get_layout().get("enemies", [])
+	var tiers := LevelRules.monster_slot_tiers(level)
+	if enemies.size() != LevelRules.monster_count(level) or enemies.size() != tiers.size():
+		return false
+	var hard_n := 0
+	for i in enemies.size():
+		var kind := String((enemies[i] as Dictionary).get("kind", ""))
+		var tier: String = tiers[i]
+		if not LevelRules.kind_in_tier(kind, tier):
+			return false
+		if tier == LevelRules.TIER_HARD:
+			hard_n += 1
+	return hard_n == LevelRules.hard_monster_count(level)
 
 
 func _check_floor_rules(layout: Dictionary, level: int, container: Node3D) -> bool:

@@ -132,8 +132,9 @@ func _run() -> void:
 	var void_ok: bool = (
 		void_body != null
 		and void_body.is_in_group("void_monster")
-		and LevelRules.void_count(5) == 1
-		and LevelRules.stalker_count(3) == 1
+		and LevelRules.kind_in_tier(LevelRules.KIND_VOID, LevelRules.TIER_HARD)
+		and LevelRules.hard_monster_count(4) == 1
+		and LevelRules.kind_in_tier(LevelRules.KIND_STALKER, LevelRules.TIER_MED)
 	)
 	print("stalker_ok=", stalker_ok, " void_ok=", void_ok)
 
