@@ -155,23 +155,24 @@ func _same_ints(got: Array, want: Array) -> bool:
 
 
 func _check_formulas() -> bool:
-	# slime, hare, tank, void, tarantula, widow, toad
+	# slime, hare, stalker, tank, void, tarantula, widow, toad
 	var expected := {
-		1: [1, 0, 0, 0, 0, 0, 0],
-		2: [1, 1, 0, 0, 0, 0, 0],
-		3: [1, 1, 1, 0, 0, 0, 0],
-		4: [1, 1, 1, 1, 0, 0, 0],
-		5: [1, 1, 1, 1, 1, 0, 0],
-		6: [1, 1, 1, 1, 1, 1, 0],
-		7: [1, 1, 1, 1, 1, 1, 1],
-		8: [2, 1, 1, 1, 1, 1, 1],
-		9: [2, 2, 1, 1, 1, 1, 1],
+		1: [1, 0, 0, 0, 0, 0, 0, 0],
+		2: [1, 1, 0, 0, 0, 0, 0, 0],
+		3: [1, 1, 1, 0, 0, 0, 0, 0],
+		4: [1, 1, 1, 1, 0, 0, 0, 0],
+		5: [1, 1, 1, 1, 1, 0, 0, 0],
+		6: [1, 1, 1, 1, 1, 1, 0, 0],
+		7: [1, 1, 1, 1, 1, 1, 1, 0],
+		8: [1, 1, 1, 1, 1, 1, 1, 1],
+		9: [2, 1, 1, 1, 1, 1, 1, 1],
 	}
 	var ok := true
 	for level in expected:
 		var got := [
 			LevelRules.slime_count(level),
 			LevelRules.hare_count(level),
+			LevelRules.stalker_count(level),
 			LevelRules.tank_count(level),
 			LevelRules.void_count(level),
 			LevelRules.tarantula_count(level),
@@ -241,6 +242,7 @@ func _roster_matches(layout: Dictionary, level: int) -> bool:
 	var counts := {
 		LevelRules.KIND_SLIME: 0,
 		LevelRules.KIND_HARE: 0,
+		LevelRules.KIND_STALKER: 0,
 		LevelRules.KIND_TANK: 0,
 		LevelRules.KIND_VOID: 0,
 		LevelRules.KIND_TARANTULA: 0,
@@ -262,6 +264,7 @@ func _roster_matches(layout: Dictionary, level: int) -> bool:
 	var ok := (
 		int(counts[LevelRules.KIND_SLIME]) == LevelRules.slime_count(level)
 		and int(counts[LevelRules.KIND_HARE]) == LevelRules.hare_count(level)
+		and int(counts[LevelRules.KIND_STALKER]) == LevelRules.stalker_count(level)
 		and int(counts[LevelRules.KIND_TANK]) == LevelRules.tank_count(level)
 		and int(counts[LevelRules.KIND_VOID]) == LevelRules.void_count(level)
 		and int(counts[LevelRules.KIND_TARANTULA]) == LevelRules.tarantula_count(level)
@@ -807,6 +810,7 @@ func _check_live_level_2() -> bool:
 	var roster_ok := _count_active_kinds(main) == {
 		LevelRules.KIND_SLIME: 1,
 		LevelRules.KIND_HARE: 1,
+		LevelRules.KIND_STALKER: 0,
 		LevelRules.KIND_TANK: 0,
 		LevelRules.KIND_VOID: 0,
 		LevelRules.KIND_TARANTULA: 0,
@@ -917,6 +921,7 @@ func _count_active_kinds(main: Node) -> Dictionary:
 	var counts := {
 		LevelRules.KIND_SLIME: 0,
 		LevelRules.KIND_HARE: 0,
+		LevelRules.KIND_STALKER: 0,
 		LevelRules.KIND_TANK: 0,
 		LevelRules.KIND_VOID: 0,
 		LevelRules.KIND_TARANTULA: 0,

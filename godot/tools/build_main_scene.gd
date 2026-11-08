@@ -12,7 +12,8 @@ func _initialize() -> void:
 
 func _build() -> void:
 	var player_path := "res://assets/characters/Meshy_AI_Gulag_Winter_Warden_All_Animations_hb.glb"
-	var monster_path := "res://assets/characters/IrradiatedMaskMonster.glb"
+	var stalker_path := "res://assets/characters/IrradiatedMaskMonster.glb"
+	var hare_path := "res://assets/characters/IrradiatedHare.glb"
 	# Rigged exports. The static SovietSlime.glb / SovietTankMan.glb in blender/
 	# have no clips; these are the animated twins.
 	# Superset of the original clips plus hide_break. The unrigged stalker and
@@ -24,7 +25,7 @@ func _build() -> void:
 	var widow_path := "res://assets/characters/enemy_widow.glb"
 	var toad_path := "res://assets/characters/Toad_hb.glb"
 
-	for path in [player_path, monster_path, slime_path, tank_path, void_path, tarantula_path, widow_path, toad_path]:
+	for path in [player_path, stalker_path, hare_path, slime_path, tank_path, void_path, tarantula_path, widow_path, toad_path]:
 		if not ResourceLoader.exists(path):
 			push_error("Missing: " + path)
 			quit(1)
@@ -109,7 +110,7 @@ func _build() -> void:
 	_add_enemy(
 		main,
 		"Monster",
-		monster_path,
+		stalker_path,
 		{
 			"move_speed": 3.6,
 			"max_health": 100.0,
@@ -136,6 +137,34 @@ func _build() -> void:
 	var stalker_mesh := main.get_node_or_null("Monster/MonsterMesh/Character") as Node3D
 	if stalker_mesh:
 		stalker_mesh.position.y = 0.95
+
+	# Irradiated hare: medium brute — a bit faster and easier to kill than the tank.
+	# Clips are Walk / Attack; no Idle or hide_break, so hide smashes lunge.
+	_add_enemy(
+		main,
+		"Hare",
+		hare_path,
+		{
+			"move_speed": 2.95,
+			"turn_speed": 5.4,
+			"max_health": 200.0,
+			"touch_damage": 75.0,
+			"attack_interval": 0.5,
+			"proximity_radius": 3.6,
+			"detect_range": 14.0,
+			"health_bar_height": 1.95,
+			"touch_radius": 1.0,
+			"eye_height": 1.4,
+			"section_dwell_time": 32.0,
+			"idle_clip": "Walk",
+			"walk_clip": "Walk",
+			"attack_clip": "Attack",
+			"walk_cycle_metres": 2.2,
+		},
+		0.55,
+		1.55,
+		0.85
+	)
 
 	# SovietSlime rests at ~0.62 m tall and 1.9 m long. The capsule stays narrow
 	# enough that a fully grown (2x) slime still clears the 2.6 m doorway.

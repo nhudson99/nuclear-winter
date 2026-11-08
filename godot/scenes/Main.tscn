@@ -1,68 +1,73 @@
-[gd_scene load_steps=28 format=3]
+[gd_scene load_steps=30 format=3]
 
-[ext_resource type="Script" path="res://scripts/Main.gd" id="1_ft6cd"]
-[ext_resource type="Script" path="res://scripts/Player.gd" id="2_bb450"]
-[ext_resource type="PackedScene" path="res://assets/characters/Meshy_AI_Gulag_Winter_Warden_All_Animations_hb.glb" id="3_nfivy"]
-[ext_resource type="Script" path="res://scripts/Stalker.gd" id="4_1nqs0"]
-[ext_resource type="PackedScene" path="res://assets/characters/IrradiatedMaskMonster.glb" id="5_1iba3"]
-[ext_resource type="Script" path="res://scripts/Monster.gd" id="6_yxlcp"]
-[ext_resource type="PackedScene" path="res://assets/characters/SovietSlime_hb.glb" id="7_ebg2g"]
-[ext_resource type="PackedScene" path="res://assets/characters/SovietTankMan_hb.glb" id="8_2ofn6"]
-[ext_resource type="Script" path="res://scripts/VoidMonster.gd" id="9_xa025"]
-[ext_resource type="PackedScene" path="res://assets/characters/Void_full.glb" id="10_36rkl"]
-[ext_resource type="Script" path="res://scripts/Tarantula.gd" id="11_fs0b5"]
-[ext_resource type="PackedScene" path="res://assets/characters/Tarantula_hb.glb" id="12_ma7h6"]
-[ext_resource type="PackedScene" path="res://assets/characters/enemy_widow.glb" id="13_e2s0e"]
-[ext_resource type="Script" path="res://scripts/Toad.gd" id="14_gsxep"]
-[ext_resource type="PackedScene" path="res://assets/characters/Toad_hb.glb" id="15_v0vrg"]
-[ext_resource type="Script" path="res://scripts/PickupItem.gd" id="16_dg70y"]
-[ext_resource type="Script" path="res://scripts/ExitZone.gd" id="17_pnhog"]
+[ext_resource type="Script" path="res://scripts/Main.gd" id="1_bb450"]
+[ext_resource type="Script" path="res://scripts/Player.gd" id="2_nfivy"]
+[ext_resource type="PackedScene" path="res://assets/characters/Meshy_AI_Gulag_Winter_Warden_All_Animations_hb.glb" id="3_1nqs0"]
+[ext_resource type="Script" path="res://scripts/Stalker.gd" id="4_1iba3"]
+[ext_resource type="PackedScene" path="res://assets/characters/IrradiatedMaskMonster.glb" id="5_yxlcp"]
+[ext_resource type="Script" path="res://scripts/Monster.gd" id="6_ebg2g"]
+[ext_resource type="PackedScene" path="res://assets/characters/IrradiatedHare.glb" id="7_2ofn6"]
+[ext_resource type="PackedScene" path="res://assets/characters/SovietSlime_hb.glb" id="8_xa025"]
+[ext_resource type="PackedScene" path="res://assets/characters/SovietTankMan_hb.glb" id="9_36rkl"]
+[ext_resource type="Script" path="res://scripts/VoidMonster.gd" id="10_fs0b5"]
+[ext_resource type="PackedScene" path="res://assets/characters/Void_full.glb" id="11_ma7h6"]
+[ext_resource type="Script" path="res://scripts/Tarantula.gd" id="12_e2s0e"]
+[ext_resource type="PackedScene" path="res://assets/characters/Tarantula_hb.glb" id="13_gsxep"]
+[ext_resource type="PackedScene" path="res://assets/characters/enemy_widow.glb" id="14_v0vrg"]
+[ext_resource type="Script" path="res://scripts/Toad.gd" id="15_dg70y"]
+[ext_resource type="PackedScene" path="res://assets/characters/Toad_hb.glb" id="16_pnhog"]
+[ext_resource type="Script" path="res://scripts/PickupItem.gd" id="17_2c4at"]
+[ext_resource type="Script" path="res://scripts/ExitZone.gd" id="18_g6wdg"]
 
-[sub_resource type="Environment" id="Environment_2c4at"]
+[sub_resource type="Environment" id="Environment_hq6as"]
 background_mode = 1
 ambient_light_source = 2
 ambient_light_energy = 0.0
 reflected_light_source = 1
 
-[sub_resource type="CapsuleShape3D" id="CapsuleShape3D_g6wdg"]
+[sub_resource type="CapsuleShape3D" id="CapsuleShape3D_kxyth"]
 radius = 0.3
 height = 1.6
 
-[sub_resource type="CapsuleShape3D" id="CapsuleShape3D_hq6as"]
+[sub_resource type="CapsuleShape3D" id="CapsuleShape3D_cobve"]
 radius = 0.38
+height = 1.55
+
+[sub_resource type="CapsuleShape3D" id="CapsuleShape3D_cmqll"]
+radius = 0.55
 height = 1.55
 
 [sub_resource type="CapsuleShape3D" id="CapsuleShape3D_1a61f"]
 radius = 0.55
 height = 1.15
 
-[sub_resource type="CapsuleShape3D" id="CapsuleShape3D_kxyth"]
+[sub_resource type="CapsuleShape3D" id="CapsuleShape3D_8cp6k"]
 radius = 0.62
 height = 1.7
 
-[sub_resource type="CapsuleShape3D" id="CapsuleShape3D_cobve"]
+[sub_resource type="CapsuleShape3D" id="CapsuleShape3D_8b871"]
 radius = 0.4
 height = 1.6
 
-[sub_resource type="CapsuleShape3D" id="CapsuleShape3D_cmqll"]
+[sub_resource type="CapsuleShape3D" id="CapsuleShape3D_pdwbg"]
 height = 1.1
 
-[sub_resource type="CapsuleShape3D" id="CapsuleShape3D_8cp6k"]
+[sub_resource type="CapsuleShape3D" id="CapsuleShape3D_5grtr"]
 radius = 0.32
 height = 1.55
 
-[sub_resource type="CapsuleShape3D" id="CapsuleShape3D_8b871"]
+[sub_resource type="CapsuleShape3D" id="CapsuleShape3D_vua0o"]
 radius = 0.72
 height = 1.7
 
-[sub_resource type="BoxShape3D" id="BoxShape3D_pdwbg"]
+[sub_resource type="BoxShape3D" id="BoxShape3D_t70y2"]
 size = Vector3(3.2, 3, 3.2)
 
 [node name="Main" type="Node3D"]
-script = ExtResource("1_ft6cd")
+script = ExtResource("1_bb450")
 
 [node name="WorldEnvironment" type="WorldEnvironment" parent="."]
-environment = SubResource("Environment_2c4at")
+environment = SubResource("Environment_hq6as")
 
 [node name="Sun" type="DirectionalLight3D" parent="."]
 transform = Transform3D(0.866025, -0.383022, 0.321394, 0, 0.642788, 0.766044, -0.5, -0.663414, 0.55667, 0, 0, 0)
@@ -75,21 +80,21 @@ light_energy = 0.0
 [node name="Player" type="CharacterBody3D" parent="."]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.05, 0)
 collision_layer = 2
-script = ExtResource("2_bb450")
+script = ExtResource("2_nfivy")
 
 [node name="CollisionShape3D" type="CollisionShape3D" parent="Player"]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.8, 0)
-shape = SubResource("CapsuleShape3D_g6wdg")
+shape = SubResource("CapsuleShape3D_kxyth")
 
 [node name="Model" type="Node3D" parent="Player"]
 
-[node name="Character" type="Node3D" parent="Player/Model" instance=ExtResource("3_nfivy")]
+[node name="Character" type="Node3D" parent="Player/Model" instance=ExtResource("3_1nqs0")]
 transform = Transform3D(-1, 0, -8.74228e-08, 0, 1, 0, 8.74228e-08, 0, -1, 0, 0, 0)
 
 [node name="Monster" type="CharacterBody3D" parent="."]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.05, -12)
 collision_layer = 4
-script = ExtResource("4_1nqs0")
+script = ExtResource("4_1iba3")
 move_speed = 3.6
 eye_height = 1.55
 health_bar_height = 2.1
@@ -99,17 +104,45 @@ show_health_bar = false
 
 [node name="CollisionShape3D" type="CollisionShape3D" parent="Monster"]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.95, 0)
-shape = SubResource("CapsuleShape3D_hq6as")
+shape = SubResource("CapsuleShape3D_cobve")
 
 [node name="MonsterMesh" type="Node3D" parent="Monster"]
 
-[node name="Character" type="Node3D" parent="Monster/MonsterMesh" instance=ExtResource("5_1iba3")]
+[node name="Character" type="Node3D" parent="Monster/MonsterMesh" instance=ExtResource("5_yxlcp")]
 transform = Transform3D(-1, 0, -8.74228e-08, 0, 1, 0, 8.74228e-08, 0, -1, 0, 0.95, 0)
+
+[node name="Hare" type="CharacterBody3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.05, -12)
+collision_layer = 4
+script = ExtResource("6_ebg2g")
+move_speed = 2.95
+turn_speed = 5.4
+detect_range = 14.0
+proximity_radius = 3.6
+eye_height = 1.4
+max_health = 200.0
+touch_damage = 75.0
+health_bar_height = 1.95
+section_dwell_time = 32.0
+touch_radius = 1.0
+idle_clip = "Walk"
+walk_clip = "Walk"
+attack_clip = "Attack"
+walk_cycle_metres = 2.2
+
+[node name="CollisionShape3D" type="CollisionShape3D" parent="Hare"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.85, 0)
+shape = SubResource("CapsuleShape3D_cmqll")
+
+[node name="MonsterMesh" type="Node3D" parent="Hare"]
+
+[node name="Character" type="Node3D" parent="Hare/MonsterMesh" instance=ExtResource("7_2ofn6")]
+transform = Transform3D(-1, 0, -8.74228e-08, 0, 1, 0, 8.74228e-08, 0, -1, 0, 0, 0)
 
 [node name="Slime" type="CharacterBody3D" parent="."]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.05, -12)
 collision_layer = 4
-script = ExtResource("6_yxlcp")
+script = ExtResource("6_ebg2g")
 move_speed = 1.95
 detect_range = 12.0
 proximity_radius = 2.4
@@ -132,13 +165,13 @@ shape = SubResource("CapsuleShape3D_1a61f")
 
 [node name="MonsterMesh" type="Node3D" parent="Slime"]
 
-[node name="Character" type="Node3D" parent="Slime/MonsterMesh" instance=ExtResource("7_ebg2g")]
+[node name="Character" type="Node3D" parent="Slime/MonsterMesh" instance=ExtResource("8_xa025")]
 transform = Transform3D(-1, 0, -8.74228e-08, 0, 1, 0, 8.74228e-08, 0, -1, 0, 0, 0)
 
 [node name="Tank" type="CharacterBody3D" parent="."]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.05, -12)
 collision_layer = 4
-script = ExtResource("6_yxlcp")
+script = ExtResource("6_ebg2g")
 move_speed = 2.35
 turn_speed = 4.6
 detect_range = 14.0
@@ -155,17 +188,17 @@ walk_cycle_metres = 2.5
 
 [node name="CollisionShape3D" type="CollisionShape3D" parent="Tank"]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.85, 0)
-shape = SubResource("CapsuleShape3D_kxyth")
+shape = SubResource("CapsuleShape3D_8cp6k")
 
 [node name="MonsterMesh" type="Node3D" parent="Tank"]
 
-[node name="Character" type="Node3D" parent="Tank/MonsterMesh" instance=ExtResource("8_2ofn6")]
+[node name="Character" type="Node3D" parent="Tank/MonsterMesh" instance=ExtResource("9_36rkl")]
 transform = Transform3D(-1, 0, -8.74228e-08, 0, 1, 0, 8.74228e-08, 0, -1, 0, 0, 0)
 
 [node name="Void" type="CharacterBody3D" parent="."]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.05, -12)
 collision_layer = 4
-script = ExtResource("9_xa025")
+script = ExtResource("10_fs0b5")
 move_speed = 3.1
 turn_speed = 6.0
 detect_range = 15.0
@@ -182,17 +215,17 @@ walk_cycle_metres = 2.0
 
 [node name="CollisionShape3D" type="CollisionShape3D" parent="Void"]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.9, 0)
-shape = SubResource("CapsuleShape3D_cobve")
+shape = SubResource("CapsuleShape3D_8b871")
 
 [node name="MonsterMesh" type="Node3D" parent="Void"]
 
-[node name="Character" type="Node3D" parent="Void/MonsterMesh" instance=ExtResource("10_36rkl")]
+[node name="Character" type="Node3D" parent="Void/MonsterMesh" instance=ExtResource("11_ma7h6")]
 transform = Transform3D(-1, 0, -8.74228e-08, 0, 1, 0, 8.74228e-08, 0, -1, 0, 0, 0)
 
 [node name="Tarantula" type="CharacterBody3D" parent="."]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.05, -12)
 collision_layer = 4
-script = ExtResource("11_fs0b5")
+script = ExtResource("12_e2s0e")
 weave_clip = "WebWeave"
 move_speed = 4.0
 turn_speed = 7.2
@@ -209,17 +242,17 @@ walk_cycle_metres = 2.4
 
 [node name="CollisionShape3D" type="CollisionShape3D" parent="Tarantula"]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.55, 0)
-shape = SubResource("CapsuleShape3D_cmqll")
+shape = SubResource("CapsuleShape3D_pdwbg")
 
 [node name="MonsterMesh" type="Node3D" parent="Tarantula"]
 
-[node name="Character" type="Node3D" parent="Tarantula/MonsterMesh" instance=ExtResource("12_ma7h6")]
+[node name="Character" type="Node3D" parent="Tarantula/MonsterMesh" instance=ExtResource("13_gsxep")]
 transform = Transform3D(-0.67, 0, -5.85733e-08, 0, 0.67, 0, 5.85733e-08, 0, -0.67, 0, 0, 0)
 
 [node name="Widow" type="CharacterBody3D" parent="."]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.05, -12)
 collision_layer = 4
-script = ExtResource("6_yxlcp")
+script = ExtResource("6_ebg2g")
 move_speed = 2.85
 turn_speed = 6.4
 detect_range = 15.0
@@ -237,16 +270,16 @@ walk_cycle_metres = 1.5
 
 [node name="CollisionShape3D" type="CollisionShape3D" parent="Widow"]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.88, 0)
-shape = SubResource("CapsuleShape3D_8cp6k")
+shape = SubResource("CapsuleShape3D_5grtr")
 
 [node name="MonsterMesh" type="Node3D" parent="Widow"]
 
-[node name="Character" type="Node3D" parent="Widow/MonsterMesh" instance=ExtResource("13_e2s0e")]
+[node name="Character" type="Node3D" parent="Widow/MonsterMesh" instance=ExtResource("14_v0vrg")]
 
 [node name="Toad" type="CharacterBody3D" parent="."]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.05, -12)
 collision_layer = 4
-script = ExtResource("14_gsxep")
+script = ExtResource("15_dg70y")
 move_speed = 2.6
 turn_speed = 5.4
 detect_range = 0.1
@@ -264,11 +297,11 @@ walk_cycle_metres = 2.5
 
 [node name="CollisionShape3D" type="CollisionShape3D" parent="Toad"]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.85, 0)
-shape = SubResource("CapsuleShape3D_8b871")
+shape = SubResource("CapsuleShape3D_vua0o")
 
 [node name="MonsterMesh" type="Node3D" parent="Toad"]
 
-[node name="Character" type="Node3D" parent="Toad/MonsterMesh" instance=ExtResource("15_v0vrg")]
+[node name="Character" type="Node3D" parent="Toad/MonsterMesh" instance=ExtResource("16_pnhog")]
 transform = Transform3D(-1, 0, -8.74228e-08, 0, 1, 0, 8.74228e-08, 0, -1, 0, 0, 0)
 
 [node name="IsoCamera" type="Camera3D" parent="."]
@@ -279,12 +312,12 @@ far = 250.0
 
 [node name="PickupItem" type="Area3D" parent="."]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.05, -24)
-script = ExtResource("16_dg70y")
+script = ExtResource("17_2c4at")
 
 [node name="ExitZone" type="Area3D" parent="."]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 6)
-script = ExtResource("17_pnhog")
+script = ExtResource("18_g6wdg")
 
 [node name="CollisionShape3D" type="CollisionShape3D" parent="ExitZone"]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 1.5, 0)
-shape = SubResource("BoxShape3D_pdwbg")
+shape = SubResource("BoxShape3D_t70y2")
