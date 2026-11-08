@@ -10,13 +10,15 @@ extends RefCounted
 ##   Hard: tank, widow, void
 ## Levels 1–3: one slot per level, cycling easy → med → hard.
 ## After level 3: total = ceil(n/2), hard = floor(n/3), remaining from the
-## easy/med cycle. Objectives: one sector key per wing lock (from level 2), the
-## steam valve, then the mission item. The first wing's key and LockedDoor
-## live in the library room. Floors grow on odd levels (`ceil(n / 2)`).
+## easy/med cycle. Objectives: level 1 lists one goal, find the main item and
+## leave. Level n after that lists n goals — the library bookcase-lever (opens
+## the first wing LockedDoor), then one sector key per later lock, then the
+## mission item. The steam valve still seals the mission pocket, but it is not
+## a checklist line. Floors grow on odd levels (`ceil(n / 2)`).
 
 const KIND_SLIME := "slime"
 const KIND_HARE := "hare"
-const KIND_STALKER := "hare" # radiation-mask stalker; kept as "hare" for saves/smokes until hare/stalker split lands
+const KIND_STALKER := "stalker"
 const KIND_TANK := "tank"
 const KIND_VOID := "void"
 const KIND_TARANTULA := "tarantula"
@@ -26,13 +28,18 @@ const KIND_MISSION := "mission"
 const KIND_KEY := "key"
 const KIND_VALVE := "valve"
 const KIND_BOOKSHELF := "bookshelf"
+const LABEL_FIND_AND_LEAVE := "Find the main item and leave"
+const LABEL_MISSION := "Recover the mission item"
+const LABEL_BOOKSHELF := "Search the library bookcases for the hidden lever"
+## Older checklist copy. Not selected: the bookcase lever, keys, and mission
+## item already fill level n, and level 1 is find-and-leave only.
+const LABEL_VALVE := "Follow the pipes and shut the steam valve"
 
 const TIER_EASY := "easy"
 const TIER_MED := "med"
 const TIER_HARD := "hard"
 
-## Random pick within each tier. On main, KIND_STALKER aliases "hare" so the
-## med pool de-dupes to hare + tarantula until the hare/stalker split merges.
+## Random pick within each tier. Hare and stalker are distinct med-tier picks.
 const MONSTER_TIER_EASY: Array[String] = [KIND_SLIME, KIND_TOAD]
 const MONSTER_TIER_MED: Array[String] = [KIND_HARE, KIND_STALKER, KIND_TARANTULA]
 const MONSTER_TIER_HARD: Array[String] = [KIND_TANK, KIND_WIDOW, KIND_VOID]
@@ -42,7 +49,7 @@ const DIFFICULTY_CYCLE: Array[String] = [TIER_EASY, TIER_MED, TIER_HARD]
 
 ## Kept for call-site compatibility; normal generation no longer walks this list.
 const MONSTER_CYCLE: Array[String] = [
-	KIND_SLIME, KIND_HARE, KIND_TANK, KIND_VOID, KIND_TARANTULA, KIND_WIDOW, KIND_TOAD
+	KIND_SLIME, KIND_HARE, KIND_STALKER, KIND_TANK, KIND_VOID, KIND_TARANTULA, KIND_WIDOW, KIND_TOAD
 ]
 
 ## Level 1 keeps the current nine-room mansion.
@@ -153,6 +160,10 @@ static func hare_count(level: int) -> int:
 	return kind_count(KIND_HARE, level)
 
 
+static func stalker_count(level: int) -> int:
+	return kind_count(KIND_STALKER, level)
+
+
 static func tank_count(level: int) -> int:
 	return kind_count(KIND_TANK, level)
 
@@ -186,6 +197,7 @@ static func monster_counts(level: int) -> Dictionary:
 	return {
 		KIND_SLIME: slime_count(level),
 		KIND_HARE: hare_count(level),
+		KIND_STALKER: stalker_count(level),
 		KIND_TANK: tank_count(level),
 		KIND_VOID: void_count(level),
 		KIND_TARANTULA: tarantula_count(level),
@@ -194,29 +206,30 @@ static func monster_counts(level: int) -> Dictionary:
 	}
 
 
-## Keys (if any) + steam valve + mission item.
+## Level n lists n objectives. Level 1 is the mission item only.
 static func objective_count(level: int) -> int:
-	return key_count(level) + 2
+	return clamp_level(level)
 
 
 static func locked_door_count(level: int) -> int:
 	return maxi(clamp_level(level) - 1, 0)
 
 
-## One physical key per locked door (wing or stair).
+## Physical key pickups. Stage 1's wing lock is opened by the library lever
+## instead of a key, so pickups are one fewer than locked doors when n > 1.
 static func key_count(level: int) -> int:
-	return locked_door_count(level)
+	return maxi(clamp_level(level) - 2, 0)
 
 
-## Wing stage whose key + LockedDoor are hosted by the library room (0 = none).
-## Stage 1 is the first wing gate off the start sector.
-static func library_key_stage(level: int) -> int:
+## Wing lock stage unlocked by finding the hidden library lever (0 = none).
+## Stage 1 is the first wing gate off the start sector; the library hosts it.
+static func library_unlock_stage(level: int) -> int:
 	return 1 if locked_door_count(level) > 0 else 0
 
 
-## Legacy alias — bookshelf unlock is gone; the library hosts a normal key.
-static func library_unlock_stage(level: int) -> int:
-	return library_key_stage(level)
+## Alias kept for map code that pins the library on the stage-1 lock cell.
+static func library_key_stage(level: int) -> int:
+	return library_unlock_stage(level)
 
 
 static func zone_count(level: int) -> int:
@@ -288,34 +301,44 @@ static func randomize_monster_spawns(level: int) -> bool:
 	return clamp_level(level) >= 2
 
 
-## Sector keys (library hosts stage 1), steam valve, then the mission item.
+## Level 1: find the main item and leave.
+## Level n > 1: library bookcase-lever, later sector keys, then the mission item.
+## The steam valve is not selected. Listing it beside the keys and the mission
+## item made every level one goal over the count.
 static func objectives(level: int) -> Array[Dictionary]:
 	var n := clamp_level(level)
 	var out: Array[Dictionary] = []
-	var keys := key_count(n)
-	var library_stage := library_key_stage(n)
-	for stage in range(1, keys + 1):
+	if n <= 1:
+		out.append({
+			"kind": KIND_MISSION,
+			"stage": 0,
+			"label": LABEL_FIND_AND_LEAVE,
+		})
+		return out
+	var unlock_stage := library_unlock_stage(n)
+	if unlock_stage > 0:
+		out.append({
+			"kind": KIND_BOOKSHELF,
+			"stage": unlock_stage,
+			"label": LABEL_BOOKSHELF,
+		})
+	var locked := locked_door_count(n)
+	var extra_keys := key_count(n)
+	for stage in range(2, locked + 1):
 		out.append({
 			"kind": KIND_KEY,
 			"stage": stage,
-			"label": _key_label(stage, keys, library_stage),
+			"label": _key_label(stage, extra_keys),
 		})
-	out.append({
-		"kind": KIND_VALVE,
-		"stage": 0,
-		"label": "Follow the pipes and shut the steam valve",
-	})
 	out.append({
 		"kind": KIND_MISSION,
 		"stage": 0,
-		"label": "Recover the mission item",
+		"label": LABEL_MISSION,
 	})
 	return out
 
 
-static func _key_label(stage: int, total_keys: int, library_stage: int = 0) -> String:
-	if stage == library_stage and library_stage > 0:
-		return "Find the sector key in the library"
+static func _key_label(stage: int, total_keys: int) -> String:
 	if total_keys <= 1:
 		return "Find the sector key"
 	return "Find sector key %d" % stage

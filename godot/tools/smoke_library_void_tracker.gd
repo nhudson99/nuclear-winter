@@ -1,6 +1,6 @@
 extends SceneTree
 
-## Library hosts the stage-1 sector key and LockedDoor into the next wing.
+## Library bookcase lever unlocks the stage-1 LockedDoor into the next wing.
 ## Also covers pitch-black ambient, stalker freeze, void, tracker, melee, despawn.
 
 func _initialize() -> void:
@@ -26,17 +26,25 @@ func _run() -> void:
 	for room in layout.get("rooms", []):
 		if String(room.get("type", "")) == MapGenerator.TYPE_LIBRARY:
 			has_library_room = true
-	var key_stage := LevelRules.library_key_stage(4)
+	var bookshelf_obj := false
+	var bookshelf_stage := 0
+	for spec in layout.get("objectives", []):
+		if String(spec.get("kind", "")) == LevelRules.KIND_BOOKSHELF:
+			bookshelf_obj = true
+			bookshelf_stage = int(spec.get("stage", 0))
+	var unlock_stage := LevelRules.library_unlock_stage(4)
 	var library_key := false
 	for spec in layout.get("keys", []):
-		if int(spec.get("stage", 0)) == key_stage and bool(spec.get("in_library", false)):
+		if int(spec.get("stage", 0)) == unlock_stage or bool(spec.get("in_library", false)):
 			library_key = true
 	var library_ok: bool = (
 		has_library_room
-		and library_key
+		and bookshelf_obj
+		and not library_key
 		and not library.is_empty()
-		and key_stage == 1
-		and int(library.get("key_stage", 0)) == key_stage
+		and unlock_stage == 1
+		and bookshelf_stage == unlock_stage
+		and int(library.get("unlock_stage", 0)) == unlock_stage
 		and library.has("from_cell")
 		and library.has("to_cell")
 		and library.get("cell") == library.get("from_cell")
@@ -44,8 +52,9 @@ func _run() -> void:
 	print(
 		"library_ok=", library_ok,
 		" room=", has_library_room,
+		" objective=", bookshelf_obj,
 		" key=", library_key,
-		" stage=", key_stage,
+		" stage=", unlock_stage,
 		" secret=", library
 	)
 
@@ -57,46 +66,51 @@ func _run() -> void:
 	for node in main.get_tree().get_nodes_in_group("library_door"):
 		metal_door = true
 		break
-	var bookshelf := false
+	var lever: Node3D = null
+	var shelf_count := 0
 	for node in main.get_tree().get_nodes_in_group("secret_bookshelf"):
-		bookshelf = true
-		break
+		shelf_count += 1
+		if node != null and node.has_method("holds_lever") and bool(node.holds_lever()):
+			lever = node as Node3D
 	var stage_door: LockedDoor = null
 	for node in main.get_tree().get_nodes_in_group("locked_door"):
-		if node is LockedDoor and (node as LockedDoor).stage == key_stage:
+		if node is LockedDoor and (node as LockedDoor).stage == unlock_stage:
 			stage_door = node as LockedDoor
 			break
-	var key_node: Area3D = main.get_node_or_null("Key_%d" % key_stage) as Area3D
+	var key_node: Area3D = main.get_node_or_null("Key_%d" % unlock_stage) as Area3D
 	var secret_nodes_ok: bool = (
-		key_node != null
+		lever != null
+		and shelf_count >= 2
+		and key_node == null
 		and not metal_door
-		and not bookshelf
 		and stage_door != null
 	)
 	print(
 		"secret_nodes_ok=", secret_nodes_ok,
+		" lever=", lever,
+		" shelves=", shelf_count,
 		" key=", key_node,
 		" metal_door=", metal_door,
-		" bookshelf=", bookshelf,
 		" locked_door=", stage_door
 	)
 
 	var locked_before := stage_door != null and stage_door.is_locked()
-	if key_node != null:
-		player.global_position = key_node.global_position + Vector3(0.9, 0.05, 0.0)
+	if lever != null:
+		# Dense library stacks make a sideways offset hit a neighbour shelf first,
+		# so drive the lever interactable directly and fire the player signal.
+		player.global_position = lever.global_position + Vector3(0.25, 0.05, 0.0)
 		await create_timer(0.05).timeout
-		Input.action_press("interact")
-		await create_timer(0.05).timeout
-		player._physics_process(0.033)
-		Input.action_release("interact")
+		if lever.has_method("try_activate") and lever.try_activate():
+			player.bookshelf_opened.emit()
 		await create_timer(0.1).timeout
 	var opened_ok: bool = (
-		main.collected_key_stages().has(key_stage)
+		main.bookshelf_is_opened()
+		and main.collected_key_stages().has(unlock_stage)
 		and locked_before
 		and stage_door != null
 		and not stage_door.is_locked()
 	)
-	print("library_key_unlock_ok=", opened_ok, " was_locked=", locked_before)
+	print("bookshelf_unlock_ok=", opened_ok, " was_locked=", locked_before)
 
 	var world := main.get_node("WorldEnvironment") as WorldEnvironment
 	var ambient_ok: bool = (
@@ -120,6 +134,7 @@ func _run() -> void:
 		and void_body.is_in_group("void_monster")
 		and LevelRules.kind_in_tier(LevelRules.KIND_VOID, LevelRules.TIER_HARD)
 		and LevelRules.hard_monster_count(4) == 1
+		and LevelRules.kind_in_tier(LevelRules.KIND_STALKER, LevelRules.TIER_MED)
 	)
 	print("stalker_ok=", stalker_ok, " void_ok=", void_ok)
 

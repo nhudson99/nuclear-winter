@@ -1,6 +1,7 @@
 extends SceneTree
 
 const CharacterMeshScript := preload("res://scripts/CharacterMesh.gd")
+const HideRoomLightScript := preload("res://scripts/HideRoomLight.gd")
 
 ## Headless smoke for hide spots: v2/v3 scenes are what the generator instances,
 ## the door is local +Z, a witnessed chase breaks the spot, and door/monster/
@@ -25,7 +26,8 @@ func _run() -> void:
 	var doors_ok := _check_door_fallback_and_clips()
 	var breach_ok := await _check_breach()
 	var clips_ok := await _check_warden_and_void()
-	var all_ok: bool = paths_ok and rooms_ok and doors_ok and breach_ok and clips_ok
+	var light_ok := await _check_hide_room_light()
+	var all_ok: bool = paths_ok and rooms_ok and doors_ok and breach_ok and clips_ok and light_ok
 	print("hiding_smoke_ok=", all_ok)
 	quit(0 if all_ok else 1)
 
@@ -102,6 +104,130 @@ func _check_rooms() -> bool:
 	generator.queue_free()
 	print("rooms_ok=", ok)
 	return ok
+
+
+## The hide spot's generator room is the only thing that brightens, and only
+## while the player is inside. Ambient, exposure, and fog stay put.
+func _check_hide_room_light() -> bool:
+	var world := WorldEnvironment.new()
+	world.name = "HideLightWorld"
+	var env := Environment.new()
+	env.ambient_light_source = Environment.AMBIENT_SOURCE_COLOR
+	env.ambient_light_energy = 0.0
+	env.fog_enabled = false
+	env.fog_light_energy = 0.37
+	env.fog_density = 0.02
+	env.tonemap_exposure = 1.0
+	env.adjustment_brightness = 1.0
+	world.environment = env
+	root.add_child(world)
+
+	var container := Node3D.new()
+	container.name = "HideLightRooms"
+	root.add_child(container)
+	var generator := MapGenerator.new()
+	root.add_child(generator)
+	var bedroom: Node3D = generator._spawn_room(container, Vector2i(0, 0), "bedroom", {Vector2i(0, 0): true})
+	var office: Node3D = generator._spawn_room(container, Vector2i(2, 0), "office", {Vector2i(2, 0): true})
+	var player := _make_player()
+	root.add_child(player)
+	await physics_frame
+
+	var spot := bedroom.find_children("*", "HideSpot", true, false)[0] as HideSpot
+	var found: Node3D = HideRoomLightScript.room_of(spot)
+	var office_spot := office.find_children("*", "HideSpot", true, false)[0] as HideSpot
+	var office_room: Node3D = HideRoomLightScript.room_of(office_spot)
+	var bed_mesh := _first_mesh(bedroom)
+	var office_mesh := _first_mesh(office)
+	var bed_before: int = bed_mesh.layers
+	var office_before: int = office_mesh.layers
+	player.global_position = spot.entry_global()
+	var entered: bool = spot.try_enter(player)
+	var light := bedroom.get_node_or_null("HideRoomLight") as OmniLight3D
+	var layer: int = HideRoomLightScript.ROOM_LAYER
+	var bed_tagged: int = _count_layer(bedroom, layer)
+	var office_tagged: int = _count_layer(office, layer)
+	var energy := light.light_energy if light != null else -1.0
+	var lit := (
+		entered
+		and found == bedroom
+		and office_room == office
+		and light != null
+		and light.get_parent() == bedroom
+		and absf(energy - HideRoomLightScript.HIDE_ENERGY) < 0.001
+		and absf(energy - HideRoomLightScript.AUTHORED_FILL_ENERGY * 0.25) < 0.001
+		and light.light_cull_mask == layer
+		and absf(light.light_indirect_energy) < 0.001
+		and absf(light.light_volumetric_fog_energy) < 0.001
+		and bedroom.get_node_or_null("PreviewLight") == null
+		and office.get_node_or_null("HideRoomLight") == null
+		and office.get_node_or_null("PreviewLight") == null
+		and bed_tagged > 10
+		and office_tagged == 0
+		and (bed_mesh.layers & layer) != 0
+		and (bed_mesh.layers & bed_before) == bed_before
+		and office_mesh.layers == office_before
+	)
+	var env_while: bool = _env_unchanged(env)
+	player.exit_hiding()
+	var restored := (
+		bedroom.get_node_or_null("HideRoomLight") == null
+		and bed_mesh.layers == bed_before
+		and office_mesh.layers == office_before
+		and _count_layer(bedroom, layer) == 0
+	)
+	player.global_position = spot.entry_global()
+	var forced_in: bool = spot.try_enter(player)
+	player.exit_hiding(true)
+	var forced_restored := bedroom.get_node_or_null("HideRoomLight") == null and bed_mesh.layers == bed_before
+	var env_after: bool = _env_unchanged(env)
+	var ok := lit and env_while and restored and forced_in and forced_restored and env_after
+	print(
+		"hide_room_light_ok=", ok,
+		" entered=", entered,
+		" room=", found.name if found != null else "",
+		" energy=", energy,
+		" bed_tagged=", bed_tagged,
+		" office_tagged=", office_tagged,
+		" restored=", restored,
+		" forced=", forced_restored,
+		" env=", env_while and env_after
+	)
+	player.queue_free()
+	container.queue_free()
+	generator.queue_free()
+	world.queue_free()
+	return ok
+
+
+func _env_unchanged(env: Environment) -> bool:
+	return (
+		absf(env.ambient_light_energy) < 0.001
+		and not env.fog_enabled
+		and absf(env.fog_light_energy - 0.37) < 0.001
+		and absf(env.fog_density - 0.02) < 0.001
+		and absf(env.tonemap_exposure - 1.0) < 0.001
+		and absf(env.adjustment_brightness - 1.0) < 0.001
+	)
+
+
+func _first_mesh(node: Node) -> MeshInstance3D:
+	if node is MeshInstance3D and (node as MeshInstance3D).mesh != null:
+		return node as MeshInstance3D
+	for child in node.get_children():
+		var found := _first_mesh(child)
+		if found != null:
+			return found
+	return null
+
+
+func _count_layer(node: Node, bit: int) -> int:
+	var count := 0
+	if node is GeometryInstance3D and ((node as GeometryInstance3D).layers & bit) != 0:
+		count += 1
+	for child in node.get_children():
+		count += _count_layer(child, bit)
+	return count
 
 
 func _door_prop_ok(room: Node, type_name: String) -> bool:

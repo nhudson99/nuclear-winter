@@ -1,8 +1,8 @@
 class_name LibraryDoor
 extends Node3D
 
-## Sealed doorway inside the library. Opens when the secret bookshelf button
-## is pressed. Uses the metal double-door mesh when available.
+## Unused metal double-door path. The library wing gate is a LockedDoor opened
+## by the bookcase lever; this class stays for the mesh asset only.
 
 signal opened(door: LibraryDoor)
 
