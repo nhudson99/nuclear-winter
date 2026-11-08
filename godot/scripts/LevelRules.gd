@@ -7,8 +7,8 @@ extends RefCounted
 ## Monsters cycle easy → moderate → dangerous as the level index grows:
 ##   slime → hare → stalker → tank → void → tarantula → widow → toad…
 ## Objectives: level 1 lists one goal, find the main item and leave. Level n
-## after that lists n goals — one sector key per wing lock, then the mission
-## item. The first wing's key and LockedDoor live in the library room. The
+## after that lists n goals — the library bookcase-lever (opens the first wing
+## LockedDoor), then one sector key per later lock, then the mission item. The
 ## steam valve still seals the mission pocket, but it is not a checklist line
 ## (older notes counted it, which made level n list n+1 goals). Floors grow
 ## on odd levels (`ceil(n / 2)`).
@@ -27,8 +27,9 @@ const KIND_VALVE := "valve"
 const KIND_BOOKSHELF := "bookshelf"
 const LABEL_FIND_AND_LEAVE := "Find the main item and leave"
 const LABEL_MISSION := "Recover the mission item"
-## Older checklist copy. Not selected: keys plus the mission item already fill
-## level n, and level 1 is find-and-leave only.
+const LABEL_BOOKSHELF := "Search the library bookcases for the hidden lever"
+## Older checklist copy. Not selected: the bookcase lever, keys, and mission
+## item already fill level n, and level 1 is find-and-leave only.
 const LABEL_VALVE := "Follow the pipes and shut the steam valve"
 
 const MONSTER_CYCLE: Array[String] = [
@@ -124,20 +125,21 @@ static func locked_door_count(level: int) -> int:
 	return maxi(clamp_level(level) - 1, 0)
 
 
-## One physical key per locked door (wing or stair).
+## Physical key pickups. Stage 1's wing lock is opened by the library lever
+## instead of a key, so pickups are one fewer than locked doors when n > 1.
 static func key_count(level: int) -> int:
-	return locked_door_count(level)
+	return maxi(clamp_level(level) - 2, 0)
 
 
-## Wing stage whose key + LockedDoor are hosted by the library room (0 = none).
-## Stage 1 is the first wing gate off the start sector.
-static func library_key_stage(level: int) -> int:
+## Wing lock stage unlocked by finding the hidden library lever (0 = none).
+## Stage 1 is the first wing gate off the start sector; the library hosts it.
+static func library_unlock_stage(level: int) -> int:
 	return 1 if locked_door_count(level) > 0 else 0
 
 
-## Legacy alias — bookshelf unlock is gone; the library hosts a normal key.
-static func library_unlock_stage(level: int) -> int:
-	return library_key_stage(level)
+## Alias kept for map code that pins the library on the stage-1 lock cell.
+static func library_key_stage(level: int) -> int:
+	return library_unlock_stage(level)
 
 
 static func zone_count(level: int) -> int:
@@ -210,7 +212,7 @@ static func randomize_monster_spawns(level: int) -> bool:
 
 
 ## Level 1: find the main item and leave.
-## Level n > 1: sector keys (library hosts stage 1), then the mission item.
+## Level n > 1: library bookcase-lever, later sector keys, then the mission item.
 ## The steam valve is not selected. Listing it beside the keys and the mission
 ## item made every level one goal over the count.
 static func objectives(level: int) -> Array[Dictionary]:
@@ -223,13 +225,20 @@ static func objectives(level: int) -> Array[Dictionary]:
 			"label": LABEL_FIND_AND_LEAVE,
 		})
 		return out
-	var keys := key_count(n)
-	var library_stage := library_key_stage(n)
-	for stage in range(1, keys + 1):
+	var unlock_stage := library_unlock_stage(n)
+	if unlock_stage > 0:
+		out.append({
+			"kind": KIND_BOOKSHELF,
+			"stage": unlock_stage,
+			"label": LABEL_BOOKSHELF,
+		})
+	var locked := locked_door_count(n)
+	var extra_keys := key_count(n)
+	for stage in range(2, locked + 1):
 		out.append({
 			"kind": KIND_KEY,
 			"stage": stage,
-			"label": _key_label(stage, keys, library_stage),
+			"label": _key_label(stage, extra_keys),
 		})
 	out.append({
 		"kind": KIND_MISSION,
@@ -239,9 +248,7 @@ static func objectives(level: int) -> Array[Dictionary]:
 	return out
 
 
-static func _key_label(stage: int, total_keys: int, library_stage: int = 0) -> String:
-	if stage == library_stage and library_stage > 0:
-		return "Find the sector key in the library"
+static func _key_label(stage: int, total_keys: int) -> String:
 	if total_keys <= 1:
 		return "Find the sector key"
 	return "Find sector key %d" % stage

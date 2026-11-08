@@ -781,7 +781,7 @@ func _on_bookshelf_opened() -> void:
 	_refresh_objective_hud()
 
 
-## Secret bookshelf opens the wing lock the same way a key pickup does.
+## Hidden library lever opens the wing lock the same way a key pickup does.
 func _apply_library_unlock() -> void:
 	var stage := LevelRules.library_unlock_stage(_resolved_level)
 	if stage <= 0:
