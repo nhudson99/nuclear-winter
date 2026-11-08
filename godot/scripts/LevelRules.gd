@@ -5,16 +5,17 @@ extends RefCounted
 ## check the formulas without booting a map.
 ##
 ## Monsters cycle easy → moderate → dangerous as the level index grows:
-##   slime → stalker(hare) → tank → void → tarantula → widow → toad…
+##   slime → hare → stalker → tank → void → tarantula → widow → toad…
 ## Objectives: level 1 lists one goal, find the main item and leave. Level n
 ## after that lists n goals — the library bookcase-lever (opens the first wing
 ## LockedDoor), then one sector key per later lock, then the mission item. The
-## steam valve still seals the mission pocket, but it is not a checklist line.
-## Floors grow on odd levels (`ceil(n / 2)`).
+## steam valve still seals the mission pocket, but it is not a checklist line
+## (older notes counted it, which made level n list n+1 goals). Floors grow
+## on odd levels (`ceil(n / 2)`).
 
 const KIND_SLIME := "slime"
 const KIND_HARE := "hare"
-const KIND_STALKER := "hare" # radiation-mask stalker; kept as "hare" for saves/smokes
+const KIND_STALKER := "stalker"
 const KIND_TANK := "tank"
 const KIND_VOID := "void"
 const KIND_TARANTULA := "tarantula"
@@ -32,7 +33,7 @@ const LABEL_BOOKSHELF := "Search the library bookcases for the hidden lever"
 const LABEL_VALVE := "Follow the pipes and shut the steam valve"
 
 const MONSTER_CYCLE: Array[String] = [
-	KIND_SLIME, KIND_HARE, KIND_TANK, KIND_VOID, KIND_TARANTULA, KIND_WIDOW, KIND_TOAD
+	KIND_SLIME, KIND_HARE, KIND_STALKER, KIND_TANK, KIND_VOID, KIND_TARANTULA, KIND_WIDOW, KIND_TOAD
 ]
 
 ## Level 1 keeps the current nine-room mansion.
@@ -69,6 +70,10 @@ static func hare_count(level: int) -> int:
 	return kind_count(KIND_HARE, level)
 
 
+static func stalker_count(level: int) -> int:
+	return kind_count(KIND_STALKER, level)
+
+
 static func tank_count(level: int) -> int:
 	return kind_count(KIND_TANK, level)
 
@@ -89,7 +94,7 @@ static func void_count(level: int) -> int:
 	return kind_count(KIND_VOID, level)
 
 
-## One kind per spawned monster, in cycle order: slime, stalker, tank, void…
+## One kind per spawned monster, in cycle order: slime, hare, stalker, tank…
 static func monster_kinds(level: int) -> Array[String]:
 	var n := clamp_level(level)
 	var kinds: Array[String] = []
@@ -102,6 +107,7 @@ static func monster_counts(level: int) -> Dictionary:
 	return {
 		KIND_SLIME: slime_count(level),
 		KIND_HARE: hare_count(level),
+		KIND_STALKER: stalker_count(level),
 		KIND_TANK: tank_count(level),
 		KIND_VOID: void_count(level),
 		KIND_TARANTULA: tarantula_count(level),
@@ -207,7 +213,8 @@ static func randomize_monster_spawns(level: int) -> bool:
 
 ## Level 1: find the main item and leave.
 ## Level n > 1: library bookcase-lever, later sector keys, then the mission item.
-## The steam valve is not selected.
+## The steam valve is not selected. Listing it beside the keys and the mission
+## item made every level one goal over the count.
 static func objectives(level: int) -> Array[Dictionary]:
 	var n := clamp_level(level)
 	var out: Array[Dictionary] = []
@@ -252,6 +259,7 @@ static func counts_match_cycle(level: int) -> bool:
 	var counted := {
 		KIND_SLIME: 0,
 		KIND_HARE: 0,
+		KIND_STALKER: 0,
 		KIND_TANK: 0,
 		KIND_VOID: 0,
 		KIND_TARANTULA: 0,
@@ -265,6 +273,7 @@ static func counts_match_cycle(level: int) -> bool:
 	return (
 		int(counted[KIND_SLIME]) == slime_count(level)
 		and int(counted[KIND_HARE]) == hare_count(level)
+		and int(counted[KIND_STALKER]) == stalker_count(level)
 		and int(counted[KIND_TANK]) == tank_count(level)
 		and int(counted[KIND_VOID]) == void_count(level)
 		and int(counted[KIND_TARANTULA]) == tarantula_count(level)

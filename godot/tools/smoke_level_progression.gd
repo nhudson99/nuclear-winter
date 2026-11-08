@@ -155,23 +155,24 @@ func _same_ints(got: Array, want: Array) -> bool:
 
 
 func _check_formulas() -> bool:
-	# slime, hare, tank, void, tarantula, widow, toad
+	# slime, hare, stalker, tank, void, tarantula, widow, toad
 	var expected := {
-		1: [1, 0, 0, 0, 0, 0, 0],
-		2: [1, 1, 0, 0, 0, 0, 0],
-		3: [1, 1, 1, 0, 0, 0, 0],
-		4: [1, 1, 1, 1, 0, 0, 0],
-		5: [1, 1, 1, 1, 1, 0, 0],
-		6: [1, 1, 1, 1, 1, 1, 0],
-		7: [1, 1, 1, 1, 1, 1, 1],
-		8: [2, 1, 1, 1, 1, 1, 1],
-		9: [2, 2, 1, 1, 1, 1, 1],
+		1: [1, 0, 0, 0, 0, 0, 0, 0],
+		2: [1, 1, 0, 0, 0, 0, 0, 0],
+		3: [1, 1, 1, 0, 0, 0, 0, 0],
+		4: [1, 1, 1, 1, 0, 0, 0, 0],
+		5: [1, 1, 1, 1, 1, 0, 0, 0],
+		6: [1, 1, 1, 1, 1, 1, 0, 0],
+		7: [1, 1, 1, 1, 1, 1, 1, 0],
+		8: [1, 1, 1, 1, 1, 1, 1, 1],
+		9: [2, 1, 1, 1, 1, 1, 1, 1],
 	}
 	var ok := true
 	for level in expected:
 		var got := [
 			LevelRules.slime_count(level),
 			LevelRules.hare_count(level),
+			LevelRules.stalker_count(level),
 			LevelRules.tank_count(level),
 			LevelRules.void_count(level),
 			LevelRules.tarantula_count(level),
@@ -182,18 +183,32 @@ func _check_formulas() -> bool:
 		var match_ok: bool = got == want and LevelRules.counts_match_cycle(level)
 		var bookshelf_listed := false
 		var valve_listed := false
+		var key_lines := 0
+		var mission_count := 0
+		var mission_label := ""
 		for spec in LevelRules.objectives(level):
 			var kind := String(spec.get("kind", ""))
 			if kind == LevelRules.KIND_BOOKSHELF:
 				bookshelf_listed = true
-			if kind == LevelRules.KIND_VALVE:
+			if kind == LevelRules.KIND_KEY:
+				key_lines += 1
+			if kind == LevelRules.KIND_VALVE or String(spec.get("label", "")) == LevelRules.LABEL_VALVE:
 				valve_listed = true
+			if kind == LevelRules.KIND_MISSION:
+				mission_count += 1
+				mission_label = String(spec.get("label", ""))
 		var want_bookshelf := LevelRules.library_unlock_stage(level) > 0
+		var want_mission := (
+			LevelRules.LABEL_FIND_AND_LEAVE if level <= 1 else LevelRules.LABEL_MISSION
+		)
 		var obj_ok: bool = (
 			LevelRules.objective_count(level) == level
 			and LevelRules.key_count(level) == maxi(level - 2, 0)
 			and LevelRules.locked_door_count(level) == maxi(level - 1, 0)
 			and LevelRules.objectives(level).size() == level
+			and key_lines == LevelRules.key_count(level)
+			and mission_count == 1
+			and mission_label == want_mission
 			and bookshelf_listed == want_bookshelf
 			and not valve_listed
 		)
@@ -236,6 +251,7 @@ func _roster_matches(layout: Dictionary, level: int) -> bool:
 	var counts := {
 		LevelRules.KIND_SLIME: 0,
 		LevelRules.KIND_HARE: 0,
+		LevelRules.KIND_STALKER: 0,
 		LevelRules.KIND_TANK: 0,
 		LevelRules.KIND_VOID: 0,
 		LevelRules.KIND_TARANTULA: 0,
@@ -257,6 +273,7 @@ func _roster_matches(layout: Dictionary, level: int) -> bool:
 	var ok := (
 		int(counts[LevelRules.KIND_SLIME]) == LevelRules.slime_count(level)
 		and int(counts[LevelRules.KIND_HARE]) == LevelRules.hare_count(level)
+		and int(counts[LevelRules.KIND_STALKER]) == LevelRules.stalker_count(level)
 		and int(counts[LevelRules.KIND_TANK]) == LevelRules.tank_count(level)
 		and int(counts[LevelRules.KIND_VOID]) == LevelRules.void_count(level)
 		and int(counts[LevelRules.KIND_TARANTULA]) == LevelRules.tarantula_count(level)
@@ -290,12 +307,24 @@ func _objectives_match(layout: Dictionary, level: int) -> bool:
 			and library.get("cell") == library.get("from_cell")
 			and int(library.get("unlock_stage", 0)) == LevelRules.library_unlock_stage(level)
 		)
+	var listed: Array = LevelRules.objectives(level)
+	var list_ok := objectives.size() == listed.size()
+	if list_ok:
+		for index in listed.size():
+			var got: Dictionary = objectives[index]
+			var want: Dictionary = listed[index]
+			if String(got.get("kind", "")) != String(want.get("kind", "")):
+				list_ok = false
+			if String(got.get("label", "")) != String(want.get("label", "")):
+				list_ok = false
+			if int(got.get("stage", -1)) != int(want.get("stage", -2)):
+				list_ok = false
 	var ok: bool = true
 	if keys.size() != LevelRules.key_count(level):
 		ok = false
 	if locks.size() < LevelRules.locked_door_count(level):
 		ok = false
-	if objectives.size() != LevelRules.objective_count(level):
+	if not list_ok or objectives.size() != LevelRules.objective_count(level):
 		ok = false
 	if bookshelf != want_bookshelf:
 		ok = false
@@ -807,6 +836,7 @@ func _check_live_level_2() -> bool:
 	var roster_ok := _count_active_kinds(main) == {
 		LevelRules.KIND_SLIME: 1,
 		LevelRules.KIND_HARE: 1,
+		LevelRules.KIND_STALKER: 0,
 		LevelRules.KIND_TANK: 0,
 		LevelRules.KIND_VOID: 0,
 		LevelRules.KIND_TARANTULA: 0,
@@ -920,6 +950,7 @@ func _count_active_kinds(main: Node) -> Dictionary:
 	var counts := {
 		LevelRules.KIND_SLIME: 0,
 		LevelRules.KIND_HARE: 0,
+		LevelRules.KIND_STALKER: 0,
 		LevelRules.KIND_TANK: 0,
 		LevelRules.KIND_VOID: 0,
 		LevelRules.KIND_TARANTULA: 0,

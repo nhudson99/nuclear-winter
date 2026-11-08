@@ -2223,7 +2223,8 @@ func _describe_layout(
 		cells, start_cell, objective_cell, zone_of, floor_of, level, reserved, rng
 	)
 	var slime_cell := _first_enemy_cell(enemies, LevelRules.KIND_SLIME, start_cell)
-	var monster_cell := _first_enemy_cell(enemies, LevelRules.KIND_HARE, objective_cell)
+	var hare_cell := _first_enemy_cell(enemies, LevelRules.KIND_HARE, objective_cell)
+	var monster_cell := _first_enemy_cell(enemies, LevelRules.KIND_STALKER, objective_cell)
 	var tank_cell := _first_enemy_cell(enemies, LevelRules.KIND_TANK, objective_cell)
 	var tarantula_cell := _first_enemy_cell(enemies, LevelRules.KIND_TARANTULA, objective_cell)
 	var widow_cell := _first_enemy_cell(enemies, LevelRules.KIND_WIDOW, objective_cell)
@@ -2320,6 +2321,8 @@ func _describe_layout(
 		"objective_floor": int(floor_of.get(objective_cell, 0)),
 		"monster": _world_of(monster_cell, floor_of) + Vector3(0.0, 0.05, 0.0),
 		"monster_cell": monster_cell,
+		"hare": _world_of(hare_cell, floor_of) + Vector3(0.0, 0.05, 0.0),
+		"hare_cell": hare_cell,
 		"slime": _world_of(slime_cell, floor_of) + Vector3(0.0, 0.05, 0.0),
 		"slime_cell": slime_cell,
 		"tank": _world_of(tank_cell, floor_of) + Vector3(0.0, 0.05, 0.0),

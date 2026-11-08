@@ -16,6 +16,7 @@ const HOTBAR_SCRIPT := preload("res://scripts/Hotbar.gd")
 ## 50% more zoom onto the player than the original 20 m ortho height.
 const PLAY_CAMERA_SIZE := 20.0 / 1.5
 ## Pitch black: only the flashlight and green objective lights illuminate.
+## A hiding player also gets HideRoomLight in the one room they climbed into.
 const DARK_AMBIENT_ENERGY := 0.0
 const SLIME_SCENE_PATH := "res://scenes/Slime.tscn"
 const MAX_LIVING_SLIMES := 16
@@ -27,6 +28,7 @@ const VOID_SCENE_PATH := "res://assets/characters/Void_full.glb"
 @onready var player: CharacterBody3D = $Player
 @onready var map_root: Node3D = $GeneratedMap
 @onready var monster: CharacterBody3D = $Monster
+@onready var hare: CharacterBody3D = get_node_or_null("Hare")
 @onready var slime: CharacterBody3D = get_node_or_null("Slime")
 @onready var tank: CharacterBody3D = get_node_or_null("Tank")
 @onready var tarantula: CharacterBody3D = get_node_or_null("Tarantula")
@@ -53,6 +55,7 @@ var _layout: Dictionary = {}
 var _loading: CanvasLayer
 var _slime_serial: int = 1
 var _hare_serial: int = 1
+var _stalker_serial: int = 1
 var _tank_serial: int = 1
 var _tarantula_serial: int = 1
 var _widow_serial: int = 1
@@ -297,7 +300,8 @@ func _arrival_position(layout: Dictionary, arrival_cell) -> Vector3:
 func _enemy_templates() -> Dictionary:
 	return {
 		LevelRules.KIND_SLIME: slime,
-		LevelRules.KIND_HARE: monster,
+		LevelRules.KIND_HARE: hare,
+		LevelRules.KIND_STALKER: monster,
 		LevelRules.KIND_TANK: tank,
 		LevelRules.KIND_VOID: void_monster,
 		LevelRules.KIND_TARANTULA: tarantula,
@@ -320,13 +324,15 @@ func _ensure_enemies_for_layout(layout: Dictionary) -> void:
 	var floor := int(layout.get("active_floor", _active_floor))
 	var used_kinds := {}
 	if roster.is_empty() and floor == 0 and not _roster_seeded:
-		_spawn_tracked_enemy(monster, LevelRules.KIND_HARE, layout.get("monster", Vector3.ZERO), layout, 0, layout.get("monster_cell", Vector2i.ZERO))
+		_spawn_tracked_enemy(monster, LevelRules.KIND_STALKER, layout.get("monster", Vector3.ZERO), layout, 0, layout.get("monster_cell", Vector2i.ZERO))
+		_spawn_tracked_enemy(hare, LevelRules.KIND_HARE, layout.get("hare", Vector3.ZERO), layout, 0, layout.get("hare_cell", Vector2i.ZERO))
 		_spawn_tracked_enemy(slime, LevelRules.KIND_SLIME, layout.get("slime", Vector3.ZERO), layout, 0, layout.get("slime_cell", Vector2i.ZERO))
 		_spawn_tracked_enemy(tank, LevelRules.KIND_TANK, layout.get("tank", Vector3.ZERO), layout, 0, layout.get("tank_cell", Vector2i.ZERO))
 		_spawn_tracked_enemy(tarantula, LevelRules.KIND_TARANTULA, layout.get("tarantula", Vector3.ZERO), layout, 0, layout.get("tarantula_cell", Vector2i.ZERO))
 		_spawn_tracked_enemy(widow, LevelRules.KIND_WIDOW, layout.get("widow", Vector3.ZERO), layout, 0, layout.get("widow_cell", Vector2i.ZERO))
 		_spawn_tracked_enemy(toad, LevelRules.KIND_TOAD, layout.get("toad", Vector3.ZERO), layout, 0, layout.get("toad_cell", Vector2i.ZERO))
 		_park_unused_templates({
+			LevelRules.KIND_STALKER: true,
 			LevelRules.KIND_HARE: true,
 			LevelRules.KIND_SLIME: true,
 			LevelRules.KIND_TANK: true,
@@ -444,6 +450,9 @@ func _next_enemy_name(kind: String) -> String:
 		LevelRules.KIND_HARE:
 			_hare_serial += 1
 			return "Hare_%d" % _hare_serial
+		LevelRules.KIND_STALKER:
+			_stalker_serial += 1
+			return "Stalker_%d" % _stalker_serial
 		LevelRules.KIND_TANK:
 			_tank_serial += 1
 			return "Tank_%d" % _tank_serial
@@ -461,7 +470,7 @@ func _next_enemy_name(kind: String) -> String:
 			return "Toad_%d" % _toad_serial
 		_:
 			return "Enemy_%d" % (
-				_slime_serial + _hare_serial + _tank_serial + _void_serial
+				_slime_serial + _hare_serial + _stalker_serial + _tank_serial + _void_serial
 				+ _tarantula_serial + _widow_serial + _toad_serial
 			)
 
