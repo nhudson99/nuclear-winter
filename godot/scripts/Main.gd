@@ -74,6 +74,8 @@ var _floor_swap_busy: bool = false
 var _tracker: MonsterTracker
 var _void_dimension: VoidDimension
 var _roster_seeded: bool = false
+const ROOM_WALL_FADE := preload("res://scripts/RoomWallFade.gd")
+var _wall_fade: Node
 
 const PARKED_GROUPS: Array[String] = [
 	"stairwell",
@@ -87,6 +89,9 @@ const PARKED_GROUPS: Array[String] = [
 
 func _ready() -> void:
 	add_to_group("main_level")
+	_wall_fade = ROOM_WALL_FADE.new()
+	_wall_fade.name = "RoomWallFade"
+	add_child(_wall_fade)
 	camera.projection = Camera3D.PROJECTION_ORTHOGONAL
 	camera.size = PLAY_CAMERA_SIZE
 	camera.near = 0.05
@@ -112,6 +117,8 @@ func _physics_process(delta: float) -> void:
 	var target := player.global_position + Vector3(camera_distance * 0.55, camera_height, camera_distance)
 	camera.global_position = camera.global_position.lerp(target, clampf(follow_lerp * delta, 0.0, 1.0))
 	camera.look_at(player.global_position + Vector3(0.0, 0.6, 0.0), Vector3.UP)
+	if _wall_fade and _wall_fade.has_method("update_fade"):
+		_wall_fade.update_fade(delta)
 	if OS.get_environment("NW_PREVIEW_PLAYER") == "1" and _status_label and player.has_method("current_clip"):
 		_status_label.text = player.current_clip()
 

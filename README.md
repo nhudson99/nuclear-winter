@@ -60,7 +60,7 @@ godot --headless -s res://tools/build_main_scene.gd
 
 ```bash
 cd godot
-for t in smoke_procgen smoke_monster_doors smoke_monster_track smoke_game_loop smoke_flow_screens smoke_player_anims smoke_flashlight smoke_shop smoke_loadout smoke_enemies smoke_widow_tarantula smoke_toad_attack smoke_level_progression smoke_touch_controls smoke_library_void_tracker smoke_hiding; do
+for t in smoke_procgen smoke_monster_doors smoke_monster_track smoke_game_loop smoke_flow_screens smoke_player_anims smoke_flashlight smoke_shop smoke_loadout smoke_enemies smoke_widow_tarantula smoke_toad_attack smoke_level_progression smoke_touch_controls smoke_library_void_tracker smoke_hiding smoke_wall_fade; do
   godot --headless -s res://tools/$t.gd
 done
 ```
@@ -71,7 +71,7 @@ done
 
 - **Lighting**: Level 1 has no sun and **0% ambient** — the map is pitch black without the flashlight. Hold **RMB** or deflect the **right stick** to turn on the flashlight and aim the prisoner (and the cone); WASD / the **left stick** still strafes independently. Release to go dark again. Green objective lights (valve when shut, exit beacon, void gate) are the other illumination.
 - **Touch**: during a level, the left stick moves (a full shove runs), the right stick aims the flashlight and the prisoner, and **USE** picks up or takes stairs. On a phone there is no attack button and no reload key: while the right stick is aimed at a monster the prisoner swings, or fires the equipped gun. An empty magazine refills from reserve on its own; a partly spent magazine stays until it is empty. The left stick does not fire. Keyboard and mouse still work beside the sticks, and **R** still reloads on a keyboard.
-- **Camera**: the isometric view is zoomed 50% onto the player (ortho size 20 → 13.3).
+- **Camera**: the isometric view stays at a fixed angle, zoomed 50% onto the player (ortho size 20 → 13.3). It does not turn with the player. While the player is inside a room, the one or two walls facing the camera (the near, lower edge of the screen) fade: `Wall_X_A/B/L`, `Plug_X`, `NoCol_Wallpaper_X0`–`X3`, and props standing on that side. They come back when the player leaves the room. `RoomWallFade` exports `occluder_fade`, `fade_smooth`, and `wall_band`.
 - **Objectives**: sector keys (one per lock from level 2), the steam valve, and the mission item. The library hosts the first key and its matching `LockedDoor`. Follow the glowing pipes and shut the boiler control panel to clear the steam breach in the last wing, then collect the mission item and reach the exit doorway without dying.
 - **Alarm**: collecting the item halves every enemy's dwell timer and doubles its proximity detection radius, and turns on the green exit glow.
 - **Win / lose**: escaping with the item awards **5 rations** and brings up the fat aristocrat ("Well, you survived. Good for you. Here is your ration reward"); dying brings up the fat aristocrat ("Finally, you are no longer a drain on the motherland") and returns to the title screen.
