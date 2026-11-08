@@ -698,8 +698,11 @@ func _try_interact() -> void:
 		return
 
 	var bookshelf := _nearest_secret_bookshelf()
-	if bookshelf != null and bookshelf.has_method("try_activate") and bookshelf.try_activate():
-		bookshelf_opened.emit()
+	if bookshelf != null and bookshelf.has_method("try_activate"):
+		# Empty shelves still consume the press so the hunt feels responsive;
+		# only the lever-bearing case advances the library objective.
+		if bookshelf.try_activate():
+			bookshelf_opened.emit()
 		return
 
 	var hiding := _nearest_hide_spot()
