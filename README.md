@@ -60,7 +60,7 @@ godot --headless -s res://tools/build_main_scene.gd
 
 ```bash
 cd godot
-for t in smoke_procgen smoke_monster_doors smoke_monster_track smoke_game_loop smoke_flow_screens smoke_player_anims smoke_flashlight smoke_shop smoke_loadout smoke_enemies smoke_widow_tarantula smoke_toad_attack smoke_level_progression smoke_touch_controls smoke_library_void_tracker smoke_wall_fade smoke_hiding; do
+for t in smoke_procgen smoke_monster_doors smoke_monster_track smoke_game_loop smoke_flow_screens smoke_player_anims smoke_flashlight smoke_shop smoke_loadout smoke_enemies smoke_widow_tarantula smoke_toad_attack smoke_level_progression smoke_touch_controls smoke_library_void_tracker smoke_hiding smoke_wall_fade; do
   godot --headless -s res://tools/$t.gd
 done
 ```
